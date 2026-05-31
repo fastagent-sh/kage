@@ -22,7 +22,8 @@ kage finish     # 💨 merge the clone's sessions back, delete the clone
 ```
 
 Code comes back through git (a PR, or a branch fetch). The agent's session memory comes back through
-`~/.pi`. kage never copies a working tree back onto the origin — that's the whole point.
+its own session store (`~/.pi`, `~/.claude`, or `~/.codex`). kage never copies a working tree back onto
+the origin — that's the whole point.
 
 ## Why a full copy, not `git worktree`?
 
@@ -60,8 +61,8 @@ cd kage && npm install && npm link   # npm install builds bin/kage.mjs from src/
 
 | Command | Run from | What it does |
 |---|---|---|
-| `kage [path] [--name x]` | origin repo | Copy the repo to `../<repo>--<name>` (default `kage-<ts>`), copy in the origin's 5 most recent pi sessions (resumable, never replayed), and launch a **fresh** pi. `--name` only names the folder — kage never creates a branch. No args + existing clones → interactive menu. |
-| `kage status [--pr]` | origin repo | Dashboard: branch, dirty/clean, ahead/behind, "safe to clean". `--pr` adds PR state via `gh`. (`kage list` is an alias.) |
+| `kage [path] [--name x] [--agent pi\|claude\|codex]` | origin repo | Copy the repo to `../<repo>--<name>` (default `kage-<ts>`), copy in the origin's 5 most recent sessions for that agent (resumable, never replayed), and launch a **fresh** agent (pi by default). `--name` only names the folder — kage never creates a branch. No args + existing clones → interactive menu. |
+| `kage status [--pr]` | origin repo | Dashboard: branch, dirty/clean, ahead/behind, "safe to clean". `--pr` adds PR state via `gh`. |
 | `kage finish [name] [--force] [--push] [--pr]` | origin / inside clone | Refuse if the clone has uncommitted or unpushed work, merge its **new** sessions back, delete it. `--push` pushes the branch first; `--pr` pushes + opens a PR via `gh`; `--force` skips the guard. |
 | `kage rm [name] [--force]` | origin / inside clone | Discard a clone **without** merging memory. Refuses local-only work unless `--force`. |
 | `kage pull <path...>` | inside a clone | Copy specific files/dirs (even gitignored, e.g. a generated `.env`) back to the origin. |
@@ -71,6 +72,15 @@ cd kage && npm install && npm link   # npm install builds bin/kage.mjs from src/
 Run bare `kage` inside a repo that already has clones to get an interactive picker: create a new clone,
 or **enter** / **finish** / **remove** an existing one. `finish` and `rm` show the same picker when you
 have several clones and don't name one.
+
+### Other agents (Claude Code, Codex)
+
+kage isn't pi-only. `--agent claude` or `--agent codex` launches that agent instead, and memory flows
+the same way — through that agent's own session store, so it works whether you drive it from the CLI,
+the IDE extension, or the desktop app. Two agents can even work one repo in parallel (a clone each, or
+different agents in one clone); `finish` merges back whichever stores have new sessions. For a
+GUI/desktop app kage can't spawn, use `--open <cmd>` (e.g. `kage --open code`) or `--no-launch` to just
+make the clone and open it yourself. `KAGE_AGENT` sets your default agent.
 
 ### Shell integration (optional)
 
@@ -91,10 +101,11 @@ completion for subcommands and clone names.
   Without a remote: `finish` fetches the clone's branch into the origin's git as a local
   `kage/<name>-<sha>` branch (origin working tree untouched — `git merge` it when you like). Because a
   fetch can't preserve uncommitted work, `finish` refuses to delete a dirty clone unless `--force`.
-- **Memory flows via `~/.pi`, never replayed.** On create, the origin's 5 most recent sessions are
-  copied in — pi's resume picker surfaces them, but the clone opens a **fresh** session. On `finish`,
-  sessions the clone created come back whole; a copied-in session you resumed comes back as a separate
-  new session, so the origin's original is never mutated.
+- **Memory flows via the agent's own session store, never replayed.** On create, the origin's 5 most
+  recent sessions for that agent are copied in — the agent's resume picker surfaces them, but the clone
+  opens a **fresh** session. On `finish`, sessions the clone created come back whole; a copied-in session
+  you resumed comes back as a separate new session, so the origin's original is never mutated. (Codex's
+  store is one global tree keyed by cwd, so there's nothing to copy in — see `docs/multi-agent-design.md`.)
 - **The origin is read-only to kage.** It only copies out and writes session memory — it never touches
   the origin's working tree, even while another session is live there.
 
@@ -103,7 +114,9 @@ completion for subcommands and clone names.
 - The copy snapshots the origin's **current** state, including uncommitted changes.
 - **Submodules**: a submodule's `.git` is an absolute path and breaks on copy — run
   `git submodule update --init` in the clone.
-- Session storage defaults to `~/.pi/agent/sessions`; override with `KAGE_SESSIONS_DIR`.
+- kage reads each agent's sessions from where that agent itself stores them, honoring the agent's own
+  config var — `PI_CODING_AGENT_DIR` (pi), `CLAUDE_CONFIG_DIR` (Claude Code), `CODEX_HOME` (Codex) — so
+  kage and the agent always agree on the location.
 
 ## Development
 

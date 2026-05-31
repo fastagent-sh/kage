@@ -1,8 +1,19 @@
 import assert from "node:assert/strict";
 import { type SpawnSyncReturns, spawnSync } from "node:child_process";
-import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	appendFileSync,
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 // Resolved from the compiled test (dist/kage.test.mjs), so "../bin" and "../package.json"
@@ -15,6 +26,14 @@ interface RunOpts {
 }
 
 function run(args: string[], opts: RunOpts = {}): SpawnSyncReturns<string> {
+	// Keep every agent's store inside the test's temp dir (next to pi's agent dir), so a test
+	// never reads or writes the real ~/.codex or ~/.claude. Explicit values in opts.env win.
+	const env = opts.env;
+	if (env?.PI_CODING_AGENT_DIR) {
+		const home = dirname(env.PI_CODING_AGENT_DIR);
+		env.CODEX_HOME ??= join(home, "codex");
+		env.CLAUDE_CONFIG_DIR ??= join(home, "claude");
+	}
 	return spawnSync("node", [CLI, ...args], { encoding: "utf8", ...opts });
 }
 
@@ -41,6 +60,13 @@ function fakePiPath(root: string): string {
 	return `${bin}:${process.env.PATH}`;
 }
 
+/** Add another no-op fake binary (e.g. `claude`) into the fake-bin dir created by fakePiPath. */
+function addFakeBin(root: string, name: string): void {
+	const p = join(root, "bin", name);
+	writeFileSync(p, "#!/bin/sh\nexit 0\n");
+	chmodSync(p, 0o755);
+}
+
 /** Drop a fake `gh` into the fake-bin dir (already on PATH via fakePiPath) that echoes fixed JSON. */
 function fakeGh(root: string, json: string): void {
 	const gh = join(root, "bin", "gh");
@@ -49,6 +75,7 @@ function fakeGh(root: string, json: string): void {
 }
 
 const enc = (abs: string): string => `--${abs.replace(/^\//, "").replace(/\//g, "-")}--`;
+const encClaude = (abs: string): string => abs.replace(/[^A-Za-z0-9]/g, "-");
 
 test("--help prints usage", () => {
 	const r = run(["--help"]);
@@ -69,7 +96,7 @@ test("--version prints the package version and stays in sync", () => {
 test("errors outside a git repo", () => {
 	const d = tmp();
 	try {
-		const r = run(["list"], { cwd: d });
+		const r = run(["status"], { cwd: d });
 		assert.equal(r.status, 1);
 		assert.match(r.stderr, /not a git repository/);
 	} finally {
@@ -77,13 +104,13 @@ test("errors outside a git repo", () => {
 	}
 });
 
-test("list reports no clones in a fresh repo", () => {
+test("status reports no clones in a fresh repo", () => {
 	const root = tmp();
 	const repo = join(root, "repo");
 	mkdirSync(repo);
 	initRepo(repo);
 	try {
-		const r = run(["list"], { cwd: repo });
+		const r = run(["status"], { cwd: repo });
 		assert.equal(r.status, 0);
 		assert.match(r.stderr, /No shadow clones/);
 	} finally {
@@ -96,7 +123,7 @@ test("new creates a clone, list shows it, finish removes it", () => {
 	const repo = join(root, "repo");
 	mkdirSync(repo);
 	initRepo(repo);
-	const env = { ...process.env, PATH: fakePiPath(root), KAGE_SESSIONS_DIR: join(root, "sessions") };
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi") };
 	const clone = join(root, "repo--t1");
 	try {
 		const r = run(["--name", "t1"], { cwd: repo, env });
@@ -129,7 +156,7 @@ test("--name=value (equals form) is parsed and names the clone folder", () => {
 	const repo = join(root, "repo");
 	mkdirSync(repo);
 	initRepo(repo);
-	const env = { ...process.env, PATH: fakePiPath(root), KAGE_SESSIONS_DIR: join(root, "sessions") };
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi") };
 	const clone = join(root, "repo--eqname");
 	try {
 		const r = run(["--name=eqname"], { cwd: repo, env });
@@ -145,7 +172,7 @@ test("status --pr surfaces PR state via gh", () => {
 	const repo = join(root, "repo");
 	mkdirSync(repo);
 	initRepo(repo);
-	const env = { ...process.env, PATH: fakePiPath(root), KAGE_SESSIONS_DIR: join(root, "sessions") };
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi") };
 	fakeGh(root, '{"state":"OPEN","number":7,"url":"https://example.com/pr/7"}');
 	try {
 		run(["--name", "prtest"], { cwd: repo, env });
@@ -162,7 +189,7 @@ test("status --pr ignores gh output that isn't a valid PR shape (isPr rejects, n
 	const repo = join(root, "repo");
 	mkdirSync(repo);
 	initRepo(repo);
-	const env = { ...process.env, PATH: fakePiPath(root), KAGE_SESSIONS_DIR: join(root, "sessions") };
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi") };
 	fakeGh(root, '{"unexpected":"shape"}'); // valid JSON, wrong shape -> isPr() must reject it
 	try {
 		run(["--name", "prbad"], { cwd: repo, env });
@@ -186,8 +213,8 @@ test("origin history is copied into the clone, and new clone work merges back wi
 	const repo = join(root, "repo");
 	mkdirSync(repo);
 	initRepo(repo);
-	const sessions = join(root, "sessions");
-	const env = { ...process.env, PATH: fakePiPath(root), KAGE_SESSIONS_DIR: sessions };
+	const sessions = join(root, "pi", "sessions");
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi") };
 
 	// seed the origin's session dir with one history file (encoded by the real toplevel path)
 	const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: repo, encoding: "utf8" }).stdout.trim();
@@ -218,6 +245,58 @@ test("origin history is copied into the clone, and new clone work merges back wi
 	}
 });
 
+test("--no-launch builds the clone and imports memory without launching the agent", () => {
+	const root = tmp();
+	const repo = join(root, "repo");
+	mkdirSync(repo);
+	initRepo(repo);
+	const sessions = join(root, "pi", "sessions");
+	// a fake pi that records (by touching a file) if it is ever launched
+	const bin = join(root, "bin");
+	mkdirSync(bin, { recursive: true });
+	const launched = join(root, "launched");
+	writeFileSync(join(bin, "pi"), `#!/bin/sh\ntouch "${launched}"\n`);
+	chmodSync(join(bin, "pi"), 0o755);
+	const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, PI_CODING_AGENT_DIR: join(root, "pi") };
+
+	const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: repo, encoding: "utf8" }).stdout.trim();
+	const originDir = join(sessions, enc(top));
+	mkdirSync(originDir, { recursive: true });
+	const histName = "2026-01-01T00-00-00-000Z_dddddddd-0000-0000-0000-000000000000.jsonl";
+	writeFileSync(join(originDir, histName), `${JSON.stringify({ type: "session", version: 3, id: "hist", cwd: top })}\n`);
+
+	const clone = join(root, "repo--nl1");
+	try {
+		const r = run(["--name", "nl1", "--no-launch"], { cwd: repo, env });
+		assert.equal(r.status, 0, r.stderr);
+		assert.ok(existsSync(clone), "clone created");
+		assert.ok(existsSync(join(clone, ".kage.json")), "marker written");
+		assert.ok(!existsSync(launched), "the agent CLI must NOT be launched with --no-launch");
+		// memory is still imported, regardless of launch mode
+		const cloneSessName = readdirSync(sessions).find((d) => d.endsWith("repo--nl1--"));
+		assert.ok(cloneSessName, "clone session dir exists");
+		assert.ok(existsSync(join(sessions, cloneSessName, histName)), "origin history imported even with --no-launch");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("--agent rejects an unknown agent before creating anything", () => {
+	const root = tmp();
+	const repo = join(root, "repo");
+	mkdirSync(repo);
+	initRepo(repo);
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi") };
+	try {
+		const r = run(["--name", "x", "--agent", "nope", "--no-launch"], { cwd: repo, env });
+		assert.equal(r.status, 1);
+		assert.match(r.stderr, /unknown agent: nope/);
+		assert.ok(!existsSync(join(root, "repo--x")), "no clone is created when the agent is invalid");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("finish --push pushes the branch then finishes", () => {
 	const root = tmp();
 	spawnSync("git", ["init", "-q", "--bare", join(root, "remote.git")]);
@@ -229,7 +308,7 @@ test("finish --push pushes the branch then finishes", () => {
 	spawnSync("git", ["add", "."], { cwd: repo });
 	spawnSync("git", ["commit", "-qm", "init"], { cwd: repo });
 	spawnSync("git", ["push", "-q", "-u", "origin", "HEAD"], { cwd: repo });
-	const env = { ...process.env, PATH: fakePiPath(root), KAGE_SESSIONS_DIR: join(root, "sessions") };
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi") };
 	const clone = join(root, "repo--p1");
 	try {
 		run(["--name", "p1"], { cwd: repo, env });
@@ -255,8 +334,8 @@ test("resuming a copied-in origin session and adding turns merges those turns ba
 	const repo = join(root, "repo");
 	mkdirSync(repo);
 	initRepo(repo);
-	const sessions = join(root, "sessions");
-	const env = { ...process.env, PATH: fakePiPath(root), KAGE_SESSIONS_DIR: sessions };
+	const sessions = join(root, "pi", "sessions");
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi") };
 
 	const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: repo, encoding: "utf8" }).stdout.trim();
 	const originDir = join(sessions, enc(top));
@@ -308,12 +387,225 @@ test("resuming a copied-in origin session and adding turns merges those turns ba
 	}
 });
 
+test("Claude Code: origin history imports into the clone and new clone sessions merge back", () => {
+	const root = tmp();
+	const repo = join(root, "repo");
+	mkdirSync(repo);
+	initRepo(repo);
+	const claudeHome = join(root, "claude");
+	const PATH = fakePiPath(root);
+	addFakeBin(root, "claude");
+	const env = { ...process.env, PATH, PI_CODING_AGENT_DIR: join(root, "pi"), CLAUDE_CONFIG_DIR: claudeHome };
+	const line = (o: unknown): string => JSON.stringify(o);
+
+	const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: repo, encoding: "utf8" }).stdout.trim();
+	const originDir = join(claudeHome, "projects", encClaude(top));
+	mkdirSync(originDir, { recursive: true });
+	const sid = "11111111-1111-1111-1111-111111111111";
+	writeFileSync(
+		join(originDir, `${sid}.jsonl`),
+		`${[
+			line({ type: "user", sessionId: sid, uuid: "u1", cwd: top, message: { role: "user", content: "hi" } }),
+			line({ type: "assistant", sessionId: sid, uuid: "u2", cwd: top, message: { role: "assistant", content: "yo" } }),
+		].join("\n")}\n`,
+	);
+
+	const clone = join(root, "repo--c1");
+	try {
+		const r = run(["--name", "c1", "--agent", "claude"], { cwd: repo, env });
+		assert.equal(r.status, 0, r.stderr);
+		assert.ok(existsSync(clone), "clone created");
+
+		// origin history imported into the clone's Claude project dir, with cwd rewritten to the clone
+		// (find the dir rather than encode it: git resolves the /var -> /private/var symlink)
+		const projects = join(claudeHome, "projects");
+		const cloneDirName = readdirSync(projects).find((d) => d.endsWith("repo--c1"));
+		assert.ok(cloneDirName, "the clone's Claude project dir exists");
+		const cloneDir = join(projects, cloneDirName);
+		assert.ok(existsSync(join(cloneDir, `${sid}.jsonl`)), "origin Claude session imported into the clone");
+		const imported = readFileSync(join(cloneDir, `${sid}.jsonl`), "utf8")
+			.split("\n")
+			.filter((l) => l.trim())
+			.map((l) => JSON.parse(l));
+		assert.ok(
+			imported.every((e) => e.cwd !== top && encClaude(e.cwd) === cloneDirName),
+			"imported lines have cwd rewritten to the clone's path",
+		);
+
+		// the clone creates a brand-new Claude session (cwd = the clone path kage actually used)
+		const cloneCwd = imported[0].cwd;
+		const nsid = "22222222-2222-2222-2222-222222222222";
+		writeFileSync(join(cloneDir, `${nsid}.jsonl`), `${line({ type: "user", sessionId: nsid, uuid: "n1", cwd: cloneCwd })}\n`);
+
+		run(["finish", "c1", "--force"], { cwd: repo, env });
+		const files = readdirSync(originDir);
+		assert.ok(files.includes(`${sid}.jsonl`), "origin keeps its original session");
+		assert.ok(files.includes(`${nsid}.jsonl`), "the clone's new session merged back into the origin");
+		const merged = readFileSync(join(originDir, `${nsid}.jsonl`), "utf8")
+			.split("\n")
+			.filter((l) => l.trim())
+			.map((l) => JSON.parse(l));
+		assert.ok(
+			merged.every((e) => e.cwd === top),
+			"merged-back lines have cwd rewritten to the origin",
+		);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("Claude Code: resuming a copied-in session merges new turns back as a fresh session", () => {
+	const root = tmp();
+	const repo = join(root, "repo");
+	mkdirSync(repo);
+	initRepo(repo);
+	const claudeHome = join(root, "claude");
+	const PATH = fakePiPath(root);
+	addFakeBin(root, "claude");
+	const env = { ...process.env, PATH, PI_CODING_AGENT_DIR: join(root, "pi"), CLAUDE_CONFIG_DIR: claudeHome };
+	const line = (o: unknown): string => JSON.stringify(o);
+
+	const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: repo, encoding: "utf8" }).stdout.trim();
+	const originDir = join(claudeHome, "projects", encClaude(top));
+	mkdirSync(originDir, { recursive: true });
+	const sid = "33333333-3333-3333-3333-333333333333";
+	writeFileSync(
+		join(originDir, `${sid}.jsonl`),
+		`${[line({ type: "user", sessionId: sid, uuid: "u1", cwd: top }), line({ type: "assistant", sessionId: sid, uuid: "u2", cwd: top })].join("\n")}\n`,
+	);
+
+	try {
+		run(["--name", "c2", "--agent", "claude"], { cwd: repo, env });
+		const projects = join(claudeHome, "projects");
+		const cloneDirName = readdirSync(projects).find((d) => d.endsWith("repo--c2"));
+		assert.ok(cloneDirName, "the clone's Claude project dir exists");
+		const cloneDir = join(projects, cloneDirName);
+		// resume the copied-in session in the clone and add a turn (cwd = the clone path kage used)
+		const firstLine = readFileSync(join(cloneDir, `${sid}.jsonl`), "utf8")
+			.split("\n")
+			.filter((l) => l.trim())[0];
+		assert.ok(firstLine, "the copied-in session has a first line");
+		const cloneCwd = JSON.parse(firstLine).cwd;
+		appendFileSync(join(cloneDir, `${sid}.jsonl`), `${line({ type: "user", sessionId: sid, uuid: "u3", cwd: cloneCwd })}\n`);
+
+		run(["finish", "c2", "--force"], { cwd: repo, env });
+
+		// origin's original session is left untouched
+		const orig = readFileSync(join(originDir, `${sid}.jsonl`), "utf8")
+			.split("\n")
+			.filter((l) => l.trim())
+			.map((l) => JSON.parse(l));
+		assert.deepEqual(
+			orig.map((e) => e.uuid),
+			["u1", "u2"],
+			"origin's original session must not be mutated",
+		);
+		assert.ok(
+			orig.every((e) => e.cwd === top && e.sessionId === sid),
+			"origin original keeps its cwd + sessionId",
+		);
+
+		// the resumed continuation comes back as a NEW, self-contained session with a fresh sessionId
+		const files = readdirSync(originDir).filter((f) => f.endsWith(".jsonl"));
+		assert.equal(files.length, 2, "a separate session file should be added");
+		const newFile = files.find((f) => f !== `${sid}.jsonl`);
+		assert.ok(newFile, "a separate session file should exist");
+		const newId = newFile.replace(/\.jsonl$/, "");
+		const added = readFileSync(join(originDir, newFile), "utf8")
+			.split("\n")
+			.filter((l) => l.trim())
+			.map((l) => JSON.parse(l));
+		assert.ok(
+			added.some((e) => e.uuid === "u3"),
+			"the appended turn is preserved",
+		);
+		assert.ok(
+			added.some((e) => e.uuid === "u1"),
+			"the new session is self-contained (keeps the copied prefix)",
+		);
+		assert.ok(
+			added.every((e) => e.sessionId === newId && e.cwd === top),
+			"every line is re-identified to the new session + origin cwd",
+		);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("Codex: finish rewrites only the clone's rollouts in place (origin + other clones untouched)", () => {
+	const root = tmp();
+	const repo = join(root, "repo");
+	mkdirSync(repo);
+	initRepo(repo);
+	const codexHome = join(root, "codex");
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi"), CODEX_HOME: codexHome };
+	const dayDir = join(codexHome, "sessions", "2026", "05", "01");
+	mkdirSync(dayDir, { recursive: true });
+	const rollout = (cwd: string, id: string) => `${JSON.stringify({ type: "session_meta", payload: { id, cwd } })}\n`;
+	const meta = (f: string) => JSON.parse(readFileSync(f, "utf8").split("\n")[0] ?? "");
+
+	const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: repo, encoding: "utf8" }).stdout.trim();
+	const clone = join(root, "repo--cx1");
+	try {
+		// a real kage clone, but no agent launched (Codex's common surface is the desktop/IDE app)
+		run(["--name", "cx1", "--agent", "codex", "--no-launch"], { cwd: repo, env });
+		const cloneCwd = realpathSync(clone);
+
+		const fOrigin = join(dayDir, "rollout-2026-05-01T00-00-00-origin.jsonl");
+		const fClone = join(dayDir, "rollout-2026-05-01T01-00-00-clone.jsonl");
+		const fOther = join(dayDir, "rollout-2026-05-01T02-00-00-other.jsonl");
+		writeFileSync(fOrigin, rollout(top, "origin-sess"));
+		writeFileSync(fClone, rollout(cloneCwd, "clone-sess"));
+		writeFileSync(fOther, rollout("/some/other/repo--zzz", "other-sess"));
+
+		run(["finish", "cx1", "--force"], { cwd: repo, env });
+
+		assert.equal(meta(fClone).payload.cwd, top, "the clone's rollout cwd is rewritten to the origin");
+		assert.equal(meta(fClone).payload.id, "clone-sess", "the rest of the rollout is left intact");
+		assert.equal(meta(fOrigin).payload.cwd, top, "the origin's own rollout is untouched");
+		assert.equal(meta(fOther).payload.cwd, "/some/other/repo--zzz", "another clone's rollout is untouched");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("Codex: rm discards only the clone's rollouts", () => {
+	const root = tmp();
+	const repo = join(root, "repo");
+	mkdirSync(repo);
+	initRepo(repo);
+	const codexHome = join(root, "codex");
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi"), CODEX_HOME: codexHome };
+	const dayDir = join(codexHome, "sessions", "2026", "05", "02");
+	mkdirSync(dayDir, { recursive: true });
+	const rollout = (cwd: string, id: string) => `${JSON.stringify({ type: "session_meta", payload: { id, cwd } })}\n`;
+
+	const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: repo, encoding: "utf8" }).stdout.trim();
+	const clone = join(root, "repo--cx2");
+	try {
+		run(["--name", "cx2", "--agent", "codex", "--no-launch"], { cwd: repo, env });
+		const cloneCwd = realpathSync(clone);
+
+		const fOrigin = join(dayDir, "rollout-2026-05-02T00-00-00-origin.jsonl");
+		const fClone = join(dayDir, "rollout-2026-05-02T01-00-00-clone.jsonl");
+		writeFileSync(fOrigin, rollout(top, "origin-sess"));
+		writeFileSync(fClone, rollout(cloneCwd, "clone-sess"));
+
+		run(["rm", "cx2", "--force"], { cwd: repo, env });
+
+		assert.ok(!existsSync(fClone), "the clone's rollout is discarded");
+		assert.ok(existsSync(fOrigin), "the origin's own rollout is kept");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("finish with no remote preserves the clone's commits into the origin as kage/<name>", () => {
 	const root = tmp();
 	const repo = join(root, "repo");
 	mkdirSync(repo);
 	initRepo(repo); // a plain repo with NO remote
-	const env = { ...process.env, PATH: fakePiPath(root), KAGE_SESSIONS_DIR: join(root, "sessions") };
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi") };
 	const clone = join(root, "repo--local");
 	try {
 		run(["--name", "local"], { cwd: repo, env });
@@ -343,7 +635,7 @@ test("clone names are sanitized to a git-ref-safe slug (folder + no-remote prese
 	const repo = join(root, "repo");
 	mkdirSync(repo);
 	initRepo(repo); // no remote
-	const env = { ...process.env, PATH: fakePiPath(root), KAGE_SESSIONS_DIR: join(root, "sessions") };
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi") };
 	const clone = join(root, "repo--foo-bar"); // "foo bar" -> slug "foo-bar"
 	try {
 		const r = run(["--name", "foo bar"], { cwd: repo, env });
@@ -370,7 +662,7 @@ test("rm discards a clone (with --force)", () => {
 	const repo = join(root, "repo");
 	mkdirSync(repo);
 	initRepo(repo);
-	const env = { ...process.env, PATH: fakePiPath(root), KAGE_SESSIONS_DIR: join(root, "sessions") };
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi") };
 	const clone = join(root, "repo--gone");
 	try {
 		run(["--name", "gone"], { cwd: repo, env });
@@ -397,7 +689,7 @@ test("rm accepts a clone path and works from outside any repo", () => {
 	const repo = join(root, "repo");
 	mkdirSync(repo);
 	initRepo(repo);
-	const env = { ...process.env, PATH: fakePiPath(root), KAGE_SESSIONS_DIR: join(root, "sessions") };
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi") };
 	const clone = join(root, "repo--p");
 	try {
 		run(["--name", "p"], { cwd: repo, env });

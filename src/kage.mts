@@ -16,7 +16,7 @@
  *   4. The origin is read-only to kage — it only copies out and writes session memory.
  *
  * Commands:
- *   kage [path] [--name x]                           clone repo + launch a fresh pi (no args: interactive)
+ *   kage [path] [--name x] [--agent id]              clone repo + launch an agent (no args: interactive)
  *   kage status [--pr]                               dashboard of clones (+ PR status via gh)
  *   kage finish [name] [--force]                     check -> merge memory back -> delete clone
  *   kage rm [name] [--force]                         discard a clone (no merge)
@@ -25,7 +25,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { Key } from "node:readline";
@@ -33,15 +33,13 @@ import readline from "node:readline";
 
 const VERSION = "0.3.8"; // keep in sync with package.json (enforced by test)
 const MARKER = ".kage.json";
-const SESSIONS = process.env.KAGE_SESSIONS_DIR || join(homedir(), ".pi", "agent", "sessions");
 const RECENT_SESSIONS = 5; // how many of the origin's most-recent sessions to copy into a clone
 
 // ── types ────────────────────────────────────────────────────────────────────
 interface Marker {
 	originRepo: string;
-	// Written by kage on create, but read defensively (old/hand-edited markers may omit them).
-	name?: string;
-	createdAt?: string;
+	name: string;
+	createdAt: string;
 }
 interface Clone {
 	dir: string;
@@ -122,18 +120,16 @@ function sh(cmd: string, args: string[], opts: { cwd?: string } = {}): ShResult 
 }
 const git = (cwd: string, args: string[]): ShResult => sh("git", args, { cwd });
 
-/** Absolute path -> pi's session dir name: /a/b -> --a-b-- */
-const encodeCwd = (abs: string): string => `--${abs.replace(/^\//, "").replace(/\//g, "-")}--`;
-const sessionDirFor = (repoAbs: string): string => join(SESSIONS, encodeCwd(repoAbs));
-
 function repoTopLevel(cwd: string): string | undefined {
 	const r = git(cwd, ["rev-parse", "--show-toplevel"]);
 	return r.ok ? r.out : undefined;
 }
 
-/** Validate parsed JSON is a kage marker (only originRepo is required; name/createdAt are best-effort). */
+/** Validate parsed JSON has the shape kage writes (all three fields are strings). */
 function isMarker(v: unknown): v is Marker {
-	return typeof v === "object" && v !== null && typeof (v as Record<string, unknown>).originRepo === "string";
+	if (typeof v !== "object" || v === null) return false;
+	const m = v as Record<string, unknown>;
+	return typeof m.originRepo === "string" && typeof m.name === "string" && typeof m.createdAt === "string";
 }
 
 function readMarker(dir: string): Marker | undefined {
@@ -242,7 +238,7 @@ function listClones(originRepo: string): Clone[] {
 	for (const name of readdirSync(parent)) {
 		const dir = join(parent, name);
 		const m = readMarker(dir);
-		if (m && m.originRepo === originRepo) out.push({ dir, name: m.name || basename(dir), marker: m });
+		if (m && m.originRepo === originRepo) out.push({ dir, name: m.name, marker: m });
 	}
 	return out;
 }
@@ -372,13 +368,13 @@ async function confirm(msg: string): Promise<boolean> {
 async function pickClone(action: string, name?: string): Promise<{ originRepo: string; clone: Clone } | null> {
 	const here = repoTopLevel(process.cwd());
 	const hm = here ? readMarker(here) : undefined;
-	if (here && hm && !name) return { originRepo: hm.originRepo, clone: { dir: here, name: hm.name || basename(here), marker: hm } };
+	if (here && hm && !name) return { originRepo: hm.originRepo, clone: { dir: here, name: hm.name, marker: hm } };
 	// If `name` resolves to a clone directory, use its marker directly — works from anywhere,
 	// even outside a repo (e.g. `kage rm ../app--fix` from the parent dir).
 	if (name) {
 		const asPath = resolve(name);
 		const pm = readMarker(asPath);
-		if (pm) return { originRepo: pm.originRepo, clone: { dir: asPath, name: pm.name || basename(asPath), marker: pm } };
+		if (pm) return { originRepo: pm.originRepo, clone: { dir: asPath, name: pm.name, marker: pm } };
 	}
 	const originRepo = hm ? hm.originRepo : here;
 	if (!originRepo) die("not a git repository (run inside the repo or clone, or pass a path to a clone)");
@@ -400,114 +396,301 @@ async function pickClone(action: string, name?: string): Promise<{ originRepo: s
 	return { originRepo, clone: chosen };
 }
 
-// ── copy the origin's session history into the clone ─────────────────────────
+// ── per-agent session stores: memory in on create, back out on finish ────────
 /**
- * Copies the origin's most recent session files (up to RECENT_SESSIONS, by mtime) into the
- * clone's session dir, so `pi` resume inside the clone surfaces them (you decide whether to
- * resume any of it). The clone itself opens a fresh session — kage never replays turns or
- * fabricates a "resumed" conversation. On merge-back an unchanged copy adds nothing; if you
- * resumed one and added turns, it comes back as a separate session (see mergeBack).
+ * A SessionStore moves one coding agent's session memory between the origin and a clone. kage
+ * syncs the *store* (keyed by working directory), so it is agnostic to which surface — CLI, IDE
+ * extension, desktop app — actually wrote the sessions: they all share one store.
  */
-function copyOriginHistory(originRepo: string, cloneDir: string): number {
-	const srcDir = sessionDirFor(originRepo);
-	if (!existsSync(srcDir)) return 0;
-	const destDir = sessionDirFor(cloneDir);
-	mkdirSync(destDir, { recursive: true });
-	const recent = readdirSync(srcDir)
-		.filter((f) => f.endsWith(".jsonl"))
-		.map((f) => ({ f, m: statSync(join(srcDir, f)).mtimeMs }))
-		.sort((a, b) => b.m - a.m)
-		.slice(0, RECENT_SESSIONS);
-	let n = 0;
-	for (const { f } of recent) {
-		const lines = readFileSync(join(srcDir, f), "utf8").split("\n");
-		try {
-			const header = JSON.parse(lines[0] ?? "") as SessionHeader;
-			header.cwd = cloneDir;
-			lines[0] = JSON.stringify(header);
-		} catch {
-			/* leave malformed header as-is */
-		}
-		writeFileSync(join(destDir, f), lines.join("\n"));
-		n++;
-	}
-	return n;
+interface SessionStore {
+	id: string;
+	/** Copy the origin's recent sessions into the clone so the agent can resume them there. */
+	importHistory(originRepo: string, cloneDir: string): number;
+	/** Merge the sessions the clone created back into the origin. Returns the count. */
+	mergeBack(cloneDir: string, originRepo: string): number;
+	/** Discard the clone's sessions without merging (used by `kage rm`). */
+	discard(cloneDir: string): void;
+	/** Does this store have any sessions for `cwd`? (status / re-enter menu) */
+	hasActivity(cwd: string): boolean;
 }
 
-// ── merge the clone's new sessions back into the origin ──────────────────────
 /**
- * Copies the clone's sessions into the origin's session dir:
- *   - a session the clone created (filename not in the origin) -> copied back whole.
- *   - a copied-in origin session left unchanged -> skipped (nothing new).
- *   - a copied-in origin session you resumed and added turns to -> written back as a NEW,
- *     self-contained session file, so the origin's original session (and the active leaf pi
- *     resumes) is never mutated. Costs a duplicated prefix; avoids hijacking the origin's leaf.
+ * The "cwd → directory" family (pi, Claude Code): each working directory gets its own session
+ * directory, so a clone starts empty and the origin's history must be copied in. One algorithm,
+ * parameterized at the few format-specific points where the agents differ.
  */
-function mergeBack(cloneDir: string, originRepo: string): number {
-	const srcDir = sessionDirFor(cloneDir);
-	if (!existsSync(srcDir)) return 0;
-	const destDir = sessionDirFor(originRepo);
-	mkdirSync(destDir, { recursive: true });
-	let n = 0;
-	for (const f of readdirSync(srcDir)) {
-		if (!f.endsWith(".jsonl")) continue;
-		const src = readFileSync(join(srcDir, f), "utf8")
-			.split("\n")
-			.filter((l) => l.trim());
-		if (src.length === 0) continue;
-		const dest = join(destDir, f);
+interface DirStoreConfig {
+	id: string;
+	baseDir(): string;
+	encodeCwd(abs: string): string;
+	/** Rewrite the cwd recorded in a session's lines, returning the new lines. */
+	setCwd(lines: string[], cwd: string): string[];
+	/** Per-line identity used to dedup records on merge-back (may throw on bad JSON). */
+	recordId(line: string): unknown;
+	/** A fresh, self-contained copy of a session under `cwd` (new identity + filename), used
+	 *  when a copied-in session was resumed and extended in the clone. */
+	reidentify(lines: string[], cwd: string): { filename: string; lines: string[] };
+}
 
-		if (!existsSync(dest)) {
-			let header: SessionHeader;
-			try {
-				header = JSON.parse(src[0] ?? "") as SessionHeader;
-			} catch {
-				continue;
+/**
+ * The cwd→directory algorithm, shared by pi and (later) Claude Code:
+ *   - importHistory: copy the origin dir's most-recent sessions into the clone dir (cwd rewritten).
+ *   - mergeBack: a session the clone created comes back whole; a copied-in origin session left
+ *     unchanged is skipped; a copied-in session the clone resumed and extended comes back as a
+ *     NEW self-contained file, so the origin's original (and the leaf it resumes) is untouched.
+ */
+function dirStore(cfg: DirStoreConfig): SessionStore {
+	const dirFor = (cwd: string): string => join(cfg.baseDir(), cfg.encodeCwd(cwd));
+	return {
+		id: cfg.id,
+		importHistory(originRepo, cloneDir) {
+			const srcDir = dirFor(originRepo);
+			if (!existsSync(srcDir)) return 0;
+			const destDir = dirFor(cloneDir);
+			mkdirSync(destDir, { recursive: true });
+			const recent = readdirSync(srcDir)
+				.filter((f) => f.endsWith(".jsonl"))
+				.map((f) => ({ f, m: statSync(join(srcDir, f)).mtimeMs }))
+				.sort((a, b) => b.m - a.m)
+				.slice(0, RECENT_SESSIONS);
+			let n = 0;
+			for (const { f } of recent) {
+				const lines = readFileSync(join(srcDir, f), "utf8").split("\n");
+				writeFileSync(join(destDir, f), cfg.setCwd(lines, cloneDir).join("\n"));
+				n++;
 			}
-			header.cwd = originRepo;
-			writeFileSync(dest, `${[JSON.stringify(header), ...src.slice(1)].join("\n")}\n`);
-			n++;
-			continue;
-		}
+			return n;
+		},
+		mergeBack(cloneDir, originRepo) {
+			const srcDir = dirFor(cloneDir);
+			if (!existsSync(srcDir)) return 0;
+			const destDir = dirFor(originRepo);
+			mkdirSync(destDir, { recursive: true });
+			let n = 0;
+			for (const f of readdirSync(srcDir)) {
+				if (!f.endsWith(".jsonl")) continue;
+				const src = readFileSync(join(srcDir, f), "utf8")
+					.split("\n")
+					.filter((l) => l.trim());
+				if (src.length === 0) continue;
+				const dest = join(destDir, f);
 
-		// A copied-in origin session. If the clone added records (e.g. you resumed it there),
-		// write the clone's full session back as a NEW, self-contained file — leaving the origin's
-		// original file (and the leaf pi resumes) untouched. Unchanged copies add nothing.
-		const have = new Set<unknown>();
-		for (const l of readFileSync(dest, "utf8").split("\n")) {
-			if (!l.trim()) continue;
+				// A session the clone created (not present in the origin) -> copy it back whole.
+				if (!existsSync(dest)) {
+					writeFileSync(dest, `${cfg.setCwd(src, originRepo).join("\n")}\n`);
+					n++;
+					continue;
+				}
+
+				// A copied-in origin session: write back only if the clone added records, and then as
+				// a NEW, self-contained file so the origin's original (and the leaf it resumes) is never
+				// mutated. An unchanged copy adds nothing.
+				const have = new Set<unknown>();
+				for (const l of readFileSync(dest, "utf8").split("\n")) {
+					if (!l.trim()) continue;
+					try {
+						have.add(cfg.recordId(l));
+					} catch {
+						/* ignore */
+					}
+				}
+				const hasNew = src.slice(1).some((l) => {
+					try {
+						return !have.has(cfg.recordId(l));
+					} catch {
+						return false;
+					}
+				});
+				if (!hasNew) continue;
+				const fresh = cfg.reidentify(src, originRepo);
+				writeFileSync(join(destDir, fresh.filename), `${fresh.lines.join("\n")}\n`);
+				n++;
+			}
 			try {
-				have.add((JSON.parse(l) as SessionHeader).id);
+				rmSync(srcDir, { recursive: true, force: true });
+			} catch {
+				/* ignore */
+			}
+			return n;
+		},
+		discard(cloneDir) {
+			try {
+				rmSync(dirFor(cloneDir), { recursive: true, force: true });
+			} catch {
+				/* ignore */
+			}
+		},
+		hasActivity(cwd) {
+			const d = dirFor(cwd);
+			try {
+				return existsSync(d) && readdirSync(d).some((f) => f.endsWith(".jsonl"));
+			} catch {
+				return false;
+			}
+		},
+	};
+}
+
+/** pi: one session per .jsonl, cwd in a first-line header, per-line `id` for dedup. */
+const piStore = dirStore({
+	id: "pi",
+	baseDir: () => join(process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"), "sessions"),
+	encodeCwd: (abs) => `--${abs.replace(/^\//, "").replace(/\//g, "-")}--`,
+	setCwd(lines, cwd) {
+		const out = [...lines];
+		try {
+			const header = JSON.parse(out[0] ?? "") as SessionHeader;
+			header.cwd = cwd;
+			out[0] = JSON.stringify(header);
+		} catch {
+			/* leave a malformed header as-is rather than drop the session */
+		}
+		return out;
+	},
+	recordId: (line) => (JSON.parse(line) as SessionHeader).id,
+	reidentify(lines, cwd) {
+		let header: SessionHeader = {};
+		try {
+			header = JSON.parse(lines[0] ?? "") as SessionHeader;
+		} catch {
+			/* synthesize a minimal header below */
+		}
+		const id = randomUUID();
+		const filename = `${new Date().toISOString().replace(/[:.]/g, "-")}_${id}.jsonl`;
+		return { filename, lines: [JSON.stringify({ ...header, id, cwd }), ...lines.slice(1)] };
+	},
+});
+
+/** Apply a JSON transform to every parseable line, leaving blank/malformed lines untouched. */
+function mapJsonLines(lines: string[], fn: (rec: Record<string, unknown>) => void): string[] {
+	return lines.map((l) => {
+		if (!l.trim()) return l;
+		try {
+			const rec = JSON.parse(l) as Record<string, unknown>;
+			fn(rec);
+			return JSON.stringify(rec);
+		} catch {
+			return l;
+		}
+	});
+}
+
+/** Claude Code: one session per <sessionId>.jsonl, with cwd + sessionId repeated on every line. */
+const claudeStore = dirStore({
+	id: "claude",
+	baseDir: () => join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "projects"),
+	encodeCwd: (abs) => abs.replace(/[^A-Za-z0-9]/g, "-"),
+	setCwd: (lines, cwd) =>
+		mapJsonLines(lines, (r) => {
+			if ("cwd" in r) r.cwd = cwd;
+		}),
+	recordId: (line) => (JSON.parse(line) as { uuid?: string }).uuid,
+	reidentify(lines, cwd) {
+		const id = randomUUID();
+		const out = mapJsonLines(lines, (r) => {
+			if ("sessionId" in r) r.sessionId = id;
+			if ("cwd" in r) r.cwd = cwd;
+		});
+		return { filename: `${id}.jsonl`, lines: out };
+	},
+});
+
+// ── Codex: flat, date-organized store (cwd is a content field, not a directory) ────
+/** First line of a Codex rollout: { type:"session_meta", payload:{ cwd, ... } }. */
+interface CodexMeta {
+	payload?: { cwd?: string };
+}
+const codexSessionsDir = (): string => join(process.env.CODEX_HOME || join(homedir(), ".codex"), "sessions");
+
+/** Read just the first line of a (possibly large) file, without loading the whole thing. */
+function readFirstLine(file: string): string {
+	const fd = openSync(file, "r");
+	try {
+		const buf = Buffer.alloc(8192);
+		let acc = "";
+		for (;;) {
+			const bytes = readSync(fd, buf, 0, buf.length, null);
+			if (bytes <= 0) return acc;
+			acc += buf.toString("utf8", 0, bytes);
+			const nl = acc.indexOf("\n");
+			if (nl >= 0) return acc.slice(0, nl);
+		}
+	} finally {
+		closeSync(fd);
+	}
+}
+
+/** Every rollout-*.jsonl under the Codex sessions tree, paired with its session_meta cwd. */
+function codexRollouts(): { file: string; cwd: string | undefined }[] {
+	const base = codexSessionsDir();
+	if (!existsSync(base)) return [];
+	const out: { file: string; cwd: string | undefined }[] = [];
+	const walk = (dir: string): void => {
+		for (const e of readdirSync(dir, { withFileTypes: true })) {
+			const p = join(dir, e.name);
+			if (e.isDirectory()) walk(p);
+			else if (e.isFile() && e.name.startsWith("rollout-") && e.name.endsWith(".jsonl")) {
+				let cwd: string | undefined;
+				try {
+					cwd = (JSON.parse(readFirstLine(p)) as CodexMeta).payload?.cwd;
+				} catch {
+					/* not a session_meta we understand */
+				}
+				out.push({ file: p, cwd });
+			}
+		}
+	};
+	walk(base);
+	return out;
+}
+
+/** Rewrite the cwd in a rollout's session_meta line; leave it as-is if it doesn't parse. */
+function setCodexCwd(line: string, cwd: string): string {
+	try {
+		const meta = JSON.parse(line) as CodexMeta;
+		if (meta.payload && typeof meta.payload === "object") meta.payload.cwd = cwd;
+		return JSON.stringify(meta);
+	} catch {
+		return line;
+	}
+}
+
+/**
+ * Codex stores every session in one global, date-organized tree shared by the CLI, the IDE
+ * extension and the desktop app; the cwd lives inside each rollout's session_meta. So origin and
+ * clone write into the same tree and are told apart by cwd — there's nothing to copy in, and
+ * "merging back" is rewriting the clone's rollouts' cwd to the origin in place.
+ */
+const codexStore: SessionStore = {
+	id: "codex",
+	// The resume picker is global, so the origin's history is already visible from the clone.
+	// (Newer, cwd-filtered Codex: widen with `codex resume --all`.)
+	importHistory: () => 0,
+	mergeBack(cloneDir, originRepo) {
+		let n = 0;
+		for (const { file, cwd } of codexRollouts()) {
+			if (cwd !== cloneDir) continue;
+			const lines = readFileSync(file, "utf8").split("\n");
+			lines[0] = setCodexCwd(lines[0] ?? "", originRepo);
+			writeFileSync(file, lines.join("\n"));
+			n++;
+		}
+		return n;
+	},
+	discard(cloneDir) {
+		for (const { file, cwd } of codexRollouts()) {
+			if (cwd !== cloneDir) continue;
+			try {
+				rmSync(file, { force: true });
 			} catch {
 				/* ignore */
 			}
 		}
-		const hasNew = src.slice(1).some((l) => {
-			try {
-				return !have.has((JSON.parse(l) as SessionHeader).id);
-			} catch {
-				return false;
-			}
-		});
-		if (!hasNew) continue;
-		let header: SessionHeader;
-		try {
-			header = JSON.parse(src[0] ?? "") as SessionHeader;
-		} catch {
-			continue;
-		}
-		const id = randomUUID();
-		const fname = `${new Date().toISOString().replace(/[:.]/g, "-")}_${id}.jsonl`;
-		writeFileSync(join(destDir, fname), `${[JSON.stringify({ ...header, id, cwd: originRepo }), ...src.slice(1)].join("\n")}\n`);
-		n++;
-	}
-	try {
-		rmSync(srcDir, { recursive: true, force: true });
-	} catch {
-		/* ignore */
-	}
-	return n;
-}
+	},
+	hasActivity(cwd) {
+		return codexRollouts().some((r) => r.cwd === cwd);
+	},
+};
 
 /**
  * We just deleted the clone we were running inside, so the parent shell is now in a
@@ -530,13 +713,69 @@ function leaveClone(originRepo: string): void {
 	info(paint.dim(`      enable auto cd-back: add  eval "$(kage shell-init)"  to your ~/.zshrc`));
 }
 
-function launchPi(cwd: string, args: string[]): void {
-	const r = spawnSync("pi", args, { cwd, stdio: "inherit" });
+// ── agent registry + launch (the detachable A) ─────────────────────────
+/** A spawnable terminal CLI for an agent. GUI-only agents have none — use --open. */
+interface AgentCli {
+	bin: string;
+	freshArgs: string[];
+	resumeArgs: string[];
+}
+/** An agent = its memory store (always) + an optional spawnable CLI. */
+interface Agent {
+	id: string;
+	store: SessionStore;
+	cli?: AgentCli;
+}
+// Registered agents. Memory sync iterates this list, so each new agent is one entry (+ its
+// SessionStore) with no change to any call site. Codex (a flat, cwd-in-content store) lands
+// here in Phase 3.
+const AGENTS: Agent[] = [
+	{ id: "pi", store: piStore, cli: { bin: "pi", freshArgs: [], resumeArgs: ["-c"] } },
+	{ id: "claude", store: claudeStore, cli: { bin: "claude", freshArgs: [], resumeArgs: ["--continue"] } },
+	{ id: "codex", store: codexStore, cli: { bin: "codex", freshArgs: [], resumeArgs: ["resume", "--last"] } },
+];
+const agentById = (id: string): Agent | undefined => AGENTS.find((a) => a.id === id);
+
+function launchCli(cli: AgentCli, cwd: string, args: string[]): void {
+	const r = spawnSync(cli.bin, args, { cwd, stdio: "inherit" });
 	if (r.error) {
 		const err = r.error as NodeJS.ErrnoException;
-		if (err.code === "ENOENT") die("pi not found (make sure it is installed and on your PATH)");
-		die(`failed to launch pi: ${err.message}`);
+		if (err.code === "ENOENT") die(`${cli.bin} not found (make sure it is installed and on your PATH)`);
+		die(`failed to launch ${cli.bin}: ${err.message}`);
 	}
+}
+
+/** Open the clone with an external command (e.g. `code <clone>`) and return immediately. */
+function launchOpen(cmd: string, cwd: string): void {
+	const parts = cmd.split(/\s+/).filter(Boolean);
+	const bin = parts[0];
+	if (!bin) die("--open needs a command, e.g. --open code");
+	const r = spawnSync(bin, [...parts.slice(1), cwd], { stdio: "inherit" });
+	if (r.error) {
+		const err = r.error as NodeJS.ErrnoException;
+		if (err.code === "ENOENT") die(`${bin} not found (make sure it is installed and on your PATH)`);
+		die(`failed to run --open ${cmd}: ${err.message}`);
+	}
+}
+
+/** Re-enter a clone: resume whichever agent has activity here (ask if several), else start fresh. */
+async function enterClone(cloneDir: string): Promise<void> {
+	const active = AGENTS.filter((a) => a.cli && a.store.hasActivity(cloneDir));
+	if (active.length === 0) {
+		const def = agentById(process.env.KAGE_AGENT ?? "pi") ?? AGENTS[0];
+		if (def?.cli) launchCli(def.cli, cloneDir, def.cli.freshArgs);
+		return;
+	}
+	let chosen = active[0];
+	if (active.length > 1) {
+		const idx = await select(
+			"Resume which agent?",
+			active.map((a) => a.id),
+		);
+		if (idx < 0) return info("cancelled");
+		chosen = active[idx];
+	}
+	if (chosen?.cli) launchCli(chosen.cli, cloneDir, chosen.cli.resumeArgs);
 }
 
 // ── subcommands ───────────────────────────────────────────────────────────────
@@ -562,8 +801,8 @@ async function cmdNew(argv: string[]): Promise<void> {
 			if (idx > 0) {
 				const clone = clones[idx - 1];
 				if (!clone) return info("cancelled");
-				const act = await select(`${clone.name}:`, ["Enter (resume pi)", "Finish (merge memory & remove)", "Remove (discard)", "Cancel"]);
-				if (act === 0) return launchPi(clone.dir, ["-c"]);
+				const act = await select(`${clone.name}:`, ["Enter (resume)", "Finish (merge memory & remove)", "Remove (discard)", "Cancel"]);
+				if (act === 0) return enterClone(clone.dir);
 				if (act === 1) return cmdFinish([clone.name]);
 				if (act === 2) return cmdRm([clone.name]);
 				return info("cancelled");
@@ -591,11 +830,18 @@ async function cmdNew(argv: string[]): Promise<void> {
 	const cloneDir = join(dirname(repoRoot), `${basename(repoRoot)}--${safe}`);
 	if (existsSync(cloneDir)) die(`directory already exists: ${cloneDir}`);
 
+	// Resolve the agent to launch up front, so a typo fails before we copy anything.
+	const agentId = strFlag(flags, "agent") ?? process.env.KAGE_AGENT ?? "pi";
+	const agent = agentById(agentId);
+	if (!agent) die(`unknown agent: ${agentId} (supported: ${AGENTS.map((a) => a.id).join(", ")})`);
+
 	const cp = await copyRepo(repoRoot, cloneDir);
 	if (!cp.ok) die(`copy failed: ${cp.err}`);
 
 	// kage does NOT create a branch — the clone stays on the origin's current branch.
-	const histN = copyOriginHistory(repoRoot, cloneDir);
+	// Set-based memory: each agent's store imports its own origin history (no-op when empty).
+	let histN = 0;
+	for (const a of AGENTS) histN += a.store.importHistory(repoRoot, cloneDir);
 	const marker: Marker = {
 		originRepo: repoRoot,
 		name: safe,
@@ -611,9 +857,20 @@ async function cmdNew(argv: string[]): Promise<void> {
 	info(paint.dim(`   when done: kage finish ${safe}`));
 	info("");
 
-	launchPi(cloneDir, []);
+	// Launch mode: --no-launch (just build), --open <cmd> (open + return), else spawn the CLI.
+	if (boolFlag(flags, "no-launch")) return;
+	const openCmd = strFlag(flags, "open");
+	if (openCmd || boolFlag(flags, "open")) {
+		if (!openCmd) die("--open needs a command, e.g. --open code");
+		launchOpen(openCmd, cloneDir);
+		info("");
+		info(`↩︎  opened ${cloneDir} with ${openCmd}. To finish: ${paint.bold(`kage finish ${safe}`)}`);
+		return;
+	}
+	if (!agent.cli) die(`agent ${agent.id} has no CLI to launch — use --open <cmd> or --no-launch`);
+	launchCli(agent.cli, cloneDir, agent.cli.freshArgs);
 	info("");
-	info(`↩︎  left the clone's pi. To finish: ${paint.bold(`kage finish ${safe}`)}`);
+	info(`↩︎  left the clone's ${agent.cli.bin}. To finish: ${paint.bold(`kage finish ${safe}`)}`);
 }
 
 async function cmdFinish(argv: string[]): Promise<void> {
@@ -676,7 +933,8 @@ async function cmdFinish(argv: string[]): Promise<void> {
 		info(`🌿 preserved the clone's commits in the origin as ${paint.cyan(target)}  (merge with: git merge ${target})`);
 	}
 
-	const n = mergeBack(clone.dir, originRepo);
+	let n = 0;
+	for (const a of AGENTS) n += a.store.mergeBack(clone.dir, originRepo);
 	try {
 		process.chdir(originRepo);
 	} catch {
@@ -709,11 +967,7 @@ async function cmdRm(argv: string[]): Promise<void> {
 	} catch {
 		/* ignore */
 	}
-	try {
-		rmSync(sessionDirFor(clone.dir), { recursive: true, force: true });
-	} catch {
-		/* ignore */
-	}
+	for (const a of AGENTS) a.store.discard(clone.dir);
 	rmSync(clone.dir, { recursive: true, force: true });
 	info(`🗑  Removed clone ${clone.name} (${clone.dir})`);
 	if (insideClone) leaveClone(originRepo);
@@ -739,7 +993,7 @@ function cmdList(argv: string[]): void {
 
 		// header: status glyph · name · branch · age
 		const glyph = s.dirty ? paint.yellow("●") : isSafeToClean(s) ? paint.green("✓") : paint.cyan("·");
-		const age = c.marker?.createdAt ? paint.dim(`created ${ago(c.marker.createdAt)}`) : "";
+		const age = paint.dim(`created ${ago(c.marker.createdAt)}`);
 		info(`  ${glyph} ${paint.bold(c.name)}  ${paint.cyan(s.branch)}  ${age}`);
 
 		// detail: working-tree state · sync · PR · safe-to-clean
@@ -846,7 +1100,8 @@ function cmdClones(): void {
 const HELP = `kage 🥷 — Shadow Clone Jutsu for your git repo
 
 Usage:
-  kage [path] [--name <x>]                             clone repo + launch a fresh pi
+  kage [path] [--name <x>] [--agent <id>]              clone repo + launch a fresh agent (default: pi)
+                                                       --open <cmd> | --no-launch: open it yourself instead
                                                        (no args inside a repo with clones: interactive menu)
   kage status [--pr]                                   dashboard of clones (--pr adds PR status via gh)
   kage finish [name] [--force] [--push] [--pr]         preserve work -> merge memory back -> delete clone
@@ -863,6 +1118,9 @@ With no args inside a repo that already has clones, kage opens an interactive me
 Options:
   --name <x>    name the clone folder /<repo>--<x> (default: kage-<timestamp>); skips the name prompt
                 (sanitized to a git-ref-safe slug, since the name is also used as a branch name)
+  --agent <id>  which agent CLI to launch (default: pi, or $KAGE_AGENT); memory still syncs for all agents
+  --open <cmd>  after cloning, run '<cmd> <clone>' (e.g. --open code) and return, instead of spawning a CLI
+  --no-launch   just create the clone (and import memory), print its path; you open it yourself
   --pr          (finish) push the branch and open a GitHub PR via gh, then finish
   --push        (finish) push the branch before finishing (implied by --pr)
   --force       skip the safety checks: uncommitted/unpushed guard (finish) or local-only guard (rm)
@@ -883,8 +1141,11 @@ Examples:
 
   kage pull .env                # inside a clone: copy a gitignored file back to the origin
 
-Env:
-  KAGE_SESSIONS_DIR   pi session storage (default: ~/.pi/agent/sessions)`;
+Env (each agent's own native var — kage just honors it, so kage and the agent always agree):
+  KAGE_AGENT            default agent to launch when --agent is omitted (default: pi)
+  PI_CODING_AGENT_DIR   pi's agent dir; sessions read from <it>/sessions (default: ~/.pi/agent)
+  CLAUDE_CONFIG_DIR     Claude Code's config dir; sessions read from <it>/projects (default: ~/.claude)
+  CODEX_HOME            Codex's home dir; sessions read from <it>/sessions (default: ~/.codex)`;
 
 async function main(): Promise<void> {
 	const [sub, ...rest] = process.argv.slice(2);
@@ -893,7 +1154,6 @@ async function main(): Promise<void> {
 		case "new":
 			return cmdNew(sub === "new" ? rest : process.argv.slice(2));
 		case "status":
-		case "list": // alias
 			return cmdList(rest);
 		case "finish":
 			return cmdFinish(rest);
@@ -901,8 +1161,7 @@ async function main(): Promise<void> {
 			return cmdRm(rest);
 		case "pull":
 			return cmdPull(rest);
-		case "shell-init":
-		case "completion": {
+		case "shell-init": {
 			process.stdout.write(`${SHELL_INIT}\n`);
 			// When a human runs this directly (stdout is a TTY, not captured by `$(...)`),
 			// the script just scrolled past unused — show how to actually activate it.
