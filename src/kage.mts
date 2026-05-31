@@ -602,19 +602,28 @@ interface CodexMeta {
 }
 const codexSessionsDir = (): string => join(process.env.CODEX_HOME || join(homedir(), ".codex"), "sessions");
 
-/** Read just the first line of a (possibly large) file, without loading the whole thing. */
+/**
+ * Read just the first line of a (possibly large) file, without loading the whole thing.
+ * Accumulates raw bytes and decodes once at the end — decoding each read as UTF-8 would corrupt
+ * any multibyte char split across an 8 KiB read boundary (real Codex session_meta lines are tens
+ * of KiB of mixed-script text).
+ */
 function readFirstLine(file: string): string {
 	const fd = openSync(file, "r");
 	try {
 		const buf = Buffer.alloc(8192);
-		let acc = "";
+		const chunks: Buffer[] = [];
 		for (;;) {
 			const bytes = readSync(fd, buf, 0, buf.length, null);
-			if (bytes <= 0) return acc;
-			acc += buf.toString("utf8", 0, bytes);
-			const nl = acc.indexOf("\n");
-			if (nl >= 0) return acc.slice(0, nl);
+			if (bytes <= 0) break;
+			const nl = buf.subarray(0, bytes).indexOf(0x0a); // newline byte
+			if (nl >= 0) {
+				chunks.push(Buffer.from(buf.subarray(0, nl)));
+				break;
+			}
+			chunks.push(Buffer.from(buf.subarray(0, bytes)));
 		}
+		return Buffer.concat(chunks).toString("utf8");
 	} finally {
 		closeSync(fd);
 	}

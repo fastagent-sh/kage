@@ -600,6 +600,35 @@ test("Codex: rm discards only the clone's rollouts", () => {
 	}
 });
 
+test("Codex: finish handles a multi-chunk (>8KiB) multibyte session_meta line", () => {
+	const root = tmp();
+	const repo = join(root, "repo");
+	mkdirSync(repo);
+	initRepo(repo);
+	const codexHome = join(root, "codex");
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi"), CODEX_HOME: codexHome };
+	const dayDir = join(codexHome, "sessions", "2026", "05", "03");
+	mkdirSync(dayDir, { recursive: true });
+	const pad = "\u4e2d".repeat(4000); // ~12 KiB of multibyte text -> first line spans several 8 KiB reads
+
+	const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: repo, encoding: "utf8" }).stdout.trim();
+	const clone = join(root, "repo--cx3");
+	try {
+		run(["--name", "cx3", "--agent", "codex", "--no-launch"], { cwd: repo, env });
+		const cloneCwd = realpathSync(clone);
+		const f = join(dayDir, "rollout-2026-05-03T00-00-00-big.jsonl");
+		writeFileSync(f, `${JSON.stringify({ type: "session_meta", payload: { id: "big", cwd: cloneCwd }, pad })}\n`);
+
+		run(["finish", "cx3", "--force"], { cwd: repo, env });
+
+		const meta = JSON.parse(readFileSync(f, "utf8").split("\n")[0] ?? "");
+		assert.equal(meta.payload.cwd, top, "cwd rewritten despite the >8KiB first line (readFirstLine read every chunk)");
+		assert.equal(meta.pad, pad, "multibyte content preserved byte-for-byte");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("finish with no remote preserves the clone's commits into the origin as kage/<name>", () => {
 	const root = tmp();
 	const repo = join(root, "repo");
