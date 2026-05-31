@@ -70,10 +70,12 @@ cd kage && npm install && npm link   # npm install 会从 src/ 编译出 bin/kag
 
 ### 其它 agent（Claude Code、Codex）
 
-kage 不只支持 pi。`--agent claude` 或 `--agent codex` 会改为启动对应 agent，记忆也照样流动 —— 通过该 agent
-**自己的** session 存储，所以无论你用 CLI、IDE 扩展还是桌面 App 都生效。两个 agent 甚至能并行处理同一个仓库
-（各开一个分身，或同一个分身里换着用）；`finish` 会把有新 session 的那些 store 各自合并回来。对于 kage 没法直接
-拉起的 GUI / 桌面 App，用 `--open <cmd>`（比如 `kage --open code`）或 `--no-launch` 只建分身、你自己去打开。
+kage 不只支持 pi。`--agent claude` 或 `--agent codex` 会改为启动对应 agent。对 **pi 和 Claude Code**，记忆照样
+流动 —— 通过该 agent **自己的** session 存储（无论用 CLI、IDE 扩展还是桌面 App），两个 agent 甚至能并行
+处理同一个仓库（各开一个分身，或同一个分身里换着用）；`finish` 会把有新 session 的那些 store 各自合并回来。
+**Codex 是 launch-only**：它的 session 存在一个由 sqlite 索引的全局 store 里，kage 无法干净地搬迁，所以
+`--agent codex` 给你隔离分身 + git 回流，而 Codex 历史通过 `codex resume --all` 依然全局可见。对于 kage 没法
+直接拉起的 GUI / 桌面 App，用 `--open <cmd>`（比如 `kage --open code`）或 `--no-launch` 只建分身、你自己去打开。
 `KAGE_AGENT` 设置默认 agent。
 
 ### Shell 集成（可选）
@@ -94,8 +96,9 @@ eval "$(kage shell-init)"   # 加到 ~/.zshrc 或 ~/.bashrc
   `git merge`）。由于 fetch 无法保留未提交的改动，`finish` 拒绝删除有改动的分身，除非加 `--force`。
 - **记忆经由该 agent 自己的 session 存储回流，绝不重放。** 创建时拷入原仓库最近 5 个该 agent 的 session —— 该
   agent 的 resume 选择器能看到它们，但分身本身打开的是**全新** session。`finish` 时，分身自己产生的 session 整份
-  拷回；你 resume 过的拷入 session 会作为一个独立的新 session 回来，原仓库的原始 session 绝不被改动。（Codex
-  的 store 是按 cwd 区分的单一全局树，所以无需拷入 —— 详见 `docs/multi-agent-design.md`。）
+  拷回；你 resume 过的拷入 session 会作为一个独立的新 session 回来，原仓库的原始 session 绝不被改动。（Codex 是
+  例外 —— 它的 session 在一个 sqlite 索引的全局 store 里，kage 无法干净搬迁，所以不管理 Codex 记忆；Codex
+  历史用 `codex resume --all` 查。详见 `docs/multi-agent-design.md`。）
 - **对 kage 而言原仓库是只读的。** 它只往外复制、只写 session 记忆 —— 即使原仓库里另有一个 session 正活跃，
   它也绝不碰原仓库的工作区。
 

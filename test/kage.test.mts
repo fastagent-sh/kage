@@ -532,7 +532,7 @@ test("Claude Code: resuming a copied-in session merges new turns back as a fresh
 	}
 });
 
-test("Codex: finish rewrites only the clone's rollouts in place (origin + other clones untouched)", () => {
+test("Codex: kage leaves the global store untouched (no memory re-homing)", () => {
 	const root = tmp();
 	const repo = join(root, "repo");
 	mkdirSync(repo);
@@ -541,89 +541,21 @@ test("Codex: finish rewrites only the clone's rollouts in place (origin + other 
 	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi"), CODEX_HOME: codexHome };
 	const dayDir = join(codexHome, "sessions", "2026", "05", "01");
 	mkdirSync(dayDir, { recursive: true });
-	const rollout = (cwd: string, id: string) => `${JSON.stringify({ type: "session_meta", payload: { id, cwd } })}\n`;
-	const meta = (f: string) => JSON.parse(readFileSync(f, "utf8").split("\n")[0] ?? "");
 
-	const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: repo, encoding: "utf8" }).stdout.trim();
 	const clone = join(root, "repo--cx1");
 	try {
-		// a real kage clone, but no agent launched (Codex's common surface is the desktop/IDE app)
 		run(["--name", "cx1", "--agent", "codex", "--no-launch"], { cwd: repo, env });
 		const cloneCwd = realpathSync(clone);
-
-		const fOrigin = join(dayDir, "rollout-2026-05-01T00-00-00-origin.jsonl");
-		const fClone = join(dayDir, "rollout-2026-05-01T01-00-00-clone.jsonl");
-		const fOther = join(dayDir, "rollout-2026-05-01T02-00-00-other.jsonl");
-		writeFileSync(fOrigin, rollout(top, "origin-sess"));
-		writeFileSync(fClone, rollout(cloneCwd, "clone-sess"));
-		writeFileSync(fOther, rollout("/some/other/repo--zzz", "other-sess"));
+		// a Codex rollout the clone produced (cwd = clone). kage must NOT touch Codex's global store —
+		// re-homing it would mean rewriting Codex's versioned sqlite index, which kage deliberately won't do.
+		const f = join(dayDir, "rollout-2026-05-01T00-00-00-x.jsonl");
+		const before = `${JSON.stringify({ type: "session_meta", payload: { id: "s", cwd: cloneCwd } })}\n`;
+		writeFileSync(f, before);
 
 		run(["finish", "cx1", "--force"], { cwd: repo, env });
 
-		assert.equal(meta(fClone).payload.cwd, top, "the clone's rollout cwd is rewritten to the origin");
-		assert.equal(meta(fClone).payload.id, "clone-sess", "the rest of the rollout is left intact");
-		assert.equal(meta(fOrigin).payload.cwd, top, "the origin's own rollout is untouched");
-		assert.equal(meta(fOther).payload.cwd, "/some/other/repo--zzz", "another clone's rollout is untouched");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test("Codex: rm discards only the clone's rollouts", () => {
-	const root = tmp();
-	const repo = join(root, "repo");
-	mkdirSync(repo);
-	initRepo(repo);
-	const codexHome = join(root, "codex");
-	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi"), CODEX_HOME: codexHome };
-	const dayDir = join(codexHome, "sessions", "2026", "05", "02");
-	mkdirSync(dayDir, { recursive: true });
-	const rollout = (cwd: string, id: string) => `${JSON.stringify({ type: "session_meta", payload: { id, cwd } })}\n`;
-
-	const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: repo, encoding: "utf8" }).stdout.trim();
-	const clone = join(root, "repo--cx2");
-	try {
-		run(["--name", "cx2", "--agent", "codex", "--no-launch"], { cwd: repo, env });
-		const cloneCwd = realpathSync(clone);
-
-		const fOrigin = join(dayDir, "rollout-2026-05-02T00-00-00-origin.jsonl");
-		const fClone = join(dayDir, "rollout-2026-05-02T01-00-00-clone.jsonl");
-		writeFileSync(fOrigin, rollout(top, "origin-sess"));
-		writeFileSync(fClone, rollout(cloneCwd, "clone-sess"));
-
-		run(["rm", "cx2", "--force"], { cwd: repo, env });
-
-		assert.ok(!existsSync(fClone), "the clone's rollout is discarded");
-		assert.ok(existsSync(fOrigin), "the origin's own rollout is kept");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test("Codex: finish handles a multi-chunk (>8KiB) multibyte session_meta line", () => {
-	const root = tmp();
-	const repo = join(root, "repo");
-	mkdirSync(repo);
-	initRepo(repo);
-	const codexHome = join(root, "codex");
-	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi"), CODEX_HOME: codexHome };
-	const dayDir = join(codexHome, "sessions", "2026", "05", "03");
-	mkdirSync(dayDir, { recursive: true });
-	const pad = "\u4e2d".repeat(4000); // ~12 KiB of multibyte text -> first line spans several 8 KiB reads
-
-	const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: repo, encoding: "utf8" }).stdout.trim();
-	const clone = join(root, "repo--cx3");
-	try {
-		run(["--name", "cx3", "--agent", "codex", "--no-launch"], { cwd: repo, env });
-		const cloneCwd = realpathSync(clone);
-		const f = join(dayDir, "rollout-2026-05-03T00-00-00-big.jsonl");
-		writeFileSync(f, `${JSON.stringify({ type: "session_meta", payload: { id: "big", cwd: cloneCwd }, pad })}\n`);
-
-		run(["finish", "cx3", "--force"], { cwd: repo, env });
-
-		const meta = JSON.parse(readFileSync(f, "utf8").split("\n")[0] ?? "");
-		assert.equal(meta.payload.cwd, top, "cwd rewritten despite the >8KiB first line (readFirstLine read every chunk)");
-		assert.equal(meta.pad, pad, "multibyte content preserved byte-for-byte");
+		assert.ok(existsSync(f), "kage does not delete the Codex rollout");
+		assert.equal(readFileSync(f, "utf8"), before, "kage leaves the Codex rollout byte-for-byte unchanged (no cwd re-homing)");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

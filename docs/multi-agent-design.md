@@ -1,6 +1,13 @@
 # Multi-agent design — making the Shadow Clone Jutsu work for pi, Claude Code, and Codex
 
 > Status: implemented (all three phases landed) · Author: design notes from the kage maintainers · Last updated: 2026-05-31
+>
+> **Correction (live testing, 2026-05-31):** the Codex adapter was redesigned. Live testing
+> against Codex 0.135 found that current Codex drives its cwd-filtered resume picker from a
+> versioned internal sqlite index (`state_5.sqlite`'s `threads.cwd`), not the rollout — so the
+> original "rewrite the rollout's cwd in place" approach orphans the session. kage now does **not**
+> manage Codex memory (Option A): `--agent codex` = isolation + git flow-back only; Codex history
+> stays global (`codex resume --all`). Sections below are updated; pi and Claude Code are unchanged.
 
 ## 0. Why this document exists
 
@@ -160,17 +167,21 @@ also a global `~/.codex/session_index.jsonl` (`{id, thread_name, updated_at}`, n
   Newer Codex versions filter the picker by cwd; those users run `codex resume --all`. We do
   **not** fabricate copy-in rollouts — that would require minting new UUIDs and editing
   `session_index.jsonl`, fighting Codex's storage model.
-- **`mergeBack`** = find rollouts with `payload.cwd === cloneDir` and rewrite that field to
-  the origin **in place**. No copy, no delete — the files already live in the global tree the
-  origin reads, so rewriting the cwd re-attributes them to the origin. `cloneDir` is a perfect
-  partition key: the origin's own concurrent sessions (`cwd === origin`) and other clones'
-  (`cwd === otherClone`) are never touched.
-- **`discard`** = delete rollouts with `payload.cwd === cloneDir`.
+- **`mergeBack` = no-op** (and **`discard` = no-op**). Originally this was an in-place
+  `payload.cwd` rewrite — correct for Codex **0.46** (no cwd index). But Codex **0.135** keys its
+  cwd-filtered resume picker off a *versioned internal sqlite index* (`state_5.sqlite`'s
+  `threads.cwd`), **not** the rollout. Rewriting only the rollout leaves that index pointing at
+  the now-deleted clone, so the "merged-back" session is orphaned and rollout/index disagree.
+  Updating the sqlite would couple kage to an undocumented, version-moving schema and need a
+  sqlite runtime dependency it avoids. **So kage does not manage Codex memory** (Option A).
+- **`hasActivity`** = scan rollouts for `payload.cwd === cwd` (never the sqlite); used only by
+  the re-enter menu while a clone still exists.
 
-> Codex needs none of the dedup / copy-in machinery, precisely because it never copies in.
-> This is why it is a separate implementation, not a DirStore parameterization. Only the
-> routing field (`session_meta.payload.cwd`) is rewritten; historical cwd strings embedded in
-> message text are left as-is (harmless).
+> Codex's global, sqlite-indexed store means kage can't cleanly re-home a clone's sessions to the
+> origin cwd. Rather than write Codex's internal DB, kage leaves the store entirely alone:
+> `--agent codex` gives the isolated clone + git flow-back, and Codex history stays globally
+> available via `codex resume --all`. The cwd-rewrite design was a Codex-0.46 assumption that
+> broke on 0.13x.
 
 ### 4.3 Adapter cheat-sheet
 
@@ -180,7 +191,7 @@ also a global `~/.codex/session_index.jsonl` (`{id, thread_name, updated_at}`, n
 | env | `PI_CODING_AGENT_DIR` | `CLAUDE_CONFIG_DIR` | `CODEX_HOME` |
 | keyed by | cwd (directory) | cwd (directory) | date (cwd is a field) |
 | import | copy-in + rewrite header cwd | copy-in + rewrite every-line cwd | **no-op** |
-| mergeBack | copy-out + dedup | copy-out + dedup (+ reidentify) | rewrite cwd in place |
+| mergeBack | copy-out + dedup | copy-out + dedup (+ reidentify) | **no-op** (not kage-managed) |
 | family | DirStore | DirStore | Codex |
 
 ## 5. Launch (the detachable A)
@@ -275,19 +286,17 @@ The marker needs **no change**.
 not under the clone dir) back into the origin's bucket and clear the clone's bucket → delete the
 clone directory.
 
-**finish** (Codex): `mergeBack` rewrites the `cwd` of `cwd === cloneDir` rollouts to the
-origin in place (the rollouts live under `~/.codex`, so deleting the clone directory does not
-touch them) → they now belong to the origin.
+**finish** (Codex): nothing — Codex memory is not kage-managed (its global, sqlite-indexed store
+can't be cleanly re-homed; see §4.2). The clone's Codex sessions stay in the global store and
+remain reachable via `codex resume --all`.
 
 ## 10. Edge cases & failure modes
 
-- **Codex concurrent origin session.** `mergeBack` only rewrites `cwd === cloneDir`; the
-  origin's own sessions (`cwd === origin`) are untouched.
+- **Codex store untouched.** kage never reads or writes Codex's global store on finish/rm, so
+  concurrent Codex sessions (the origin's, or other clones') are never at risk.
 - **Claude sidecar artifacts** (`subagents/`, `tool-results/`, file-history). MVP copies the
   main `<sessionId>.jsonl` only (matching today's pi behavior); spilled large tool outputs are
   not transferred. Documented fidelity trade-off, revisitable later.
-- **Embedded historical cwd** (Codex message text). Not rewritten — only the routing field is.
-  Harmless.
 - **Agent CLI not installed.** `--agent X` with `X` absent from `PATH` reuses today's ENOENT
   style failure: a clear "X not found" rather than a silent fallback.
 - **Import scoping.** `importHistory` only runs for stores that actually have origin history,
@@ -307,12 +316,13 @@ Each phase is independently shippable.
   every-line cwd rewrite, `reidentify`). **Acceptance: claude-flavored tests for import,
   mergeBack, and the resumed-copy-in case — fake `claude` binary + `CLAUDE_CONFIG_DIR`
   redirected to a temp dir + fabricated `.jsonl`.**
-- **Phase 3 — Codex store.** Scan + in-place cwd rewrite; `importHistory` no-op; `discard` by
-  cwd. Codex *is* registered with its CLI (`codex` / `codex resume --last`) like the others —
-  registering it is free (the launch step is generic) and serves CLI users, while desktop/IDE
-  users (the common Codex surface) reach for `--open`/`--no-launch`. **Acceptance: `CODEX_HOME`
-  redirected; assert `mergeBack` rewrites only this clone's cwd and never touches the origin's or
-  another clone's rollouts; assert `rm` discards only the clone's rollouts.**
+- **Phase 3 — Codex.** Registered with its CLI (`codex` / `codex resume --last`), but **not
+  memory-managed**: live testing against Codex 0.135 showed the cwd-filtered resume picker is
+  driven by a versioned internal sqlite index (`state_5.sqlite`'s `threads.cwd`), not the rollout,
+  so an in-place rollout rewrite orphans the session (see §4.2). `importHistory` / `mergeBack` /
+  `discard` are no-ops; `hasActivity` (rollout scan) powers the re-enter menu. **Acceptance:
+  `CODEX_HOME` redirected; assert `kage finish` leaves a seeded Codex rollout byte-for-byte
+  untouched.**
 
 ## 12. Testing strategy
 
@@ -327,8 +337,11 @@ No real agents are launched and there is no network access.
 
 **Decided:**
 - Agent selection: `--agent` + `KAGE_AGENT` + default `pi`; **no auto-detection**.
-- Codex import: rely on the global picker / `resume --all`; **no copy-in**; rewrite cwd on
-  finish.
+- Codex is **not memory-managed** (Option A): its global store keys the resume picker off a
+  versioned internal sqlite index (`state_5.sqlite`'s `threads.cwd`, found via live testing on
+  0.135), which kage won't rewrite (fragile + a runtime dep it avoids). `--agent codex` =
+  isolation + git flow-back; Codex history stays global (`codex resume --all`). An earlier draft
+  did an in-place rollout cwd rewrite — correct for 0.46, broken on 0.13x.
 - Codex *is* registered with a launchable CLI (`codex resume --last`) — a deliberate change
   from an earlier "no Codex launch" note: it costs one line and helps CLI users, while
   desktop/IDE users use `--open`/`--no-launch`.

@@ -75,12 +75,15 @@ have several clones and don't name one.
 
 ### Other agents (Claude Code, Codex)
 
-kage isn't pi-only. `--agent claude` or `--agent codex` launches that agent instead, and memory flows
-the same way — through that agent's own session store, so it works whether you drive it from the CLI,
-the IDE extension, or the desktop app. Two agents can even work one repo in parallel (a clone each, or
-different agents in one clone); `finish` merges back whichever stores have new sessions. For a
-GUI/desktop app kage can't spawn, use `--open <cmd>` (e.g. `kage --open code`) or `--no-launch` to just
-make the clone and open it yourself. `KAGE_AGENT` sets your default agent.
+kage isn't pi-only. `--agent claude` or `--agent codex` launches that agent instead. For **pi and Claude
+Code**, memory flows the same way — through that agent's own session store (whether you drive it from the
+CLI, the IDE extension, or the desktop app), and two agents can even work one repo in parallel (a clone
+each, or different agents in one clone); `finish` merges back whichever stores have new sessions.
+**Codex is launch-only**: its sessions live in one global, sqlite-indexed store kage can't cleanly
+re-home, so `--agent codex` gives you the isolated clone + git flow-back while your Codex history stays
+globally available via `codex resume --all`. For a GUI/desktop app kage can't spawn, use `--open <cmd>`
+(e.g. `kage --open code`) or `--no-launch` to just make the clone and open it yourself. `KAGE_AGENT` sets
+your default agent.
 
 ### Shell integration (optional)
 
@@ -104,8 +107,9 @@ completion for subcommands and clone names.
 - **Memory flows via the agent's own session store, never replayed.** On create, the origin's 5 most
   recent sessions for that agent are copied in — the agent's resume picker surfaces them, but the clone
   opens a **fresh** session. On `finish`, sessions the clone created come back whole; a copied-in session
-  you resumed comes back as a separate new session, so the origin's original is never mutated. (Codex's
-  store is one global tree keyed by cwd, so there's nothing to copy in — see `docs/multi-agent-design.md`.)
+  you resumed comes back as a separate new session, so the origin's original is never mutated. (Codex is the
+  exception — its sessions live in one global, sqlite-indexed store kage can't cleanly re-home, so kage
+  doesn't manage Codex memory; find Codex history with `codex resume --all`. See `docs/multi-agent-design.md`.)
 - **The origin is read-only to kage.** It only copies out and writes session memory — it never touches
   the origin's working tree, even while another session is live there.
 

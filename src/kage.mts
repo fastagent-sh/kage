@@ -595,7 +595,7 @@ const claudeStore = dirStore({
 	},
 });
 
-// ── Codex: flat, date-organized store (cwd is a content field, not a directory) ────
+// ── Codex: global store, deliberately NOT kage-managed (see codexStore for why) ──
 /** First line of a Codex rollout: { type:"session_meta", payload:{ cwd, ... } }. */
 interface CodexMeta {
 	payload?: { cwd?: string };
@@ -653,49 +653,21 @@ function codexRollouts(): { file: string; cwd: string | undefined }[] {
 	return out;
 }
 
-/** Rewrite the cwd in a rollout's session_meta line; leave it as-is if it doesn't parse. */
-function setCodexCwd(line: string, cwd: string): string {
-	try {
-		const meta = JSON.parse(line) as CodexMeta;
-		if (meta.payload && typeof meta.payload === "object") meta.payload.cwd = cwd;
-		return JSON.stringify(meta);
-	} catch {
-		return line;
-	}
-}
-
 /**
- * Codex stores every session in one global, date-organized tree shared by the CLI, the IDE
- * extension and the desktop app; the cwd lives inside each rollout's session_meta. So origin and
- * clone write into the same tree and are told apart by cwd — there's nothing to copy in, and
- * "merging back" is rewriting the clone's rollouts' cwd to the origin in place.
+ * Codex keeps every session in one global tree shared by all cwds, and (since 0.13x) keys its
+ * cwd-filtered resume picker off a *versioned internal sqlite index* (e.g. state_5.sqlite's
+ * `threads.cwd`), not the rollout. kage can't re-home a clone's sessions to the origin without
+ * rewriting that sqlite — fragile (the schema/db version moves between Codex releases) and a
+ * runtime dependency kage avoids. So kage does NOT manage Codex memory: `--agent codex` gives the
+ * isolated clone + git flow-back, and Codex history stays globally available via
+ * `codex resume --all`. import/mergeBack/discard are intentional no-ops; hasActivity (a rollout
+ * scan, never the sqlite) only powers the re-enter menu while a clone still exists.
  */
 const codexStore: SessionStore = {
 	id: "codex",
-	// The resume picker is global, so the origin's history is already visible from the clone.
-	// (Newer, cwd-filtered Codex: widen with `codex resume --all`.)
 	importHistory: () => 0,
-	mergeBack(cloneDir, originRepo) {
-		let n = 0;
-		for (const { file, cwd } of codexRollouts()) {
-			if (cwd !== cloneDir) continue;
-			const lines = readFileSync(file, "utf8").split("\n");
-			lines[0] = setCodexCwd(lines[0] ?? "", originRepo);
-			writeFileSync(file, lines.join("\n"));
-			n++;
-		}
-		return n;
-	},
-	discard(cloneDir) {
-		for (const { file, cwd } of codexRollouts()) {
-			if (cwd !== cloneDir) continue;
-			try {
-				rmSync(file, { force: true });
-			} catch {
-				/* ignore */
-			}
-		}
-	},
+	mergeBack: () => 0,
+	discard: () => {},
 	hasActivity(cwd) {
 		return codexRollouts().some((r) => r.cwd === cwd);
 	},
