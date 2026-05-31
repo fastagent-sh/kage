@@ -8,3 +8,7 @@ node_modules/
 
 # kage clone marker
 .kage.json
+
+# generated demo videos (README embeds demo.svg; these are for social posts only)
+/assets/*.mp4
+/assets/*.gif

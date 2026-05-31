@@ -8,37 +8,41 @@
 
 <p align="center"><img src="./assets/demo.svg" alt="kage demo" width="100%"></p>
 
-`kage` copies your repo into an isolated sibling folder, drops you straight into a **fresh**
-[pi](https://github.com/earendil-works) session to work in parallel, and when you're done merges the
-clone's new sessions back into the original and dispels the clone.
+`kage` runs multiple AI coding-agent sessions against one repo in parallel. The problem it solves:
+point two agents at the same checkout and they fight over one working tree — editing the same files,
+colliding on branches, tripping over each other's uncommitted changes.
+
+Instead of a shared [`git worktree`](https://git-scm.com/docs/git-worktree), kage gives each session
+its own **full copy** of the repo in a sibling folder — its own working tree, its own `.git`. Code
+comes back through git (a PR, or a branch fetch); the agent's session memory comes back through
+`~/.pi`. kage never copies a working tree back onto the origin, so concurrent sessions can't collide.
+And like a real Naruto shadow clone, the clone carries the agent's memory out and returns it on
+dispel (see [How it works](#how-it-works)).
 
 ```bash
 npm install -g pi-kage
 cd my-app
-kage                 # 🥷 clone → ../my-app--kage-<ts>, open a fresh pi (origin history resumable)
+kage                 # 🥷 clone -> ../my-app--kage-<ts>, open a fresh pi (origin history resumable)
 #   ...work in the clone: commit, push, open a PR, quit pi...
 kage finish          # 💨 merge the clone's new sessions back, delete the clone
 ```
 
 ---
 
-## The problem
+## Why a full copy instead of `git worktree`?
 
-Running **multiple agent sessions on the same repo at once** is a mess: they edit the same files,
-fight over the working tree, and collide on branches. You end up babysitting merge conflicts
-instead of shipping.
+A worktree is the obvious way to get a second working directory, but every worktree shares the
+repo's single `.git`. For parallel agents that shared `.git` is the problem:
 
-## The idea
+- you can't check out the same branch in two worktrees;
+- stash, refs, config, and the index are shared;
+- a worktree is a clean checkout — no `node_modules`, `.env`, `.venv`, or build cache — so each one
+  needs a full setup pass before the agent can build or run anything.
 
-A shadow clone is a **full, independent copy** of the repo — like a second engineer on a second
-machine. Each parallel session gets its own working tree, branch, commits, and PR. Code merges the
-normal way: on GitHub. No local collisions, ever. And like a real Naruto shadow clone, it carries
-your memory out and returns it on dispel (see [How it works](#how-it-works)).
-
-Why a full folder copy instead of `git worktree`? A worktree shares one `.git`, which means you
-can't check out the same branch twice, you share stash/refs, and you get a *fresh* checkout with no
-`node_modules` / `.env` / build cache. A real copy avoids all of that. On macOS APFS the copy is a
-`cp -c` clonefile (copy-on-write): near-instant and space-free until files diverge.
+A full copy has none of those constraints: independent `.git`, independent branches, and every
+untracked or gitignored file is already in place. The price is disk and copy time — which on macOS
+APFS kage avoids with a `cp -c` clonefile (copy-on-write): the clone is near-instant and uses no
+extra space until files actually diverge. Non-reflink filesystems fall back to a full recursive copy.
 
 ## Install
 
