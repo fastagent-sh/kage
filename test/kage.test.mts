@@ -30,10 +30,13 @@ function run(args: string[], opts: RunOpts = {}): SpawnSyncReturns<string> {
 	// never reads or writes the real ~/.codex or ~/.claude. Explicit values in opts.env win.
 	const env = opts.env;
 	if (env?.PI_CODING_AGENT_DIR) {
+		// Pin every agent store + kage's own config under the test's temp home. Force (not ??=): a value
+		// the runner exports — GitHub's Linux runners export XDG_CONFIG_HOME — would otherwise survive the
+		// `...process.env` spread and let one test's `kage config` leak into the next (e.g. agent=claude).
 		const home = dirname(env.PI_CODING_AGENT_DIR);
-		env.CODEX_HOME ??= join(home, "codex");
-		env.CLAUDE_CONFIG_DIR ??= join(home, "claude");
-		env.XDG_CONFIG_HOME ??= join(home, "config"); // keep `kage config` off the real ~/.config/kage
+		env.CODEX_HOME = join(home, "codex");
+		env.CLAUDE_CONFIG_DIR = join(home, "claude");
+		env.XDG_CONFIG_HOME = join(home, "config");
 	}
 	return spawnSync("node", [CLI, ...args], { encoding: "utf8", ...opts });
 }
