@@ -15,12 +15,16 @@ can't collide.
 
 ```bash
 npm install -g pi-kage
-eval "$(kage shell-init)"   # let kage cd your shell in & out (recommended)
+eval "$(kage shell-init)"   # so kage can cd your shell in & out (recommended)
+
 cd my-app
-kage            # 🥷 copy → ../my-app--kage-<ts>, and cd you into it
-#   ...work (pi/claude/codex, or whatever), commit, push, open a PR...
-kage finish     # 💨 merge the clone's sessions back, delete the clone, cd you home
+kage --agent pi   # 🥷 copy → ../my-app--<name>, cd in, open a fresh pi
+#   ...edit · commit · push · open a PR · quit pi...
+kage finish       # 💨 merge pi's session memory back, delete the clone, cd you home
 ```
+
+Launching an agent is optional: bare `kage` just makes the clone and cd's you in — `--agent` (or
+`kage config agent`, or `$KAGE_AGENT`) is what tells kage to start one for you.
 
 Code comes back through git (a PR, or a branch fetch). The agent's session memory comes back through
 its own session store (`~/.pi`, `~/.claude`, or `~/.codex`). kage never copies a working tree back onto
@@ -63,9 +67,9 @@ cd kage && npm install && npm link   # npm install builds bin/kage.mjs from src/
 
 | Command | Run from | What it does |
 |---|---|---|
-| `kage [path] [--name x] [--agent pi\|claude\|codex]` | origin repo | Copy the repo to `../<repo>--<name>` (default `kage-<ts>`), copy in the origin's 5 most recent sessions for that agent (resumable, never replayed), and launch a **fresh** agent (pi by default). `--name` only names the folder — kage never creates a branch. No args + existing clones → interactive menu. |
+| `kage [path] [--name x] [--agent <id>]` | origin repo | Copy the repo to `../<repo>--<name>` (default `kage-<ts>`), import the origin's recent sessions (resumable, never replayed), **cd you into the clone**, and launch an agent only if you named one (`--agent`/`$KAGE_AGENT`/`kage config agent`) — else just drop you in. `--name` only names the folder; kage never creates a branch. No args + existing clones → interactive menu. |
 | `kage status [--pr]` | origin repo | Dashboard: branch, dirty/clean, ahead/behind, "safe to clean". `--pr` adds PR state via `gh`. |
-| `kage finish [name] [--force] [--push] [--pr]` | origin / inside clone | Refuse if the clone has uncommitted or unpushed work, merge its **new** sessions back, delete it. `--push` pushes the branch first; `--pr` pushes + opens a PR via `gh`; `--force` skips the guard. |
+| `kage finish [name] [--force] [--push] [--pr]` | origin / inside clone | Preserve the clone's commits (push, or with no remote a local `kage/<name>` branch), merge its **new** sessions back, delete it, cd you home. Refuses uncommitted changes — and, with a remote, unpushed commits — unless `--force`. `--push`/`--pr` push first (and open a PR via `gh`). |
 | `kage rm [name] [--force]` | origin / inside clone | Discard a clone **without** merging memory. Refuses local-only work unless `--force`. |
 | `kage pull <path...>` | inside a clone | Copy specific files/dirs (even gitignored, e.g. a generated `.env`) back to the origin. |
 | `kage config [<key> [value]] [--unset]` | anywhere | Get/set persisted defaults. One key today: `agent` (your default launch agent), validated against known agents. |
@@ -104,7 +108,7 @@ own store, so they never collide, and `finish` merges back whichever stores gain
 (e.g. `kage --open code` runs `code <clone>`), or `--no-launch` to just make the clone and print its path.
 Memory still flows for any agent whose store kage manages, no matter how you opened the clone.
 
-## Shell integration (optional)
+## Shell integration (recommended)
 
 ```bash
 eval "$(kage shell-init)"   # add to ~/.zshrc or ~/.bashrc

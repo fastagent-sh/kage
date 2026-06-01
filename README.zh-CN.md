@@ -15,11 +15,15 @@
 ```bash
 npm install -g pi-kage
 eval "$(kage shell-init)"   # 让 kage 能 cd 你的 shell 进 / 出（推荐）
+
 cd my-app
-kage            # 🥷 复制 → ../my-app--kage-<ts>，并把你 cd 进去
-#   ...干活（用 pi/claude/codex 或随便什么）、提交、push、开 PR...
-kage finish     # 💨 把分身的 session 合并回来，删掉分身，再把你 cd 回原仓库
+kage --agent pi   # 🥷 复制 → ../my-app--<name>，cd 进去，开一个全新的 pi
+#   ...编辑 · 提交 · push · 开 PR · 退出 pi...
+kage finish       # 💨 把 pi 的 session 记忆合并回来，删掉分身，再把你 cd 回原仓库
 ```
+
+启动 agent 是可选的：纯跑 `kage` 只是建好分身并把你 cd 进去 —— `--agent`（或 `kage config agent`、或
+`$KAGE_AGENT`）才是告诉 kage 替你启动一个的开关。
 
 代码通过 git 回流（一个 PR，或者 fetch 分支）；agent 的 session 记忆通过它自己的 session 存储（`~/.pi`、
 `~/.claude` 或 `~/.codex`）回流。kage 从不把工作区复制回原仓库 —— 这正是它存在的意义。
@@ -59,9 +63,9 @@ cd kage && npm install && npm link   # npm install 会从 src/ 编译出 bin/kag
 
 | 命令 | 在哪运行 | 作用 |
 |---|---|---|
-| `kage [path] [--name x] [--agent pi\|claude\|codex]` | 原仓库 | 把仓库复制到 `../<repo>--<name>`（默认 `kage-<ts>`），拷入原仓库最近 5 个该 agent 的 session（可 resume，绝不重放），并启动一个**全新**的 agent（默认 pi）。`--name` 只命名文件夹 —— kage 从不建分支。无参数 + 已有分身 → 进入交互菜单。 |
+| `kage [path] [--name x] [--agent <id>]` | 原仓库 | 把仓库复制到 `../<repo>--<name>`（默认 `kage-<ts>`），拷入原仓库最近的 session（可 resume，绝不重放），**把你 cd 进分身**，仅当你指定了 agent（`--agent`/`$KAGE_AGENT`/`kage config agent`）才启动它 —— 否则只把你放进去。`--name` 只命名文件夹；kage 从不建分支。无参数 + 已有分身 → 进入交互菜单。 |
 | `kage status [--pr]` | 原仓库 | 仪表盘：分支、是否有改动、ahead/behind、是否「可安全清理」。`--pr` 通过 `gh` 附带 PR 状态。 |
-| `kage finish [name] [--force] [--push] [--pr]` | 原仓库 / 分身内 | 若分身有未提交或未 push 的改动则拒绝，把它**新产生**的 session 合并回来，再删除它。`--push` 先 push 分支；`--pr` push 并通过 `gh` 开 PR；`--force` 跳过检查。 |
+| `kage finish [name] [--force] [--push] [--pr]` | 原仓库 / 分身内 | 先保留分身的 commit（push，或无 remote 时存成原仓库本地分支 `kage/<name>`），把它**新产生**的 session 合并回来，删掉分身，再把你 cd 回原仓库。有未提交改动 —— 以及有 remote 时还有未 push 的 commit —— 则拒绝，除非加 `--force`。`--push`/`--pr` 先 push（并通过 `gh` 开 PR）。 |
 | `kage rm [name] [--force]` | 原仓库 / 分身内 | **不**合并记忆地丢弃一个分身。若有仅存在于本地的工作则拒绝，除非加 `--force`。 |
 | `kage pull <path...>` | 分身内 | 把指定文件/目录（包括被 gitignore 的，比如生成的 `.env`）按相同相对路径拷回原仓库。 |
 | `kage config [<key> [value]] [--unset]` | 任意位置 | 读取/设置持久化默认值。目前只有一个 key：`agent`（默认启动的 agent），会校验是否为已知 agent。 |
@@ -97,7 +101,7 @@ session 拷到原仓库的目录、再拷回来。Codex 用的是一个由 sqlit
 会执行 `code <clone>`），或用 `--no-launch` 只建分身并打印路径。无论你怎么打开分身，只要是 kage 管理其
 store 的 agent，记忆照样回流。
 
-## Shell 集成（可选）
+## Shell 集成（推荐）
 
 ```bash
 eval "$(kage shell-init)"   # 加到 ~/.zshrc 或 ~/.bashrc
