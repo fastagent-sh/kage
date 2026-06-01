@@ -33,6 +33,7 @@ function run(args: string[], opts: RunOpts = {}): SpawnSyncReturns<string> {
 		const home = dirname(env.PI_CODING_AGENT_DIR);
 		env.CODEX_HOME ??= join(home, "codex");
 		env.CLAUDE_CONFIG_DIR ??= join(home, "claude");
+		env.XDG_CONFIG_HOME ??= join(home, "config"); // keep `kage config` off the real ~/.config/kage
 	}
 	return spawnSync("node", [CLI, ...args], { encoding: "utf8", ...opts });
 }
@@ -292,6 +293,85 @@ test("--agent rejects an unknown agent before creating anything", () => {
 		assert.equal(r.status, 1);
 		assert.match(r.stderr, /unknown agent: nope/);
 		assert.ok(!existsSync(join(root, "repo--x")), "no clone is created when the agent is invalid");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("default (no agent named): kage cd's the shell into the new clone and launches nothing", () => {
+	const root = tmp();
+	const repo = join(root, "repo");
+	mkdirSync(repo, { recursive: true });
+	initRepo(repo);
+	// fake CLIs that record if they run, so we can prove nothing was auto-launched
+	const bin = join(root, "bin");
+	mkdirSync(bin, { recursive: true });
+	for (const name of ["pi", "claude"]) {
+		writeFileSync(join(bin, name), `#!/bin/sh\ntouch "${join(root, `${name}.ran`)}"\n`);
+		chmodSync(join(bin, name), 0o755);
+	}
+	const cdFile = join(root, "cd");
+	const env: NodeJS.ProcessEnv = {
+		...process.env,
+		PATH: `${bin}:${process.env.PATH}`,
+		PI_CODING_AGENT_DIR: join(root, "pi"),
+		KAGE_CD_FILE: cdFile, // simulate the shell wrapper being active
+	};
+	delete env.KAGE_AGENT;
+	const top = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: repo, encoding: "utf8" }).stdout.trim();
+	const clone = join(dirname(top), "repo--d1");
+	try {
+		const r = run(["--name", "d1"], { cwd: repo, env });
+		assert.equal(r.status, 0, r.stderr);
+		assert.ok(existsSync(clone), "clone created");
+		assert.ok(!existsSync(join(root, "pi.ran")), "no agent auto-launched (pi)");
+		assert.ok(!existsSync(join(root, "claude.ran")), "no agent auto-launched (claude)");
+		assert.equal(readFileSync(cdFile, "utf8"), clone, "the shell is cd'd into the new clone via KAGE_CD_FILE");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("config agent: a persisted default is used when --agent/$KAGE_AGENT are absent", () => {
+	const root = tmp();
+	const repo = join(root, "repo");
+	mkdirSync(repo, { recursive: true });
+	initRepo(repo);
+	const bin = join(root, "bin");
+	mkdirSync(bin, { recursive: true });
+	for (const name of ["pi", "claude"]) {
+		writeFileSync(join(bin, name), `#!/bin/sh\ntouch "${join(root, `${name}.ran`)}"\n`);
+		chmodSync(join(bin, name), 0o755);
+	}
+	const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${bin}:${process.env.PATH}`, PI_CODING_AGENT_DIR: join(root, "pi") };
+	delete env.KAGE_AGENT;
+	try {
+		// persist claude as the default; a later clone (no flag/env) should launch it, not pi (registry order would pick pi)
+		const set = run(["config", "agent", "claude"], { cwd: repo, env });
+		assert.equal(set.status, 0, set.stderr);
+		const r = run(["--name", "cfg"], { cwd: repo, env });
+		assert.equal(r.status, 0, r.stderr);
+		assert.ok(existsSync(join(root, "claude.ran")), "the persisted config agent (claude) was launched");
+		assert.ok(!existsSync(join(root, "pi.ran")), "did not fall back to pi's registry-order default");
+		// $KAGE_AGENT still overrides the persisted config
+		const env2: NodeJS.ProcessEnv = { ...env, KAGE_AGENT: "pi" };
+		run(["--name", "cfg2"], { cwd: repo, env: env2 });
+		assert.ok(existsSync(join(root, "pi.ran")), "$KAGE_AGENT overrides the persisted config");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("config agent: rejects an unknown agent id (no silent junk written)", () => {
+	const root = tmp();
+	const repo = join(root, "repo");
+	mkdirSync(repo, { recursive: true });
+	initRepo(repo);
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi") };
+	try {
+		const r = run(["config", "agent", "nope"], { cwd: repo, env });
+		assert.equal(r.status, 1);
+		assert.match(r.stderr, /unknown agent: nope/);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

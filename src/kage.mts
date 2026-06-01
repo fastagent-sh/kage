@@ -2,25 +2,23 @@
 /**
  * kage 🥷 — cast the Shadow Clone Jutsu on a git repo.
  *
- * Copy the current repo into an isolated sibling folder (its own working tree and .git),
- * drop straight into `pi` to work in parallel, then `kage finish` merges the session memory
- * back into the original and deletes the clone.
+ * Copy the current repo into an isolated sibling folder (its own working tree and .git) and cd
+ * into it; optionally launch a coding agent there. `kage finish` merges the agent's session memory
+ * back into the origin and deletes the clone. Run `kage --help` for the command surface.
  *
  * Design invariants:
  *   1. Isolation   — a clone is a full independent copy (its own .git).
  *   2. Code flows back via git only — a remote PR, or (no remote) a fetch of the clone's branch
  *      into the origin's git on finish; kage never copies the working tree back onto the origin.
- *   3. Memory flows via ~/.pi — the origin's session history is copied into the clone on create
+ *   3. Memory flows via each agent's own session store (pi/Claude Code keyed by cwd; Codex is
+ *      launch-only, not kage-managed) — the origin's history is copied into the clone on create
  *      (resumable, never replayed) and the clone's new sessions are merged back on finish. These
- *      are session .jsonl files, not the working tree, so there's no collision.
- *   4. The origin is read-only to kage — it only copies out and writes session memory.
+ *      are session files, not the working tree, so there's no collision.
+ *   4. The origin's working tree is read-only to kage — it only copies out, writes the kage/<name>
+ *      branch into the origin's git (no-remote finish), and writes session memory.
  *
- * Commands:
- *   kage [path] [--name x] [--agent id]              clone repo + launch an agent (no args: interactive)
- *   kage status [--pr]                               dashboard of clones (+ PR status via gh)
- *   kage finish [name] [--force]                     check -> merge memory back -> delete clone
- *   kage rm [name] [--force]                         discard a clone (no merge)
- *   kage pull <path...>                              (inside a clone) copy files back to the origin
+ * Launch is opt-in and detachable (see docs/multi-agent-design.md): with no agent named
+ * (--agent / $KAGE_AGENT / `kage config agent`), kage just creates the clone and cd's you in.
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -141,6 +139,40 @@ function readMarker(dir: string): Marker | undefined {
 	} catch {
 		return undefined;
 	}
+}
+
+// ── global config (~/.config/kage/config.json) ──────────────────────────
+// kage's only persisted state besides the per-clone marker. Honors $XDG_CONFIG_HOME so it's
+// overridable (and hermetic in tests) without a kage-specific env var. Launch is opt-in; the agent
+// to launch (if any) is --agent > $KAGE_AGENT > config.agent, else kage just cd's you into the clone.
+interface Config {
+	agent?: string;
+}
+const CONFIG_KEYS = ["agent"] as const;
+type ConfigKey = (typeof CONFIG_KEYS)[number];
+
+function configPath(): string {
+	const base = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+	return join(base, "kage", "config.json");
+}
+function readConfig(): Config {
+	const p = configPath();
+	if (!existsSync(p)) return {};
+	try {
+		const v: unknown = JSON.parse(readFileSync(p, "utf8"));
+		if (typeof v !== "object" || v === null) return {};
+		const o = v as Record<string, unknown>;
+		const cfg: Config = {};
+		if (typeof o.agent === "string") cfg.agent = o.agent;
+		return cfg;
+	} catch {
+		return {};
+	}
+}
+function writeConfig(cfg: Config): void {
+	const p = configPath();
+	mkdirSync(dirname(p), { recursive: true });
+	writeFileSync(p, `${JSON.stringify(cfg, null, 2)}\n`);
 }
 
 /** Copy a whole directory: clonefile on macOS, reflink on Linux, plain copy as fallback. */
@@ -300,6 +332,16 @@ function prInfo(dir: string, branch: string): Pr | undefined {
 /** True when the clone has no local-only work (clean + pushed) -> safe to remove. */
 const isSafeToClean = (s: CloneStatus): boolean => !s.dirty && s.hasUpstream && s.ahead === 0;
 
+/** Single-glyph clone state, shared by the dashboard and the menu/picker so a clone always reads the
+ *  same: ● uncommitted · ↑ clean but unpushed/local-only · ✓ clean & pushed (safe to remove). */
+const statusTag = (s: CloneStatus): string => (s.dirty ? paint.yellow("●") : isSafeToClean(s) ? paint.green("✓") : paint.yellow("↑"));
+
+/** One-line clone label for the menu and the finish/rm picker: name, branch, state tag. */
+function cloneLabel(c: Clone): string {
+	const s = cloneStatus(c.dir);
+	return `${c.name}  ${paint.cyan(s.branch)} ${statusTag(s)}`;
+}
+
 /** True if the clone has committed work that lives only in the clone (not on a remote, not yet in the origin). */
 function hasUnpreservedCommits(originRepo: string, cloneDir: string, s: CloneStatus): boolean {
 	if (s.hasUpstream && s.ahead === 0) return false; // already on a remote
@@ -387,10 +429,7 @@ async function pickClone(action: string, name?: string): Promise<{ originRepo: s
 	}
 	const first = clones[0];
 	if (first && clones.length === 1) return { originRepo, clone: first };
-	const idx = await select(
-		`Multiple clones — pick one to ${action}:`,
-		clones.map((c) => `${c.name}  ${paint.dim(cloneStatus(c.dir).branch)}`),
-	);
+	const idx = await select(`Multiple clones — pick one to ${action}:`, clones.map(cloneLabel));
 	const chosen = idx < 0 ? undefined : clones[idx];
 	if (!chosen) return null;
 	return { originRepo, clone: chosen };
@@ -508,16 +547,17 @@ function dirStore(cfg: DirStoreConfig): SessionStore {
 			}
 			try {
 				rmSync(srcDir, { recursive: true, force: true });
-			} catch {
-				/* ignore */
+			} catch (e) {
+				info(paint.dim(`   (couldn't clear the clone's ${cfg.id} sessions at ${srcDir}: ${(e as Error).message})`));
 			}
 			return n;
 		},
 		discard(cloneDir) {
+			const d = dirFor(cloneDir);
 			try {
-				rmSync(dirFor(cloneDir), { recursive: true, force: true });
-			} catch {
-				/* ignore */
+				rmSync(d, { recursive: true, force: true });
+			} catch (e) {
+				info(paint.dim(`   (couldn't discard the clone's ${cfg.id} sessions at ${d}: ${(e as Error).message})`));
 			}
 		},
 		hasActivity(cwd) {
@@ -673,25 +713,54 @@ const codexStore: SessionStore = {
 	},
 };
 
-/**
- * We just deleted the clone we were running inside, so the parent shell is now in a
- * deleted directory. A CLI can't cd its parent shell, so: if the shell wrapper is active
- * (KAGE_CD_FILE set by `eval "$(kage shell-init)"`), hand it the origin path to cd into;
- * otherwise print a copy-pasteable `cd` and how to enable the auto version.
- */
-function leaveClone(originRepo: string): void {
+// A CLI can't cd its parent shell. If the shell wrapper is active (KAGE_CD_FILE, set by
+// `eval "$(kage shell-init)"`), hand it a path to cd into once kage exits; otherwise we can only
+// print a copy-pasteable `cd`. armCd does the handoff; leaveClone/cdIntoClone do the messaging.
+function armCd(dir: string): boolean {
 	const f = process.env.KAGE_CD_FILE;
-	if (f) {
-		try {
-			writeFileSync(f, originRepo);
-			info(paint.dim(`   ↩  back to ${originRepo}`));
-			return;
-		} catch {
-			/* fall through to the manual hint */
-		}
+	if (!f) return false;
+	try {
+		writeFileSync(f, dir);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+const SHELL_INIT_HINT = `add  eval "$(kage shell-init)"  to your ~/.zshrc`;
+
+/** After deleting the clone we were inside, the parent shell sits in a now-deleted dir — send it
+ *  back to the origin (or print how, without the wrapper). */
+function leaveClone(originRepo: string): void {
+	if (armCd(originRepo)) {
+		info(paint.dim(`   ↩  back to ${originRepo}`));
+		return;
 	}
 	info(paint.yellow(`   ↩  your shell is still in the deleted clone — run:  ${paint.bold(`cd ${originRepo}`)}`));
-	info(paint.dim(`      enable auto cd-back: add  eval "$(kage shell-init)"  to your ~/.zshrc`));
+	info(paint.dim(`      enable auto cd-back: ${SHELL_INIT_HINT}`));
+}
+
+/** Settle the shell inside a clone we just created/entered: cd there if the wrapper is active,
+ *  else print a copy-pasteable `cd` + the finish hint. */
+function cdIntoClone(cloneDir: string, name: string): void {
+	info("");
+	if (armCd(cloneDir)) {
+		info(paint.dim(`   ↪  now in the clone — when done: ${paint.bold("kage finish")}`));
+		return;
+	}
+	info(`   ▸  enter it:  ${paint.bold(`cd ${cloneDir}`)}`);
+	info(paint.dim(`      when done: ${paint.bold(`kage finish ${name}`)}`));
+	info(paint.dim(`      tip: ${SHELL_INIT_HINT} — then kage cd's you in & out automatically`));
+}
+
+/** chdir the kage process out of a clone it's about to delete (rmSync of the cwd fails otherwise).
+ *  Surfaced rather than swallowed — a silent failure here is why a later rmSync would fail. */
+function chdirToOrigin(originRepo: string): void {
+	try {
+		process.chdir(originRepo);
+	} catch (e) {
+		info(paint.dim(`   (couldn't chdir to ${originRepo}: ${(e as Error).message})`));
+	}
 }
 
 // ── agent registry + launch (the detachable A) ─────────────────────────
@@ -708,8 +777,8 @@ interface Agent {
 	cli?: AgentCli;
 }
 // Registered agents. Memory sync iterates this list, so each new agent is one entry (+ its
-// SessionStore) with no change to any call site. Codex (a flat, cwd-in-content store) lands
-// here in Phase 3.
+// SessionStore) with no change to any call site. Codex is the odd one — a flat, cwd-in-content
+// store that kage doesn't memory-manage (see codexStore).
 const AGENTS: Agent[] = [
 	{ id: "pi", store: piStore, cli: { bin: "pi", freshArgs: [], resumeArgs: ["-c"] } },
 	{ id: "claude", store: claudeStore, cli: { bin: "claude", freshArgs: [], resumeArgs: ["--continue"] } },
@@ -739,24 +808,21 @@ function launchOpen(cmd: string, cwd: string): void {
 	}
 }
 
-/** Re-enter a clone: resume whichever agent has activity here (ask if several), else start fresh. */
-async function enterClone(cloneDir: string): Promise<void> {
+/** Re-enter a clone from the menu: resume an agent that has activity here (ask if several), then
+ *  leave the shell in the clone. With no activity — or if you cancel the resume picker — just cd in;
+ *  kage never auto-launches an agent, and Enter always lands you in the clone. */
+async function enterClone(cloneDir: string, name: string): Promise<void> {
 	const active = AGENTS.filter((a) => a.cli && a.store.hasActivity(cloneDir));
-	if (active.length === 0) {
-		const def = agentById(process.env.KAGE_AGENT ?? "pi") ?? AGENTS[0];
-		if (def?.cli) launchCli(def.cli, cloneDir, def.cli.freshArgs);
-		return;
-	}
-	let chosen = active[0];
+	let chosen = active[0]; // undefined when nothing has activity here
 	if (active.length > 1) {
 		const idx = await select(
-			"Resume which agent?",
+			"Resume which agent? (Esc = just cd in)",
 			active.map((a) => a.id),
 		);
-		if (idx < 0) return info("cancelled");
-		chosen = active[idx];
+		chosen = idx < 0 ? undefined : active[idx]; // cancel → don't resume, but still cd in below
 	}
 	if (chosen?.cli) launchCli(chosen.cli, cloneDir, chosen.cli.resumeArgs);
+	cdIntoClone(cloneDir, name);
 }
 
 // ── subcommands ───────────────────────────────────────────────────────────────
@@ -769,21 +835,19 @@ async function cmdNew(argv: string[]): Promise<void> {
 		const repoRoot = repoTopLevel(process.cwd());
 		const clones = repoRoot ? listClones(repoRoot) : [];
 		if (repoRoot && clones.length > 0) {
-			const labels = [
-				"＋ Create a new shadow clone",
-				...clones.map((c) => {
-					const s = cloneStatus(c.dir);
-					const tag = s.dirty ? paint.yellow(" ●") : isSafeToClean(s) ? paint.green(" ✓") : "";
-					return `→ Enter ${c.name}  ${paint.cyan(s.branch)}${tag}`;
-				}),
-			];
-			const idx = await select(`Shadow clones of ${basename(repoRoot)} — pick one, or create:`, labels);
+			const labels = ["＋ Create a new clone", ...clones.map(cloneLabel)];
+			const idx = await select(`Shadow clones of ${basename(repoRoot)} — pick one to act on, or create:`, labels);
 			if (idx < 0) return info("cancelled");
 			if (idx > 0) {
 				const clone = clones[idx - 1];
 				if (!clone) return info("cancelled");
-				const act = await select(`${clone.name}:`, ["Enter (resume)", "Finish (merge memory & remove)", "Remove (discard)", "Cancel"]);
-				if (act === 0) return enterClone(clone.dir);
+				const act = await select(`${clone.name}:`, [
+					"Enter (resume agent + cd in)",
+					"Finish (merge memory & remove)",
+					"Remove (discard, no merge)",
+					"Cancel",
+				]);
+				if (act === 0) return enterClone(clone.dir, clone.name);
 				if (act === 1) return cmdFinish([clone.name]);
 				if (act === 2) return cmdRm([clone.name]);
 				return info("cancelled");
@@ -804,17 +868,18 @@ async function cmdNew(argv: string[]): Promise<void> {
 	let name = strFlag(flags, "name") ?? "";
 	if (!name) {
 		const def = tsName();
-		const prompt = `Kage name: ${basename(repoRoot)}--`;
+		const prompt = `Clone name: ${basename(repoRoot)}--`;
 		name = (process.stdin.isTTY ? await ask(prompt, def) : "") || def;
 	}
 	const safe = slug(name);
 	const cloneDir = join(dirname(repoRoot), `${basename(repoRoot)}--${safe}`);
 	if (existsSync(cloneDir)) die(`directory already exists: ${cloneDir}`);
 
-	// Resolve the agent to launch up front, so a typo fails before we copy anything.
-	const agentId = strFlag(flags, "agent") ?? process.env.KAGE_AGENT ?? "pi";
-	const agent = agentById(agentId);
-	if (!agent) die(`unknown agent: ${agentId} (supported: ${AGENTS.map((a) => a.id).join(", ")})`);
+	// Launch is opt-in: a CLI launches only if you named one (--agent / $KAGE_AGENT / `kage config agent`).
+	// Resolve it up front so a typo fails before we copy; with none set, kage just cd's you in (below).
+	const agentId = strFlag(flags, "agent") ?? process.env.KAGE_AGENT ?? readConfig().agent;
+	const agent = agentId ? agentById(agentId) : undefined;
+	if (agentId && !agent) die(`unknown agent: ${agentId} (supported: ${AGENTS.map((a) => a.id).join(", ")})`);
 
 	const cp = await copyRepo(repoRoot, cloneDir);
 	if (!cp.ok) die(`copy failed: ${cp.err}`);
@@ -834,24 +899,20 @@ async function cmdNew(argv: string[]): Promise<void> {
 	info("");
 	info(`🥷 ${paint.bold("Shadow clone ready")}: ${cloneDir}`);
 	info(`   origin: ${repoRoot}   branch: ${paint.cyan(curBranch)}`);
-	if (histN > 0) info(paint.dim(`   origin's ${histN} session(s) are available via resume (pi: pick from the list)`));
-	info(paint.dim(`   when done: kage finish ${safe}`));
-	info("");
+	if (histN > 0) info(paint.dim(`   origin's ${histN} session(s) imported — resume them from inside the clone`));
 
-	// Launch mode: --no-launch (just build), --open <cmd> (open + return), else spawn the CLI.
-	if (boolFlag(flags, "no-launch")) return;
+	// Optionally hand off to an agent, then settle the shell in the clone (always):
+	//   --open <cmd> → run it (e.g. an editor);  an agent named → spawn it (blocking);
+	//   else (--no-launch, or no agent set) → launch nothing.
 	const openCmd = strFlag(flags, "open");
 	if (openCmd || boolFlag(flags, "open")) {
 		if (!openCmd) die("--open needs a command, e.g. --open code");
 		launchOpen(openCmd, cloneDir);
-		info("");
-		info(`↩︎  opened ${cloneDir} with ${openCmd}. To finish: ${paint.bold(`kage finish ${safe}`)}`);
-		return;
+	} else if (agent && !boolFlag(flags, "no-launch")) {
+		if (!agent.cli) die(`agent ${agent.id} has no CLI to launch — use --open <cmd> or --no-launch`);
+		launchCli(agent.cli, cloneDir, agent.cli.freshArgs);
 	}
-	if (!agent.cli) die(`agent ${agent.id} has no CLI to launch — use --open <cmd> or --no-launch`);
-	launchCli(agent.cli, cloneDir, agent.cli.freshArgs);
-	info("");
-	info(`↩︎  left the clone's ${agent.cli.bin}. To finish: ${paint.bold(`kage finish ${safe}`)}`);
+	cdIntoClone(cloneDir, safe);
 }
 
 async function cmdFinish(argv: string[]): Promise<void> {
@@ -916,11 +977,7 @@ async function cmdFinish(argv: string[]): Promise<void> {
 
 	let n = 0;
 	for (const a of AGENTS) n += a.store.mergeBack(clone.dir, originRepo);
-	try {
-		process.chdir(originRepo);
-	} catch {
-		/* ignore */
-	}
+	chdirToOrigin(originRepo);
 	rmSync(clone.dir, { recursive: true, force: true });
 
 	info(`💨 Clone dispelled: merged ${n} session(s) back, removed ${clone.dir}`);
@@ -943,11 +1000,7 @@ async function cmdRm(argv: string[]): Promise<void> {
 		if (!(await confirm(`Discard clone ${clone.name} without merging its memory?`))) return info("aborted");
 	}
 
-	try {
-		process.chdir(originRepo);
-	} catch {
-		/* ignore */
-	}
+	chdirToOrigin(originRepo);
 	for (const a of AGENTS) a.store.discard(clone.dir);
 	rmSync(clone.dir, { recursive: true, force: true });
 	info(`🗑  Removed clone ${clone.name} (${clone.dir})`);
@@ -973,7 +1026,7 @@ function cmdList(argv: string[]): void {
 		const pr = boolFlag(flags, "pr") ? prInfo(c.dir, s.branch) : undefined;
 
 		// header: status glyph · name · branch · age
-		const glyph = s.dirty ? paint.yellow("●") : isSafeToClean(s) ? paint.green("✓") : paint.cyan("·");
+		const glyph = statusTag(s);
 		const age = paint.dim(`created ${ago(c.marker.createdAt)}`);
 		info(`  ${glyph} ${paint.bold(c.name)}  ${paint.cyan(s.branch)}  ${age}`);
 
@@ -1045,6 +1098,44 @@ function cmdPull(argv: string[]): void {
 	info(`📤 Pulled ${done}/${positional.length} path(s) from the clone back to the origin (${originRepo})`);
 }
 
+/** get/set kage's small persisted config (~/.config/kage/config.json). Keys are validated so a
+ *  typo can't silently become a "default". `kage config` (no args) prints the file path + every key. */
+function cmdConfig(argv: string[]): void {
+	const { positional, flags } = parseArgs(argv);
+	const cfg = readConfig();
+	const key = positional[0] ?? (typeof flags.unset === "string" ? flags.unset : undefined);
+	const value = positional[1];
+
+	if (!key) {
+		info(paint.dim(`# ${configPath()}`));
+		for (const k of CONFIG_KEYS) info(`${k} = ${cfg[k] ?? paint.dim("(unset)")}`);
+		return;
+	}
+	if (!(CONFIG_KEYS as readonly string[]).includes(key)) {
+		die(`unknown config key: ${key} (known: ${CONFIG_KEYS.join(", ")})`);
+	}
+	const k = key as ConfigKey;
+
+	if (boolFlag(flags, "unset")) {
+		delete cfg[k];
+		writeConfig(cfg);
+		info(`unset ${k}`);
+		return;
+	}
+	if (value === undefined) {
+		// a bare read goes to stdout so `X=$(kage config <key>)` works; other output stays on stderr
+		process.stdout.write(`${cfg[k] ?? ""}\n`);
+		return;
+	}
+
+	if (k === "agent" && !agentById(value)) {
+		die(`unknown agent: ${value} (supported: ${AGENTS.map((a) => a.id).join(", ")})`);
+	}
+	cfg[k] = value;
+	writeConfig(cfg);
+	info(`${k} = ${value}`);
+}
+
 const SHELL_INIT = `# kage shell integration — add to ~/.zshrc or ~/.bashrc:  eval "$(kage shell-init)"
 kage() {
   local f; f="$(mktemp "\${TMPDIR:-/tmp}/kage-cd.XXXXXX")"
@@ -1055,18 +1146,20 @@ kage() {
 }
 if [ -n "$ZSH_VERSION" ]; then
   _kage() {
-    if (( CURRENT == 2 )); then compadd new status finish rm pull; return; fi
+    if (( CURRENT == 2 )); then compadd new status finish rm pull config; return; fi
     case "\${words[2]}" in
       finish|rm) compadd $(command kage __clones 2>/dev/null);;
+      config) compadd agent;;
     esac
   }
   compdef _kage kage
 elif [ -n "$BASH_VERSION" ]; then
   _kage() {
     local cur="\${COMP_WORDS[COMP_CWORD]}"
-    if [ "$COMP_CWORD" -eq 1 ]; then COMPREPLY=( $(compgen -W "new status finish rm pull" -- "$cur") ); return; fi
+    if [ "$COMP_CWORD" -eq 1 ]; then COMPREPLY=( $(compgen -W "new status finish rm pull config" -- "$cur") ); return; fi
     case "\${COMP_WORDS[1]}" in
       finish|rm) COMPREPLY=( $(compgen -W "$(command kage __clones 2>/dev/null)" -- "$cur") );;
+      config) COMPREPLY=( $(compgen -W "agent" -- "$cur") );;
     esac
   }
   complete -F _kage kage
@@ -1081,8 +1174,8 @@ function cmdClones(): void {
 const HELP = `kage 🥷 — Shadow Clone Jutsu for your git repo
 
 Usage:
-  kage [path] [--name <x>] [--agent <id>]              clone repo + launch a fresh agent (default: pi)
-                                                       --open <cmd> | --no-launch: open it yourself instead
+  kage [path] [--name <x>] [--agent <id>]              clone the repo and cd into it (launch an agent only if one is set)
+                                                       --open <cmd> opens it elsewhere; --no-launch skips the agent
                                                        (no args inside a repo with clones: interactive menu)
   kage status [--pr]                                   dashboard of clones (--pr adds PR status via gh)
   kage finish [name] [--force] [--push] [--pr]         preserve work -> merge memory back -> delete clone
@@ -1090,7 +1183,8 @@ Usage:
                                                         kept in the origin as a local 'kage/<name>-<sha>' branch)
   kage rm [name] [--force]                             discard a clone without merging
   kage pull <path...>                                  (inside a clone) copy files back to the origin
-  kage shell-init                                      shell wrapper (cd-back) + tab completion
+  kage config [<key> [value]] [--unset]                get/set persisted defaults (e.g. the launch agent)
+  kage shell-init                                      shell wrapper (cd into clones / back) + tab completion
   kage --help | --version                              show this help / print the version
 
 With no args inside a repo that already has clones, kage opens an interactive menu
@@ -1099,15 +1193,16 @@ With no args inside a repo that already has clones, kage opens an interactive me
 Options:
   --name <x>    name the clone folder /<repo>--<x> (default: kage-<timestamp>); skips the name prompt
                 (sanitized to a git-ref-safe slug, since the name is also used as a branch name)
-  --agent <id>  which agent CLI to launch (default: pi, or $KAGE_AGENT); memory still syncs for all agents
-  --open <cmd>  after cloning, run '<cmd> <clone>' (e.g. --open code) and return, instead of spawning a CLI
-  --no-launch   just create the clone (and import memory), print its path; you open it yourself
+  --agent <id>  launch this agent CLI in the clone (one-off). with none set (--agent > $KAGE_AGENT >
+                'kage config agent') kage just cd's you into the clone. memory syncs for every agent
+  --open <cmd>  after cloning, run '<cmd> <clone>' (e.g. --open code), then cd into the clone
+  --no-launch   don't launch an agent even if one is configured — just create the clone and cd in
   --pr          (finish) push the branch and open a GitHub PR via gh, then finish
   --push        (finish) push the branch before finishing (implied by --pr)
   --force       skip the safety checks: uncommitted/unpushed guard (finish) or local-only guard (rm)
 
 Examples:
-  kage                          # clone the current repo, pick a name, open a fresh pi to work in
+  kage                          # clone the current repo, pick a name, and cd into the clone
   kage --name fix-login         # same, but name the clone ../<repo>--fix-login (no prompt)
   kage ~/code/other-repo        # clone a different repo instead of the current dir
 
@@ -1121,9 +1216,10 @@ Examples:
   kage rm experiment            # throw a clone away without merging its memory
 
   kage pull .env                # inside a clone: copy a gitignored file back to the origin
+  kage config agent claude      # launch claude on create (instead of just cd-ing into the clone)
 
 Env (each agent's own native var — kage just honors it, so kage and the agent always agree):
-  KAGE_AGENT            default agent to launch when --agent is omitted (default: pi)
+  KAGE_AGENT            agent to launch on create when --agent is omitted (none set = just cd into the clone)
   PI_CODING_AGENT_DIR   pi's agent dir; sessions read from <it>/sessions (default: ~/.pi/agent)
   CLAUDE_CONFIG_DIR     Claude Code's config dir; sessions read from <it>/projects (default: ~/.claude)
   CODEX_HOME            Codex's home dir; sessions read from <it>/sessions (default: ~/.codex)`;
@@ -1142,6 +1238,8 @@ async function main(): Promise<void> {
 			return cmdRm(rest);
 		case "pull":
 			return cmdPull(rest);
+		case "config":
+			return cmdConfig(rest);
 		case "shell-init": {
 			process.stdout.write(`${SHELL_INIT}\n`);
 			// When a human runs this directly (stdout is a TTY, not captured by `$(...)`),
