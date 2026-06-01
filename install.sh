@@ -52,5 +52,5 @@ case ":$PATH:" in
 esac
 
 echo ""
-echo "Run 'kage --help' to start. Requires git + pi on your PATH."
+echo "Run 'kage --help' to start. Needs git + a coding agent (pi, Claude Code, or Codex) on your PATH."
 echo "Optional shell integration:  eval \"\$(kage shell-init)\""

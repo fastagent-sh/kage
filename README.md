@@ -15,10 +15,11 @@ can't collide.
 
 ```bash
 npm install -g pi-kage
+eval "$(kage shell-init)"   # let kage cd your shell in & out (recommended)
 cd my-app
-kage            # 🥷 copy → ../my-app--kage-<ts>, open a fresh pi
-#   ...commit, push, open a PR, quit pi...
-kage finish     # 💨 merge the clone's sessions back, delete the clone
+kage            # 🥷 copy → ../my-app--kage-<ts>, and cd you into it
+#   ...work (pi/claude/codex, or whatever), commit, push, open a PR...
+kage finish     # 💨 merge the clone's sessions back, delete the clone, cd you home
 ```
 
 Code comes back through git (a PR, or a branch fetch). The agent's session memory comes back through
@@ -47,8 +48,9 @@ npx pi-kage                 # run without installing
 curl -fsSL https://raw.githubusercontent.com/kid7st/kage/main/install.sh | sh
 ```
 
-Requires **git**, [**pi**](https://github.com/earendil-works), and **Node ≥ 18** on your `PATH`.
-kage has no runtime dependencies.
+Requires **git** and **Node ≥ 18** on your `PATH`, plus at least one coding-agent CLI to drive —
+[**pi**](https://github.com/earendil-works) (the default), [**Claude Code**](https://github.com/anthropics/claude-code),
+or [**Codex**](https://github.com/openai/codex). kage itself has no runtime dependencies.
 
 From source:
 
@@ -57,7 +59,7 @@ git clone https://github.com/kid7st/kage
 cd kage && npm install && npm link   # npm install builds bin/kage.mjs from src/
 ```
 
-## Commands
+## Usage
 
 | Command | Run from | What it does |
 |---|---|---|
@@ -66,34 +68,51 @@ cd kage && npm install && npm link   # npm install builds bin/kage.mjs from src/
 | `kage finish [name] [--force] [--push] [--pr]` | origin / inside clone | Refuse if the clone has uncommitted or unpushed work, merge its **new** sessions back, delete it. `--push` pushes the branch first; `--pr` pushes + opens a PR via `gh`; `--force` skips the guard. |
 | `kage rm [name] [--force]` | origin / inside clone | Discard a clone **without** merging memory. Refuses local-only work unless `--force`. |
 | `kage pull <path...>` | inside a clone | Copy specific files/dirs (even gitignored, e.g. a generated `.env`) back to the origin. |
-| `kage shell-init` | shell rc | Shell wrapper (cd back to origin after `finish`/`rm`) + tab completion. Use `eval "$(kage shell-init)"`. |
+| `kage config [<key> [value]] [--unset]` | anywhere | Get/set persisted defaults. One key today: `agent` (your default launch agent), validated against known agents. |
+| `kage shell-init` | shell rc | Shell wrapper (cd into a clone on create, back to origin on `finish`/`rm`) + tab completion. Use `eval "$(kage shell-init)"`. |
 | `kage --help` / `--version` | anywhere | Usage / version. |
 
 Run bare `kage` inside a repo that already has clones to get an interactive picker: create a new clone,
 or **enter** / **finish** / **remove** an existing one. `finish` and `rm` show the same picker when you
 have several clones and don't name one.
 
-### Other agents (Claude Code, Codex)
+## Agents
 
-kage isn't pi-only. `--agent claude` or `--agent codex` launches that agent instead. For **pi and Claude
-Code**, memory flows the same way — through that agent's own session store (whether you drive it from the
-CLI, the IDE extension, or the desktop app), and two agents can even work one repo in parallel (a clone
-each, or different agents in one clone); `finish` merges back whichever stores have new sessions.
-**Codex is launch-only**: its sessions live in one global, sqlite-indexed store kage can't cleanly
-re-home, so `--agent codex` gives you the isolated clone + git flow-back while your Codex history stays
-globally available via `codex resume --all`. For a GUI/desktop app kage can't spawn, use `--open <cmd>`
-(e.g. `kage --open code`) or `--no-launch` to just make the clone and open it yourself. `KAGE_AGENT` sets
-your default agent.
+kage is agent-agnostic — and launching an agent is **opt-in**. By default `kage` just creates the clone and
+cd's your shell into it; you work however you like. To have kage launch one for you, name it with `--agent`,
+or set a default with `kage config agent` (or `$KAGE_AGENT`) — precedence `--agent` > `$KAGE_AGENT` >
+`kage config agent`; with none set, nothing is launched. Whichever way you work, every agent gets the same
+isolated clone and git flow-back — what differs is **memory flow-back**, i.e. whether the sessions you
+create in the clone come home to the origin:
 
-### Shell integration (optional)
+| Agent | Launch it with | Memory flow-back |
+|---|---|---|
+| **pi** | `kage --agent pi` | ✅ full round-trip — recent sessions copied in on create, new ones merged back on `finish` |
+| **Claude Code** | `kage --agent claude` | ✅ full round-trip (same as pi) |
+| **Codex** | `kage --agent codex` | ⚠️ git only — history stays global, reach it with `codex resume --all` |
+
+**Why Codex is git-only.** pi and Claude Code key their session stores by working directory, so kage can
+copy a clone's sessions over to the origin's directory and back. Codex keeps one global, sqlite-indexed
+store that kage can't cleanly re-home — so `--agent codex` gives you the isolated clone + git flow-back,
+and your Codex history stays globally reachable. Details in
+[`docs/multi-agent-design.md`](./docs/multi-agent-design.md).
+
+You can run several agents at once — a clone each, or different agents in one clone. Each agent uses its
+own store, so they never collide, and `finish` merges back whichever stores gained new sessions.
+
+**Driving a GUI/IDE agent kage can't spawn?** Use `--open <cmd>` to create the clone and open it yourself
+(e.g. `kage --open code` runs `code <clone>`), or `--no-launch` to just make the clone and print its path.
+Memory still flows for any agent whose store kage manages, no matter how you opened the clone.
+
+## Shell integration (optional)
 
 ```bash
 eval "$(kage shell-init)"   # add to ~/.zshrc or ~/.bashrc
 ```
 
-Running `finish`/`rm` from inside a clone deletes the directory your shell is sitting in. The wrapper
-cd's you back to the origin automatically (a CLI can't change its parent shell otherwise) and adds tab
-completion for subcommands and clone names.
+`kage` cd's your shell **into** the new clone, and `finish`/`rm` cd it **back** to the origin afterward
+(a CLI can't move its parent shell otherwise, so this needs the wrapper — without it, kage just prints the
+`cd` for you to run). It also adds tab completion for subcommands and clone names.
 
 ## How it works
 
@@ -105,11 +124,10 @@ completion for subcommands and clone names.
   `kage/<name>-<sha>` branch (origin working tree untouched — `git merge` it when you like). Because a
   fetch can't preserve uncommitted work, `finish` refuses to delete a dirty clone unless `--force`.
 - **Memory flows via the agent's own session store, never replayed.** On create, the origin's 5 most
-  recent sessions for that agent are copied in — the agent's resume picker surfaces them, but the clone
-  opens a **fresh** session. On `finish`, sessions the clone created come back whole; a copied-in session
-  you resumed comes back as a separate new session, so the origin's original is never mutated. (Codex is the
-  exception — its sessions live in one global, sqlite-indexed store kage can't cleanly re-home, so kage
-  doesn't manage Codex memory; find Codex history with `codex resume --all`. See `docs/multi-agent-design.md`.)
+  recent sessions for that agent are copied in — the agent's resume picker surfaces them when you launch it, but you
+  start a **fresh** session. On `finish`, sessions the clone created come back whole; a copied-in session
+  you resumed comes back as a separate new session, so the origin's original is never mutated. (Codex is
+  the exception — git-only flow-back; see [Agents](#agents).)
 - **The origin is read-only to kage.** It only copies out and writes session memory — it never touches
   the origin's working tree, even while another session is live there.
 

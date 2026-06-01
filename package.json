@@ -1,7 +1,7 @@
 {
   "name": "pi-kage",
   "version": "0.4.0",
-  "description": "🥷 Shadow Clone Jutsu for your git repo: copy it into an isolated folder, work in parallel with pi, then merge the session memory back",
+  "description": "🥷 Shadow Clone Jutsu for your git repo: copy it into an isolated sibling folder, run your coding agent (pi, Claude Code, Codex) in parallel, then merge the session memory back",
   "keywords": [
     "pi",
     "coding-agent",

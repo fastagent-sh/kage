@@ -38,17 +38,17 @@
   <text x="430" y="29" text-anchor="middle" class="dim">kage 🥷 — Shadow Clone Jutsu</text>
   <line x1="1" y1="46" x2="859" y2="46" stroke="#30363d" stroke-width="1"/>
 
-  <text class="l l1"  x="20" y="80"><tspan class="green">~/code/my-app</tspan> <tspan class="dim">$</tspan> kage --name fix-login</text>
+  <text class="l l1"  x="20" y="80"><tspan class="green">~/code/my-app</tspan> <tspan class="dim">$</tspan> kage --name fix-login --agent pi</text>
 
   <text class="l l2 blue" x="20" y="120">🥷 Shadow clone ready: ../my-app--fix-login</text>
   <text class="l l3 dim"  x="20" y="145">   origin: ~/code/my-app   branch: main</text>
-  <text class="l l4 dim"  x="20" y="170">   origin's 5 session(s) are available via resume (pi: pick from the list)</text>
-  <text class="l l5 dim"  x="20" y="195">   when done: kage finish fix-login</text>
+  <text class="l l4 dim"  x="20" y="170">   origin's 5 session(s) imported — resume them from inside the clone</text>
 
-  <text class="l l6 comment" x="20" y="240"># … in the clone's fresh pi: switch -c · edit · commit · push · open PR · quit …</text>
+  <text class="l l5 comment" x="20" y="210"># … pi opens in the clone: edit · commit · push · open PR · quit …</text>
+  <text class="l l6 dim"     x="20" y="250">   ↪  now in the clone — when done: kage finish</text>
 
-  <text class="l l7"        x="20" y="285"><tspan class="green">~/code/my-app</tspan> <tspan class="dim">$</tspan> kage finish fix-login --pr</text>
-  <text class="l l8 green"  x="20" y="310">⬆  pushed fix-login to origin</text>
-  <text class="l l9 cyan"   x="20" y="335">🔗 opened PR: https://github.com/me/my-app/pull/42</text>
-  <text class="l l10 purple" x="20" y="360">💨 Clone dispelled: merged 1 session(s) back, removed ../my-app--fix-login</text>
+  <text class="l l7"        x="20" y="290"><tspan class="green">~/code/my-app--fix-login</tspan> <tspan class="dim">$</tspan> kage finish --pr</text>
+  <text class="l l8 green"  x="20" y="315">⬆  pushed fix-login to origin</text>
+  <text class="l l9 cyan"   x="20" y="340">🔗 opened PR: https://github.com/me/my-app/pull/42</text>
+  <text class="l l10 purple" x="20" y="365">💨 Clone dispelled: merged 1 session(s) back, removed ../my-app--fix-login</text>
 </svg>

@@ -1,13 +1,7 @@
 # Multi-agent design — making the Shadow Clone Jutsu work for pi, Claude Code, and Codex
 
-> Status: implemented (all three phases landed) · Author: design notes from the kage maintainers · Last updated: 2026-05-31
->
-> **Correction (live testing, 2026-05-31):** the Codex adapter was redesigned. Live testing
-> against Codex 0.135 found that current Codex drives its cwd-filtered resume picker from a
-> versioned internal sqlite index (`state_5.sqlite`'s `threads.cwd`), not the rollout — so the
-> original "rewrite the rollout's cwd in place" approach orphans the session. kage now does **not**
-> manage Codex memory (Option A): `--agent codex` = isolation + git flow-back only; Codex history
-> stays global (`codex resume --all`). Sections below are updated; pi and Claude Code are unchanged.
+> As-built design notes for kage's multi-agent + launch model. The Codex rationale (why its memory
+> isn't kage-managed) lives in §4.2 and §11. Last updated: 2026-06-01.
 
 ## 0. Why this document exists
 
@@ -196,17 +190,22 @@ also a global `~/.codex/session_index.jsonl` (`{id, thread_name, updated_at}`, n
 
 ## 5. Launch (the detachable A)
 
-Launch is orthogonal to the store and has three modes:
+**Launch is opt-in.** kage's job on create is: make the clone, sync memory in, and **cd your shell into
+it** (via the `KAGE_CD_FILE` handshake with the shell wrapper; without the wrapper it prints a `cd`).
+An agent is launched *only* if you asked for one — there is no auto-detect/auto-launch. Launch is
+orthogonal to the store and has three modes:
 
 - **CLI spawn** (default, today's behavior): `spawn` the agent's terminal binary in the clone,
   inherit stdio, block until it exits, then print the `kage finish` hint. Applies to CLI
   surfaces (`pi`, the `claude` CLI, the `codex` CLI).
 - **`--open <cmd>`**: create the clone, sync memory in, run `<cmd> <clone>` (e.g.
   `kage --open code` → `code <clone>`), and **return immediately**. For IDE/desktop users.
-- **`--no-launch`**: create the clone, sync memory in, print the path, return. You open it
-  however you like.
+- **`--no-launch`**: skip the launch step even if an agent is configured; still cd into the clone.
+- **default (no agent named)**: launch nothing — just cd into the clone.
 
-Selection of *which* agent's CLI to spawn: `--agent <id>` > `KAGE_AGENT` env > default `pi`.
+Selection of *which* agent's CLI to spawn (when one is launched at all): `--agent <id>` > `KAGE_AGENT`
+env > `kage config agent` (persisted). With none of those set, kage launches nothing and simply cd's
+you into the clone (see §11).
 
 > **GUI flow caveat.** `--open`/`--no-launch` are non-blocking, so kage cannot detect when
 > you are "done" and cannot print the post-exit prompt the CLI flow does. You run `kage finish`
@@ -262,7 +261,7 @@ The marker needs **no change**.
 
 - `kage [path] [--name x] [--agent pi|claude|codex] [--open <cmd>] [--no-launch]`
   - `--agent` selects which CLI to spawn (only meaningful for CLI launch); precedence
-    `--agent` > `KAGE_AGENT` > `pi`.
+    `--agent` > `KAGE_AGENT` > `kage config agent`; with none set, nothing is launched (§11).
   - `--open <cmd>` / `--no-launch` switch the launch mode (§5).
 - **Re-enter menu** (bare `kage` inside a repo with clones): replace the hardcoded
   "Enter (resume pi)" with the agents that have activity for that clone's `cwd`
@@ -302,41 +301,18 @@ remain reachable via `codex resume --all`.
 - **Import scoping.** `importHistory` only runs for stores that actually have origin history,
   so no empty store directories are created for agents you have never used on that repo.
 
-## 11. Implementation plan
+## 11. Decisions
 
-Each phase is independently shippable.
-
-- **Phase 1 — abstraction, zero behavior change.** Extract `SessionStore` + a `STORES`
-  registry; move today's pi logic into `dirStore`; replace `launchPi` with a `launch` step
-  that supports all three modes (CLI spawn / `--open` / `--no-launch`), defaulting to CLI
-  spawn; make create/finish/rm iterate `STORES`. Register **only pi**, so output and tests are
-  identical. Add `--agent`/`KAGE_AGENT` parsing (accepts only `pi` for now).
-  **Acceptance: the existing 15 tests stay green.**
-- **Phase 2 — Claude Code store.** Fill in the DirStore config for claude (encoding,
-  every-line cwd rewrite, `reidentify`). **Acceptance: claude-flavored tests for import,
-  mergeBack, and the resumed-copy-in case — fake `claude` binary + `CLAUDE_CONFIG_DIR`
-  redirected to a temp dir + fabricated `.jsonl`.**
-- **Phase 3 — Codex.** Registered with its CLI (`codex` / `codex resume --last`), but **not
-  memory-managed**: live testing against Codex 0.135 showed the cwd-filtered resume picker is
-  driven by a versioned internal sqlite index (`state_5.sqlite`'s `threads.cwd`), not the rollout,
-  so an in-place rollout rewrite orphans the session (see §4.2). `importHistory` / `mergeBack` /
-  `discard` are no-ops; `hasActivity` (rollout scan) powers the re-enter menu. **Acceptance:
-  `CODEX_HOME` redirected; assert `kage finish` leaves a seeded Codex rollout byte-for-byte
-  untouched.**
-
-## 12. Testing strategy
-
-Reuse the existing black-box harness (`run(CLI)` + temp repo + fake binary on `PATH` +
-redirected store env + fabricated session files). For each store add: (1) import places the
-origin's history into the clone; (2) the clone's new sessions merge back without duplication;
-(3) resuming a copied-in session and adding turns writes back as a new, self-contained session
-without mutating the origin; (4) Codex-only — the `cwd` partition never cross-contaminates.
-No real agents are launched and there is no network access.
-
-## 13. Decisions and open items
-
-**Decided:**
-- Agent selection: `--agent` + `KAGE_AGENT` + default `pi`; **no auto-detection**.
+- Launch is **opt-in**, and `kage` create always cd's your shell into the clone. An agent is launched
+  only if you named one: `--agent` > `KAGE_AGENT` > `kage config agent` (persisted). With none set,
+  kage launches **nothing** and just cd's you in; `--open <cmd>` runs an external command instead;
+  `--no-launch` skips the launch even when an agent is configured. The cd uses the `KAGE_CD_FILE`
+  handshake with the shell wrapper (a CLI can't move its parent shell); without the wrapper, kage
+  prints a copy-pasteable `cd`. The persisted config lives at `$XDG_CONFIG_HOME/kage/config.json`
+  (one key today: `agent`), is managed with `kage config`, and is kage's only persisted state besides
+  the per-clone marker. (Design history: hardcoded `pi` default → PATH auto-detect+prompt+persist →
+  **dropped auto-launch entirely** — guessing/launching an agent the user didn't ask for was the wrong
+  default; kage now just drops you in the clone unless you opt into a launch.)
 - Codex is **not memory-managed** (Option A): its global store keys the resume picker off a
   versioned internal sqlite index (`state_5.sqlite`'s `threads.cwd`, found via live testing on
   0.135), which kage won't rewrite (fragile + a runtime dep it avoids). `--agent codex` =
@@ -354,8 +330,3 @@ No real agents are launched and there is no network access.
   real `~/.codex` / `~/.claude`.
 - Each agent's store override is the agent's **own** native var (no kage-specific
   `KAGE_SESSIONS_DIR`), so kage and the agent never disagree on where sessions live.
-
-**Open (non-blocking):**
-- Full-fidelity Claude sidecar transfer (`subagents/`, `tool-results/`).
-- Whether the per-clone "agents with activity" column is shown by default in `status`.
-- Whether to add deep-link launch for desktop apps if/when they expose one (beyond `--open`).

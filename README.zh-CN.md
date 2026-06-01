@@ -14,10 +14,11 @@
 
 ```bash
 npm install -g pi-kage
+eval "$(kage shell-init)"   # 让 kage 能 cd 你的 shell 进 / 出（推荐）
 cd my-app
-kage            # 🥷 复制 → ../my-app--kage-<ts>，打开一个全新的 pi
-#   ...提交、push、开 PR、退出 pi...
-kage finish     # 💨 把分身的 session 合并回来，删掉分身
+kage            # 🥷 复制 → ../my-app--kage-<ts>，并把你 cd 进去
+#   ...干活（用 pi/claude/codex 或随便什么）、提交、push、开 PR...
+kage finish     # 💨 把分身的 session 合并回来，删掉分身，再把你 cd 回原仓库
 ```
 
 代码通过 git 回流（一个 PR，或者 fetch 分支）；agent 的 session 记忆通过它自己的 session 存储（`~/.pi`、
@@ -43,8 +44,9 @@ npx pi-kage                 # 不安装直接运行
 curl -fsSL https://raw.githubusercontent.com/kid7st/kage/main/install.sh | sh
 ```
 
-需要 `PATH` 上有 **git**、[**pi**](https://github.com/earendil-works) 和 **Node ≥ 18**。
-kage 没有任何运行时依赖。
+需要 `PATH` 上有 **git** 和 **Node ≥ 18**，外加至少一个 coding-agent CLI 来驱动 ——
+[**pi**](https://github.com/earendil-works)（默认）、[**Claude Code**](https://github.com/anthropics/claude-code)
+或 [**Codex**](https://github.com/openai/codex)。kage 本身没有任何运行时依赖。
 
 从源码安装：
 
@@ -53,7 +55,7 @@ git clone https://github.com/kid7st/kage
 cd kage && npm install && npm link   # npm install 会从 src/ 编译出 bin/kage.mjs
 ```
 
-## 命令
+## 使用
 
 | 命令 | 在哪运行 | 作用 |
 |---|---|---|
@@ -62,30 +64,47 @@ cd kage && npm install && npm link   # npm install 会从 src/ 编译出 bin/kag
 | `kage finish [name] [--force] [--push] [--pr]` | 原仓库 / 分身内 | 若分身有未提交或未 push 的改动则拒绝，把它**新产生**的 session 合并回来，再删除它。`--push` 先 push 分支；`--pr` push 并通过 `gh` 开 PR；`--force` 跳过检查。 |
 | `kage rm [name] [--force]` | 原仓库 / 分身内 | **不**合并记忆地丢弃一个分身。若有仅存在于本地的工作则拒绝，除非加 `--force`。 |
 | `kage pull <path...>` | 分身内 | 把指定文件/目录（包括被 gitignore 的，比如生成的 `.env`）按相同相对路径拷回原仓库。 |
-| `kage shell-init` | shell 配置 | shell 包装函数（`finish`/`rm` 后自动 cd 回原仓库）+ tab 补全。用 `eval "$(kage shell-init)"`。 |
+| `kage config [<key> [value]] [--unset]` | 任意位置 | 读取/设置持久化默认值。目前只有一个 key：`agent`（默认启动的 agent），会校验是否为已知 agent。 |
+| `kage shell-init` | shell 配置 | shell 包装函数（创建时 cd 进分身，`finish`/`rm` 后 cd 回原仓库）+ tab 补全。用 `eval "$(kage shell-init)"`。 |
 | `kage --help` / `--version` | 任意位置 | 用法 / 版本。 |
 
 在已有分身的仓库里直接运行 `kage`，会弹出交互选择器：新建一个分身，或对已有分身执行 **进入** / **finish** /
 **删除**。当有多个分身又没指定名字时，`finish` 和 `rm` 也会弹出同样的选择器。
 
-### 其它 agent（Claude Code、Codex）
+## Agents
 
-kage 不只支持 pi。`--agent claude` 或 `--agent codex` 会改为启动对应 agent。对 **pi 和 Claude Code**，记忆照样
-流动 —— 通过该 agent **自己的** session 存储（无论用 CLI、IDE 扩展还是桌面 App），两个 agent 甚至能并行
-处理同一个仓库（各开一个分身，或同一个分身里换着用）；`finish` 会把有新 session 的那些 store 各自合并回来。
-**Codex 是 launch-only**：它的 session 存在一个由 sqlite 索引的全局 store 里，kage 无法干净地搬迁，所以
-`--agent codex` 给你隔离分身 + git 回流，而 Codex 历史通过 `codex resume --all` 依然全局可见。对于 kage 没法
-直接拉起的 GUI / 桌面 App，用 `--open <cmd>`（比如 `kage --open code`）或 `--no-launch` 只建分身、你自己去打开。
-`KAGE_AGENT` 设置默认 agent。
+kage 与具体 agent 无关 —— 而且启动 agent 是**可选的**。默认下 `kage` 只创建分身并把你的 shell cd 进去，
+接下来你爱怎么干就怎么干。想让 kage 替你启动一个 agent，就用 `--agent` 指定，或用 `kage config agent`
+（或 `$KAGE_AGENT`）设个默认值 —— 优先级 `--agent` > `$KAGE_AGENT` > `kage config agent`；一个都没设就
+什么都不启动。不管怎么干，每个 agent 都得到同样的隔离分身和 git 回流 —— 区别在于**记忆回流**，也就是
+你在分身里产生的 session 是否会回到原仓库：
 
-### Shell 集成（可选）
+| Agent | 怎么启动 | 记忆回流 |
+|---|---|---|
+| **pi** | `kage --agent pi` | ✅ 完整往返 —— 创建时拷入最近的 session，`finish` 时把新产生的合并回来 |
+| **Claude Code** | `kage --agent claude` | ✅ 完整往返（同 pi） |
+| **Codex** | `kage --agent codex` | ⚠️ 仅 git —— 历史保持全局，用 `codex resume --all` 找回 |
+
+**为什么 Codex 只有 git 回流。** pi 和 Claude Code 的 session 存储按工作目录索引，所以 kage 能把分身的
+session 拷到原仓库的目录、再拷回来。Codex 用的是一个由 sqlite 索引的全局 store，kage 无法干净地搬迁 ——
+所以 `--agent codex` 给你隔离分身 + git 回流，而 Codex 历史保持全局可达。详见
+[`docs/multi-agent-design.md`](./docs/multi-agent-design.md)。
+
+你可以同时跑多个 agent —— 各开一个分身，或在同一个分身里换着用。每个 agent 用自己的 store，互不冲突，
+`finish` 会把有新 session 的那些 store 各自合并回来。
+
+**要用 kage 拉不起来的 GUI/IDE agent？** 用 `--open <cmd>` 建好分身后自己打开它（比如 `kage --open code`
+会执行 `code <clone>`），或用 `--no-launch` 只建分身并打印路径。无论你怎么打开分身，只要是 kage 管理其
+store 的 agent，记忆照样回流。
+
+## Shell 集成（可选）
 
 ```bash
 eval "$(kage shell-init)"   # 加到 ~/.zshrc 或 ~/.bashrc
 ```
 
-在分身内运行 `finish`/`rm` 会删掉你 shell 当前所在的目录。这个包装函数会自动把你 cd 回原仓库（否则 CLI
-没法改变父 shell 的目录），并为子命令和分身名加上 tab 补全。
+`kage` 会把你的 shell cd **进**新分身，`finish`/`rm` 再把它 cd **回**原仓库（CLI 没法改变父 shell 的目录，
+所以这需要包装函数 —— 没装的话，kage 就只把 `cd` 命令打印出来让你自己跑）。它还为子命令和分身名加上 tab 补全。
 
 ## 工作原理
 
@@ -95,10 +114,9 @@ eval "$(kage shell-init)"   # 加到 ~/.zshrc 或 ~/.bashrc
   分身的分支 fetch 进原仓库的 git，存成本地分支 `kage/<name>-<sha>`（原仓库工作区不动 —— 你想合并时再
   `git merge`）。由于 fetch 无法保留未提交的改动，`finish` 拒绝删除有改动的分身，除非加 `--force`。
 - **记忆经由该 agent 自己的 session 存储回流，绝不重放。** 创建时拷入原仓库最近 5 个该 agent 的 session —— 该
-  agent 的 resume 选择器能看到它们，但分身本身打开的是**全新** session。`finish` 时，分身自己产生的 session 整份
+  agent 的 resume 选择器在你启动它时能看到它们，但你从一个**全新** session 开始。`finish` 时，分身自己产生的 session 整份
   拷回；你 resume 过的拷入 session 会作为一个独立的新 session 回来，原仓库的原始 session 绝不被改动。（Codex 是
-  例外 —— 它的 session 在一个 sqlite 索引的全局 store 里，kage 无法干净搬迁，所以不管理 Codex 记忆；Codex
-  历史用 `codex resume --all` 查。详见 `docs/multi-agent-design.md`。）
+  例外 —— 仅 git 回流；见 [Agents](#agents)。）
 - **对 kage 而言原仓库是只读的。** 它只往外复制、只写 session 记忆 —— 即使原仓库里另有一个 session 正活跃，
   它也绝不碰原仓库的工作区。
 
