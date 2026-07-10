@@ -12,13 +12,13 @@
     "worktree",
     "developer-tools"
   ],
-  "homepage": "https://github.com/kid7st/kage#readme",
+  "homepage": "https://github.com/fastagent-sh/kage#readme",
   "bugs": {
-    "url": "https://github.com/kid7st/kage/issues"
+    "url": "https://github.com/fastagent-sh/kage/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kid7st/kage.git"
+    "url": "git+https://github.com/fastagent-sh/kage.git"
   },
   "license": "MIT",
   "author": "kid7st (https://github.com/kid7st)",

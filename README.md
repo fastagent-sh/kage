@@ -1,6 +1,6 @@
 # kage 🥷
 
-[![CI](https://github.com/kid7st/kage/actions/workflows/ci.yml/badge.svg)](https://github.com/kid7st/kage/actions/workflows/ci.yml)
+[![CI](https://github.com/fastagent-sh/kage/actions/workflows/ci.yml/badge.svg)](https://github.com/fastagent-sh/kage/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/pi-kage)](https://www.npmjs.com/package/pi-kage)
 [![license](https://img.shields.io/npm/l/pi-kage)](./LICENSE)
 
@@ -49,7 +49,7 @@ npm install -g pi-kage      # or: pnpm add -g pi-kage
 npx pi-kage                 # run without installing
 
 # install script (single zero-dependency Node script → ~/.local/bin)
-curl -fsSL https://raw.githubusercontent.com/kid7st/kage/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/fastagent-sh/kage/main/install.sh | sh
 ```
 
 Requires **git** and **Node ≥ 18** on your `PATH`, plus at least one coding-agent CLI to drive —
@@ -59,7 +59,7 @@ or [**Codex**](https://github.com/openai/codex). kage itself has no runtime depe
 From source:
 
 ```bash
-git clone https://github.com/kid7st/kage
+git clone https://github.com/fastagent-sh/kage
 cd kage && npm install && npm link   # npm install builds bin/kage.mjs from src/
 ```
 
@@ -161,7 +161,11 @@ npm test         # build + node:test smoke tests (temp repos, no network)
 ```
 
 Releases: bump `version` in `package.json`, then `git tag vX.Y.Z && git push origin main vX.Y.Z`.
-CI runs lint + tests and `npm publish --provenance` on any `v*` tag.
+CI runs lint + tests and publishes through npm Trusted Publishing on any `v*` tag.
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md). Security issues should be reported privately; see [SECURITY.md](./SECURITY.md).
 
 ## License
 

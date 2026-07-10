@@ -1,7 +1,7 @@
 #!/bin/sh
 # kage installer — installs the `kage` CLI (a single, zero-dependency Node script).
 #
-#   curl -fsSL https://raw.githubusercontent.com/kid7st/kage/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/fastagent-sh/kage/main/install.sh | sh
 #
 # Env:
 #   KAGE_VERSION   version to install (default: latest)

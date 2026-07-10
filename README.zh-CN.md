@@ -1,6 +1,6 @@
 # kage 🥷
 
-[![CI](https://github.com/kid7st/kage/actions/workflows/ci.yml/badge.svg)](https://github.com/kid7st/kage/actions/workflows/ci.yml)
+[![CI](https://github.com/fastagent-sh/kage/actions/workflows/ci.yml/badge.svg)](https://github.com/fastagent-sh/kage/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/pi-kage)](https://www.npmjs.com/package/pi-kage)
 [![license](https://img.shields.io/npm/l/pi-kage)](./LICENSE)
 
@@ -45,7 +45,7 @@ npm install -g pi-kage      # 或：pnpm add -g pi-kage
 npx pi-kage                 # 不安装直接运行
 
 # 安装脚本（单个零依赖的 Node 脚本 → ~/.local/bin）
-curl -fsSL https://raw.githubusercontent.com/kid7st/kage/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/fastagent-sh/kage/main/install.sh | sh
 ```
 
 需要 `PATH` 上有 **git** 和 **Node ≥ 18**，外加至少一个 coding-agent CLI 来驱动 ——
@@ -55,7 +55,7 @@ curl -fsSL https://raw.githubusercontent.com/kid7st/kage/main/install.sh | sh
 从源码安装：
 
 ```bash
-git clone https://github.com/kid7st/kage
+git clone https://github.com/fastagent-sh/kage
 cd kage && npm install && npm link   # npm install 会从 src/ 编译出 bin/kage.mjs
 ```
 
@@ -150,7 +150,11 @@ npm test         # 构建 + node:test 冒烟测试（临时仓库，不联网）
 ```
 
 发布：在 `package.json` 里更新 `version`，然后 `git tag vX.Y.Z && git push origin main vX.Y.Z`。
-任何 `v*` tag 都会触发 CI 跑 lint + 测试并执行 `npm publish --provenance`。
+任何 `v*` tag 都会触发 CI 跑 lint + 测试，并通过 npm Trusted Publishing 发布。
+
+## 参与贡献
+
+请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。安全问题请私下报告，参见 [SECURITY.md](./SECURITY.md)。
 
 ## License
 
