@@ -29,7 +29,7 @@ import { basename, dirname, join, resolve, sep } from "node:path";
 import type { Key } from "node:readline";
 import readline from "node:readline";
 
-const VERSION = "0.5.1"; // keep in sync with package.json (enforced by test)
+const VERSION = "0.6.0"; // keep in sync with package.json (enforced by test)
 const MARKER = ".kage.json";
 const RECENT_SESSIONS = 5; // how many of the origin's most-recent sessions to copy into a clone
 
