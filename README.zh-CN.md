@@ -63,7 +63,7 @@ cd kage && npm install && npm link   # npm install 会从 src/ 编译出 bin/kag
 
 | 命令 | 在哪运行 | 作用 |
 |---|---|---|
-| `kage [path] [--name x] [--agent <id>]` | 原仓库 | 把仓库复制到 `../<repo>--<name>`（默认 `kage-<ts>`），拷入原仓库最近的 session（可 resume，绝不重放），**把你 cd 进分身**，仅当你指定了 agent（`--agent`/`$KAGE_AGENT`/`kage config agent`）才启动它 —— 否则只把你放进去。`--name` 只命名文件夹；kage 从不建分支。无参数 + 已有分身 → 进入交互菜单。 |
+| `kage [path] [--name x] [--agent <id>]` | 原仓库 | 把仓库复制到 `../<repo>--<name>`（默认自动生成，形如 `swift-heron`），拷入原仓库最近的 session（可 resume，绝不重放），**把你 cd 进分身**，仅当你指定了 agent（`--agent`/`$KAGE_AGENT`/`kage config agent`）才启动它 —— 否则只把你放进去。`--name` 只命名文件夹；kage 从不建分支。无参数 + 已有分身 → 进入交互菜单。 |
 | `kage status [--pr]` | 原仓库 | 仪表盘：分支、是否有改动、ahead/behind、是否「可安全清理」。`--pr` 通过 `gh` 附带 PR 状态。 |
 | `kage finish [name] [--force] [--push] [--pr]` | 原仓库 / 分身内 | 先保留分身的 commit（push，或无 remote 时存成原仓库本地分支 `kage/<name>`），把它**新产生**的 session 合并回来，删掉分身，再把你 cd 回原仓库。有未提交改动 —— 以及有 remote 时还有未 push 的 commit —— 则拒绝，除非加 `--force`。`--push`/`--pr` 先 push（并通过 `gh` 开 PR）。 |
 | `kage rm [name] [--force]` | 原仓库 / 分身内 | **不**合并记忆地丢弃一个分身。若有仅存在于本地的工作则拒绝，除非加 `--force`。 |

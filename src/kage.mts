@@ -29,7 +29,7 @@ import { basename, dirname, join, resolve, sep } from "node:path";
 import type { Key } from "node:readline";
 import readline from "node:readline";
 
-const VERSION = "0.5.1"; // keep in sync with package.json (enforced by test)
+const VERSION = "0.6.0"; // keep in sync with package.json (enforced by test)
 const MARKER = ".kage.json";
 const RECENT_SESSIONS = 5; // how many of the origin's most-recent sessions to copy into a clone
 
@@ -223,16 +223,32 @@ async function copyRepo(src: string, dst: string): Promise<{ ok: boolean; err: s
 	return r;
 }
 
-function tsName(): string {
-	const d = new Date();
-	const p = (n: number) => String(n).padStart(2, "0");
-	return `kage-${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+const NAME_ADJECTIVES = ["swift", "brave", "calm", "keen", "bold", "warm", "quiet", "sharp", "light", "quick", "still", "deep"] as const;
+const NAME_NOUNS = ["otter", "heron", "ember", "cedar", "lark", "reef", "finch", "moss", "dune", "vale", "wren", "flint"] as const;
+
+/**
+ * A short, sayable clone name like `swift-heron`.
+ *
+ * The name becomes the folder suffix, the terminal tab title you scan while several
+ * clones run side by side, and the `kage/<name>-<sha>` ref `finish` leaves behind.
+ * A timestamp served none of those: same-day clones differed only in their trailing
+ * digits — the hardest thing to tell apart at a glance — and it could not be said
+ * out loud. `isTaken` lets the caller skip names whose folder already exists.
+ */
+function autoName(isTaken: (name: string) => boolean = () => false): string {
+	const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(Math.random() * xs.length)] as T;
+	const draw = () => `${pick(NAME_ADJECTIVES)}-${pick(NAME_NOUNS)}`;
+	let name = draw();
+	// 144 pairs, so a collision is rare; if every draw is taken the caller's own
+	// "directory already exists" check reports it rather than us inventing a name.
+	for (let i = 0; i < 20 && isTaken(name); i++) name = draw();
+	return name;
 }
 
 /**
  * Sanitize a clone name into a slug that's safe as both a folder suffix and a git branch/ref:
  * ref-illegal chars (spaces, /, ~^:?*[\\, etc.) -> '-', no '..', no leading/trailing '-'/'.',
- * no trailing '.lock'. Falls back to a timestamp name if it sanitizes to empty.
+ * no trailing '.lock'. Falls back to a generated name if it sanitizes to empty.
  */
 function slug(name: string): string {
 	const s = name
@@ -241,7 +257,7 @@ function slug(name: string): string {
 		.replace(/-{2,}/g, "-")
 		.replace(/^[-.]+|[-.]+$/g, "")
 		.replace(/\.lock$/i, "-lock");
-	return s || tsName();
+	return s || autoName();
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -867,7 +883,8 @@ async function cmdNew(argv: string[]): Promise<void> {
 	// accept, or edit the suffix (non-interactive falls back to the default).
 	let name = strFlag(flags, "name") ?? "";
 	if (!name) {
-		const def = tsName();
+		const taken = (n: string) => existsSync(join(dirname(repoRoot), `${basename(repoRoot)}--${slug(n)}`));
+		const def = autoName(taken);
 		const prompt = `Clone name: ${basename(repoRoot)}--`;
 		name = (process.stdin.isTTY ? await ask(prompt, def) : "") || def;
 	}
@@ -1191,7 +1208,7 @@ With no args inside a repo that already has clones, kage opens an interactive me
 (create a new clone, or enter / finish / remove an existing one).
 
 Options:
-  --name <x>    name the clone folder /<repo>--<x> (default: kage-<timestamp>); skips the name prompt
+  --name <x>    name the clone folder /<repo>--<x> (default: a generated name like swift-heron); skips the name prompt
                 (sanitized to a git-ref-safe slug, since the name is also used as a branch name)
   --agent <id>  launch this agent CLI in the clone (one-off). with none set (--agent > $KAGE_AGENT >
                 'kage config agent') kage just cd's you into the clone. memory syncs for every agent

@@ -701,6 +701,26 @@ test("clone names are sanitized to a git-ref-safe slug (folder + no-remote prese
 	}
 });
 
+test("a clone with no --name gets a readable adjective-noun suffix", () => {
+	const root = tmp();
+	const repo = join(root, "repo");
+	mkdirSync(repo);
+	initRepo(repo);
+	const env = { ...process.env, PATH: fakePiPath(root), PI_CODING_AGENT_DIR: join(root, "pi") };
+	try {
+		const r = run([], { cwd: repo, env });
+		assert.equal(r.status, 0, r.stderr);
+		const clones = readdirSync(root).filter((d) => d.startsWith("repo--"));
+		assert.equal(clones.length, 1, `expected exactly one clone, got: ${clones.join(", ")}`);
+		const suffix = (clones[0] ?? "").slice("repo--".length);
+		// Guards the property that matters when several clones sit in a tab bar: the names
+		// differ from the first character, unlike the timestamps this replaced.
+		assert.match(suffix, /^[a-z]+-[a-z]+$/, `expected an adjective-noun name, got "${suffix}"`);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("rm discards a clone (with --force)", () => {
 	const root = tmp();
 	const repo = join(root, "repo");
