@@ -67,7 +67,7 @@ cd kage && npm install && npm link   # npm install builds bin/kage.mjs from src/
 
 | Command | Run from | What it does |
 |---|---|---|
-| `kage [path] [--name x] [--agent <id>]` | origin repo | Copy the repo to `../<repo>--<name>` (default `kage-<ts>`), import the origin's recent sessions (resumable, never replayed), **cd you into the clone**, and launch an agent only if you named one (`--agent`/`$KAGE_AGENT`/`kage config agent`) — else just drop you in. `--name` only names the folder; kage never creates a branch. No args + existing clones → interactive menu. |
+| `kage [path] [--name x] [--agent <id>]` | origin repo | Copy the repo to `../<repo>--<name>` (default a generated name like `swift-heron`), import the origin's recent sessions (resumable, never replayed), **cd you into the clone**, and launch an agent only if you named one (`--agent`/`$KAGE_AGENT`/`kage config agent`) — else just drop you in. `--name` only names the folder; kage never creates a branch. No args + existing clones → interactive menu. |
 | `kage status [--pr]` | origin repo | Dashboard: branch, dirty/clean, ahead/behind, "safe to clean". `--pr` adds PR state via `gh`. |
 | `kage finish [name] [--force] [--push] [--pr]` | origin / inside clone | Preserve the clone's commits (push, or with no remote a local `kage/<name>` branch), merge its **new** sessions back, delete it, cd you home. Refuses uncommitted changes — and, with a remote, unpushed commits — unless `--force`. `--push`/`--pr` push first (and open a PR via `gh`). |
 | `kage rm [name] [--force]` | origin / inside clone | Discard a clone **without** merging memory. Refuses local-only work unless `--force`. |
