@@ -11,6 +11,13 @@ test("the live check prefers OpenAI and Sonnet, otherwise any two listed provide
   assert.deepEqual(selectLiveModels(models("local/a", "another/b")), ["local/a", "another/b"]);
 });
 
+test("a ChatGPT sign-in is offered the models its account runs, an API key the API's own", () => {
+  const listed = models("openai/gpt-5.5", "openai/gpt-5.6-luna", "openai/gpt-6-luna", "anthropic/claude-sonnet-4-5");
+  assert.deepEqual(selectLiveModels(listed, { chatgpt: true }), ["openai/gpt-5.6-luna", "anthropic/claude-sonnet-4-5"]);
+  assert.deepEqual(selectLiveModels(listed), ["openai/gpt-5.5", "anthropic/claude-sonnet-4-5"]);
+  assert.deepEqual(selectLiveModels(models("openai/gpt-5.5", "deepseek/flash"), { chatgpt: true }), ["openai/gpt-5.5", "deepseek/flash"], "none of them listed: the usual choice");
+});
+
 test("overrides are validated as the final pair, not against an unused default", () => {
   const listed = models("openai/a", "openai/b", "deepseek/c", "another/d");
   assert.deepEqual(selectLiveModels(listed, { first: "another/d", second: "deepseek/c" }), ["another/d", "deepseek/c"]);

@@ -1,10 +1,19 @@
 import assert from "node:assert/strict";
 
-export function selectLiveModels(models, { first, second } = {}) {
+// What a ChatGPT sign-in runs: its account refuses the API's older ids (`gpt-5.5`, `gpt-4.1`) with `model_not_found`.
+// Checked against a real account on 2026-10-31; a list like this goes stale, which the live check says when it does.
+const CHATGPT_SIGN_IN = ["openai/gpt-5.6-luna", "openai/gpt-5.6-sol", "openai/gpt-5.6-terra", "openai/gpt-6-luna"];
+
+/** `chatgpt`: the OpenAI credential is a ChatGPT sign-in, not an API key. */
+export function selectLiveModels(models, { first, second, chatgpt = false } = {}) {
   const providerOf = (spec) => spec?.slice(0, spec.indexOf("/"));
   const providers = [...new Set(models.map(({ spec }) => providerOf(spec)))];
   const pick = (provider) => {
     const own = models.filter(({ spec }) => providerOf(spec) === provider);
+    if (provider === "openai" && chatgpt) {
+      const signedIn = CHATGPT_SIGN_IN.find((spec) => own.some((model) => model.spec === spec));
+      if (signedIn) return signedIn;
+    }
     if (provider === "openai") return own.find(({ spec }) => spec === "openai/gpt-5.5")?.spec ?? own[0]?.spec;
     if (provider === "anthropic") return own.find(({ spec }) => spec.startsWith("anthropic/claude-sonnet"))?.spec ?? own[0]?.spec;
     return own[0]?.spec;

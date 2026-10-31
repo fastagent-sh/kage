@@ -73,7 +73,9 @@ if (root) {
 
     const models = await call("listModels", "live");
     const before = await readFile(authFile, "utf8");
+    const chatgpt = JSON.parse(before).openai?.type === "oauth";
     const [defaultModel, other] = selectLiveModels(models, {
+      chatgpt,
       first: process.env.DUANG_LIVE_OPENAI,
       second: process.env.DUANG_LIVE_OTHER,
     });
@@ -90,9 +92,14 @@ if (root) {
       assertLiveReply(answer, defaultModel);
       console.log(`${defaultModel} reply: ${JSON.stringify(answer.text)}`);
     } else {
-      // A quota or entitlement refusal still proves the token resolved; a credential fault must not pass as one.
+      // A quota refusal still proves the token resolved; a credential fault, or a model the account does not run, must not pass as one.
       assert.equal(answer.status, "failed", `${defaultModel} message ended ${answer.status}`);
       assert.doesNotMatch(answer.error.message, /not configured|refresh|unauthor|invalid[_ ]api|401/i);
+      assert.doesNotMatch(
+        answer.error.message,
+        /model_not_found|not supported when using/i,
+        `${defaultModel} is not a model this account runs; set DUANG_LIVE_OPENAI to one it does (${answer.error.message})`,
+      );
       console.log(`${defaultModel} credentials accepted, provider refused the run: ${answer.error.message}`);
     }
 
