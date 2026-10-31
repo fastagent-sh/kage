@@ -52,6 +52,9 @@ jobs:
       - name: Electron live transcript (isolated fake model endpoint)
         run: node tests/transcript.mjs
 
+      - name: Electron quit with a run in progress (isolated fake model endpoint)
+        run: node tests/quit.mjs
+
   package:
     # The installed app, checked as someone gets it: built, copied out of the checkout, run. Unsigned (ad-hoc) until
     # there is an Apple Developer ID; the dmg is kept as an artifact.

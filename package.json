@@ -29,7 +29,7 @@
     "build": "tsc --noEmit && electron-vite build",
     "preview": "electron-vite preview",
     "test": "node --test --experimental-strip-types 'src/**/*.test.ts' 'tests/*.test.mjs'",
-    "test:smoke": "npm run build && node tests/smoke.mjs && node tests/transcript.mjs",
+    "test:smoke": "npm run build && node tests/smoke.mjs && node tests/transcript.mjs && node tests/quit.mjs",
     "test:live": "npm run build && node tests/live.mjs",
     "shots": "npm run build && node tests/shot.mjs",
     "package": "npm run build && electron-builder --mac --publish never",

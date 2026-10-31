@@ -13,16 +13,14 @@ export async function runningSessions(agents: Opened[]): Promise<{ agentId: stri
   return running;
 }
 
-const POLL_MS = 50;
-
 /**
- * Cancels every running session, and answers whether they all went idle inside `within`. A cancel that fails is
- * said and does not keep the others waiting.
+ * Cancels every running session. The stop is recorded before this resolves and holds after a restart, which is what
+ * keeps a message from being answered at the next launch; closing the agent is what waits for its work to end. A
+ * cancel that fails is said and does not keep the others waiting.
  */
-export async function stopRuns(agents: Opened[], within: number): Promise<boolean> {
+export async function stopRuns(agents: Opened[]): Promise<void> {
   const byId = new Map(agents.map((opened) => [opened.id, opened.agent]));
   const running = await runningSessions(agents);
-  const deadline = Date.now() + within;
   await Promise.all(
     running.map(({ agentId, session }) =>
       byId.get(agentId)!.sessions.cancel(session).catch((error: unknown) => {
@@ -30,9 +28,4 @@ export async function stopRuns(agents: Opened[], within: number): Promise<boolea
       }),
     ),
   );
-  while (Date.now() < deadline) {
-    if ((await runningSessions(agents)).length === 0) return true;
-    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-  }
-  return (await runningSessions(agents)).length === 0;
 }
