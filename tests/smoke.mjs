@@ -194,10 +194,13 @@ if (root) {
       await until(`document.querySelector('dialog button[data-model="${model}"]')`, "filtered model");
       await evaluate(`document.querySelector('dialog button[data-model="${model}"]').click()`);
     }
+    // A value written into code the page runs: JSON, with what could end or confuse a script escaped.
+    const quoted = (value) =>
+      JSON.stringify(value).replace(/[<>/\u2028\u2029]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
     const listOpen = "!!document.querySelector('#conversations:popover-open')";
     // A row is labelled by the newest message in its conversation, once the list has been read again.
     const rowListed = (text) =>
-      `[...document.querySelectorAll('#conversations button[data-session]')].some((b) => b.textContent.includes(${JSON.stringify(text)}))`;
+      `[...document.querySelectorAll('#conversations button[data-session]')].some((b) => b.textContent.includes(${quoted(text)}))`;
     async function clickListed(text) {
       await until(rowListed(text), `the list names a conversation by ${text}`);
       await click(text);
@@ -567,7 +570,7 @@ if (root) {
       assert.ok(models.some((model) => model.spec === "local/m1"), "the agent's own provider is pickable");
       assert.ok(!(await evaluate("window.duang.listModels('smoke')")).some((model) => model.spec === "local/m1"), "another agent's is not");
       const sessionSaying = (text) =>
-        evaluate(`window.duang.openAgent('configured').then((r) => r.sessions.find((s) => s.preview?.includes(${JSON.stringify(text)}))?.session)`);
+        evaluate(`window.duang.openAgent('configured').then((r) => r.sessions.find((s) => s.preview?.includes(${quoted(text)}))?.session)`);
       const historical = await sessionSaying("Use the configured model");
       assert.ok(historical, "the conversation that ran on the configured model is listed, by what was said in it");
       // The conversation's last message ends in FastAgent, after a send has answered: read how it ended.
