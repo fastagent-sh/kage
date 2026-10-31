@@ -225,7 +225,7 @@ message in duang does not automatically post back to the group.
 
 **Group use (later).** Existing Slack/Feishu/Telegram groups already provide group conversation.
 A duang-native group would need multiple human authors and shared-message semantics that the
-current `SessionControl` entries do not provide. Build that contract only if external groups and
+current Agent API entries do not provide. Build that contract only if external groups and
 direct invitations fail a real need; do not silently treat one person's session as a group.
 
 ## Failure and safety rules

@@ -194,7 +194,7 @@ TypeScript, and a change takes effect at the next start. Every fire continues on
 `schedule/claims/<name>/`. Neither the list of an instance's schedules nor their fire history has a remote
 route: in process, `serve()` loads them, and on the host `fastagent schedules run <name>` fires one now.
 If duang needs them remotely, ask FastAgent for a route rather than infer them from files or from the session.
-(Written against 0.26 for planning; verify each claim against the locked version before building stage 3.)
+(Written against 0.27 for planning; verify each claim against the locked version before building stage 3.)
 
 A clock must remain available while the owner's laptop is off. On Fly or Railway a schedule is the agent's own
 clock and keeps the machine resident; a sleeping machine cannot wake itself for its own cron. On AgentCore the

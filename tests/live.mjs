@@ -27,18 +27,30 @@ if (root) {
   let evaluate;
   const call = (name, ...args) =>
     evaluate(`window.duang.${name}(${args.map((a) => JSON.stringify(a)).join(", ")})`);
-  /** The assistant's own words, once its run is over, so a "success" with no answer cannot pass. */
-  async function reply(session) {
-    for (let t = 0; t < 600 && (await call("readState", "live", session)).status !== "idle"; t++)
+  /**
+   * How the message `asked` ended and the assistant's own words, so a "success" with no answer cannot pass. A send
+   * answers once FastAgent has recorded the message, so wait for its `user` entry and then for the message's end.
+   */
+  async function reply(session, asked) {
+    const subscription = `live-${session}`;
+    for (let t = 0; t < 600; t++) {
+      const opened = await call("openSession", "live", session, subscription);
+      await call("closeSession", subscription);
+      const sent = opened.entries.findLast((entry) => entry.kind === "user");
+      const said = sent?.data.content?.map((part) => part.text ?? "").join("");
+      const { lastMessage } = opened;
+      if (said === asked && lastMessage && !["queued", "running"].includes(lastMessage.status)) {
+        const text = opened.entries
+          .filter((entry) => entry.kind === "assistant")
+          .map((entry) => entry.data.text ?? "")
+          .join("")
+          .trim();
+        const { model } = opened.session;
+        return { text, model: model && `${model.provider}/${model.modelId}`, status: lastMessage.status, error: lastMessage.error };
+      }
       await new Promise((resolve) => setTimeout(resolve, 500));
-    const entries = await call("readSession", "live", session);
-    const text = entries
-      .filter((entry) => entry.kind === "assistant")
-      .map((entry) => entry.data.text ?? "")
-      .join("")
-      .trim();
-    const model = (await call("readState", "live", session)).model;
-    return { text, model: model && `${model.provider}/${model.modelId}` };
+    }
+    throw new Error(`the message "${asked}" did not end`);
   }
 
   async function run() {
@@ -72,28 +84,32 @@ if (root) {
     assert.deepEqual(await call("setModel", "live", defaultModel), { ok: true });
     const first = await call("createSession", "live");
     const defaultRun = await call("send", "live", first, ASK);
-    if (defaultRun.ok) {
-      const answer = await reply(first);
+    assert.equal(defaultRun.ok, true, `${defaultModel} send was refused: ${defaultRun.error?.message}`);
+    const answer = await reply(first, ASK);
+    if (answer.status === "completed") {
       assertLiveReply(answer, defaultModel);
       console.log(`${defaultModel} reply: ${JSON.stringify(answer.text)}`);
     } else {
       // A quota or entitlement refusal still proves the token resolved; a credential fault must not pass as one.
-      assert.doesNotMatch(defaultRun.error.message, /not configured|refresh|unauthor|invalid[_ ]api|401/i);
-      console.log(`${defaultModel} credentials accepted, provider refused the run: ${defaultRun.error.message}`);
+      assert.equal(answer.status, "failed", `${defaultModel} message ended ${answer.status}`);
+      assert.doesNotMatch(answer.error.message, /not configured|refresh|unauthor|invalid[_ ]api|401/i);
+      console.log(`${defaultModel} credentials accepted, provider refused the run: ${answer.error.message}`);
     }
 
     // 2. A conversation moved to the other provider.
     const second = await call("createSession", "live");
     assert.deepEqual(await call("setModel", "live", other, second), { ok: true });
     assert.equal((await call("send", "live", second, ASK)).ok, true, `${other} conversation send`);
-    await reply(second);
+    const otherAnswer = await reply(second, ASK);
+    assert.equal(otherAnswer.status, "completed", `${other} message ended ${otherAnswer.status}: ${otherAnswer.error?.message}`);
 
     // 3. Issue #5's reported case: the agent's default is the first provider again, and the conversation keeps
     // the model the other provider recorded, and still runs.
     assert.deepEqual(await call("setModel", "live", defaultModel), { ok: true });
     assert.equal((await call("openAgent", "live")).model, defaultModel, `agent default is ${defaultModel}`);
     assert.equal((await call("send", "live", second, "Reply with exactly: STILL OK")).ok, true, "history send");
-    const history = await reply(second);
+    const history = await reply(second, "Reply with exactly: STILL OK");
+    assert.equal(history.status, "completed", `history message ended ${history.status}: ${history.error?.message}`);
     assert.equal(history.model, other, `the historical conversation kept its own model (${other})`);
     assert.match(history.text, /STILL OK/i);
     console.log(`${other} history (${history.model}) reply: ${JSON.stringify(history.text)}`);

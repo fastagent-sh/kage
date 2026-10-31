@@ -157,9 +157,8 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-// A run keeps going only while duang does, so ask. Quit anyway stops them as Stop does and waits briefly:
-// a stopped run records its outcome, a cut one records nothing.
-const QUIT_WAIT_MS = 5000;
+// A run keeps going only while duang does, so ask. Quit anyway records a stop for each, as Stop does, so none is
+// answered at the next launch, and closing the agents gives their work a moment to end.
 const CLOSE_WAIT_MS = 3000;
 let phase: "running" | "asking" | "stopping" | "leaving" = "running";
 
@@ -186,8 +185,7 @@ async function readyToQuit(): Promise<boolean> {
     // Quitting again while this waits quits at once.
     phase = "stopping";
     quitSends();
-    if (!(await stopAllRuns(QUIT_WAIT_MS)))
-      console.error(`duang: a stopped run had not settled after ${QUIT_WAIT_MS} ms; quitting cuts it`);
+    await stopAllRuns();
   }
   await Promise.race([closeAgents(), new Promise((resolve) => setTimeout(resolve, CLOSE_WAIT_MS))]);
   return true;

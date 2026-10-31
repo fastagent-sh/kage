@@ -147,33 +147,32 @@ function sessionsAgent(statuses: Record<string, string>, onCancel: (id: string) 
   } as unknown as Agent;
 }
 
-test("quitting cancels every running session and waits for each to go idle, but not past its limit", async () => {
-  const statuses: Record<string, string> = { a: "running", b: "idle", c: "something-new" };
+test("quitting cancels every running session, whatever it is doing, and does not wait for any to go idle", async () => {
   const cancelled: string[] = [];
-  const agent = sessionsAgent(statuses, (id) => {
-    cancelled.push(id);
-    setTimeout(() => (statuses[id] = "idle"), 20);
-  });
+  const agent = sessionsAgent({ a: "running", b: "idle", c: "something-new" }, (id) => void cancelled.push(id));
   assert.deepEqual(await runningSessions([{ id: "x", agent }]), [
     { agentId: "x", session: "a" },
     { agentId: "x", session: "c" },
   ], "a status this app does not know is running");
-  assert.equal(await stopRuns([{ id: "x", agent }], 1000), true);
-  assert.deepEqual(cancelled.sort(), ["a", "c"]);
+  await stopRuns([{ id: "x", agent }]);
+  assert.deepEqual(cancelled.sort(), ["a", "c"], "idle ones are left alone, and these stay running as far as the list says");
 
-  const stuck = sessionsAgent({ s: "running", t: "running" }, () => {});
+  // A cancel that fails is said, and does not keep another agent's from being recorded.
+  const recorded: string[] = [];
   const failing = sessionsAgent({ u: "running" }, () => {
     throw new Error("the agent was removed");
   });
-  const began = Date.now();
+  const fine = sessionsAgent({ v: "running" }, (id) => void recorded.push(id));
   const originalError = console.error;
-  console.error = () => {};
+  const said: unknown[][] = [];
+  console.error = (...args) => void said.push(args);
   try {
-    assert.equal(await stopRuns([{ id: "stuck", agent: stuck }, { id: "failing", agent: failing }], 100), false);
+    await stopRuns([{ id: "failing", agent: failing }, { id: "fine", agent: fine }]);
   } finally {
     console.error = originalError;
   }
-  assert.ok(Date.now() - began < 1500);
+  assert.deepEqual(recorded, ["v"]);
+  assert.match(String(said[0]?.[0]), /failing\/u could not be stopped before quitting/);
 });
 
 test("a Stop that cancels nothing leaves the recorded message a sent one, and says why", async () => {

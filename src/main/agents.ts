@@ -221,9 +221,9 @@ export async function runsBusy(): Promise<boolean> {
   return (await runningSessions(await openedAgents())).length > 0;
 }
 
-/** Stops every run before a quit, and answers whether they all settled inside `within`. */
-export async function stopAllRuns(within: number): Promise<boolean> {
-  return stopRuns(await openedAgents(), within);
+/** Records a stop for every run before a quit. */
+export async function stopAllRuns(): Promise<void> {
+  await stopRuns(await openedAgents());
 }
 
 /** Release every instance's storage before the process ends. */
