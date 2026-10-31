@@ -1,7 +1,7 @@
 // The renderer's whole privilege.
 import { contextBridge, ipcRenderer } from "electron";
 import type { AgentInfo, Entry, Message, Session } from "@fastagent-sh/fastagent";
-import type { Result } from "../shared/result.ts";
+import type { Result, Sent } from "../shared/result.ts";
 
 export type { AgentRow } from "../main/agent-files.ts";
 import type { AgentRow } from "../main/agent-files.ts";
@@ -18,7 +18,7 @@ export type { LoginMethod, LoginOutcome, LoginStep, ProviderRow } from "../main/
 import type { LoginMethod, LoginOutcome, LoginStep, ProviderRow } from "../main/providers.ts";
 import type { ConnectionCheck, Route } from "../main/proxy.ts";
 import type { Frame } from "../main/follow.ts";
-export type { Result };
+export type { Result, Sent };
 export type AgentCommand = AgentInfo["commands"][number];
 import type { ProviderUsage } from "../main/usage.ts";
 
@@ -76,7 +76,7 @@ const api = {
   closeSession: (subscription: string): Promise<void> => ipcRenderer.invoke("session:close", subscription),
   readSession: (agentId: string, session: string): Promise<Entry[]> =>
     ipcRenderer.invoke("session:entries", agentId, session),
-  send: (agentId: string, session: string, text: string): Promise<Result<{ messageId: string }>> =>
+  send: (agentId: string, session: string, text: string): Promise<Sent> =>
     ipcRenderer.invoke("session:send", agentId, session, text),
   abort: (agentId: string, session: string): Promise<Result> =>
     ipcRenderer.invoke("session:abort", agentId, session),

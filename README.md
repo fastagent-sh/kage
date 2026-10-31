@@ -133,7 +133,7 @@ More: [architecture](docs/architecture.md) (processes, state ownership, network 
   the newest message you sent in it.
 - Messages queued from another window or a channel appear when they enter the conversation, not before.
 - Sessions of earlier versions are not read: this version keeps its own instance of each agent.
-- Removing an agent removes it from duang only; its directory and conversations stay on disk.
+- Removing an agent removes it from duang and deletes duang's conversations with it; its directory stays on disk.
 - Credentials are a plain JSON file (mode `0600`), as FastAgent writes it, not the macOS Keychain
   ([fastagent#652](https://github.com/fastagent-sh/fastagent/issues/652)).
 - A proxy that needs a user name and password is not supported.

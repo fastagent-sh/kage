@@ -450,6 +450,7 @@ export function createStore(api: DuangApi) {
           const outcome = accepted(c, echo, result.messageId, Date.now());
           if (outcome) settled(c, outcome);
         }
+        if (result.stopError) note(c, { error: result.stopError.message, title: "The run could not be stopped" });
       } else {
         // Once it entered, the failure is the run's, and the run's note already says it.
         if (!waiting()) return;

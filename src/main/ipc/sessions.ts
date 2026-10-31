@@ -74,7 +74,13 @@ export function registerSessions(): void {
     const entries = await readEntries(agent, session);
     // From the last entry held: what landed since is replayed, so nothing falls between the read and the stream.
     await sessions.open(listener(e.sender), id, session, subscription, entries.at(-1)?.id ?? "start");
-    return { entries, session: await agent.sessions.get(session), lastMessage: await lastMessageOf(agent, session, entries) };
+    try {
+      return { entries, session: await agent.sessions.get(session), lastMessage: await lastMessageOf(agent, session, entries) };
+    } catch (error) {
+      // The window reports this open as failed and holds nothing to close, so the subscription it would feed ends here.
+      sessions.close(e.sender.id, subscription);
+      throw error;
+    }
   });
   ipcMain.handle("session:send", async (_e: IpcMainInvokeEvent, id: string, session: string, text: string) => {
     requireSession(session);

@@ -42,7 +42,7 @@ for a model. Main replaces only the config FastAgent said failed, inside the age
 not name the file. Any other failure offers Retry and Reveal in Finder. A
 broken agent shows its original failure with a way to retry, reveal or remove it; any agent's row menu
 has Reveal in Finder, and the header shows the agent's folder, a click on which opens it. Removal today deletes
-only the local registry row, not the directory or history ([#133](https://github.com/fastagent-sh/duang/issues/133)
+the local registry row and duang's conversations with the agent (its instance), after asking, and not the directory ([#133](https://github.com/fastagent-sh/duang/issues/133)
 moves the directory duang created to the Trash, after asking). Removing an agent, moving it or replacing its config
 is refused while one of its conversations is at work, including a send still being recorded; changing its model is not, since nothing is rebuilt.
 A default model duang keeps for an agent that this computer's providers no longer offer (its provider was

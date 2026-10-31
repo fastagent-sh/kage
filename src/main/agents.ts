@@ -1,4 +1,5 @@
 import { app } from "electron";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { openAgent as openFastAgent, type LocalAgent } from "@fastagent-sh/fastagent";
 import type { Result } from "../shared/result.ts";
@@ -139,7 +140,7 @@ export async function withAgentRun<T>(row: AgentRow, run: (agent: LocalAgent) =>
   }
 }
 
-function change(id: string, apply: () => Promise<Result>): Promise<Result> {
+function change(id: string, apply: () => Promise<Result>, afterClose?: () => Promise<void>): Promise<Result> {
   if (changing.has(id)) return Promise.resolve(refuse("agent_changing", "Agent settings are changing; try again."));
   if (sending.has(id))
     return Promise.resolve(
@@ -156,6 +157,7 @@ function change(id: string, apply: () => Promise<Result>): Promise<Result> {
       // The instance's storage is held by one opener: it must be released for the agent to open again.
       opened.delete(id);
       await agent?.close();
+      await afterClose?.();
     }
     return result;
   })();
@@ -200,12 +202,18 @@ export function resetAgentConfig(row: AgentRow): Promise<Result> {
   });
 }
 
+// The instance is keyed by an id that only this registry row holds: once the row is gone nothing can reach its
+// conversations again, so they go with it, after the instance's storage is released.
 export function removeAgent(id: string): Promise<Result> {
-  return change(id, async () => {
-    await registry.remove(id);
-    failedConfigs.delete(id);
-    return { ok: true };
-  });
+  return change(
+    id,
+    async () => {
+      await registry.remove(id);
+      failedConfigs.delete(id);
+      return { ok: true };
+    },
+    () => rm(instanceDir(id), { recursive: true, force: true }),
+  );
 }
 
 /** Whether any open agent has a conversation at work. */

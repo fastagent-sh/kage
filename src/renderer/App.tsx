@@ -103,7 +103,7 @@ export default function App() {
   }, [unseenCount]);
 
   const remove = () => {
-    if (confirm("Remove this agent from duang? The directory is not touched.")) void store.removeAgent();
+    if (confirm("Remove this agent from duang? Its conversations in duang are deleted. The directory is not touched.")) void store.removeAgent();
   };
   const composer = (
     <Composer

@@ -902,3 +902,19 @@ test("the model's silence counts from its own output: a steer, or the person's m
   assert.ok(c.heard! > quietSince, "the model's output is");
   store.dispose();
 });
+
+
+test("a message recorded while its Stop could not cancel stays sent, and the failed stop is said", async () => {
+  const { api, store, emit } = harness();
+  await store.load();
+  const c = store.getSnapshot().conversation!;
+  api.send = async () => ({ ok: true, messageId: "m1", stopError: { code: "unavailable", message: "storage is busy", retryable: true } });
+  store.setDraft("hello");
+  await store.send();
+  take(emit, c, "hello", "m1");
+  assert.equal(c.draft, "", "the message is recorded, so it is not handed back to the composer");
+  assert.equal(said(c).filter((line) => line === "you:hello").length, 1, "and is not in the transcript twice");
+  const noted = c.items.find((item) => item.kind === "note");
+  assert.deepEqual(noted?.kind === "note" && [noted.tone, noted.title, noted.reason], ["error", "The run could not be stopped", "storage is busy"]);
+  store.dispose();
+});

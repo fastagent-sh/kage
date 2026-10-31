@@ -14,6 +14,8 @@ export interface SessionSummary {
 const PAGE = 100;
 const PAGES = 5;
 const PREVIEW_CHARS = 120;
+// Sessions read at once: the list is read on every open and every settled message, and an agent may hold hundreds.
+const READS = 8;
 
 const oneLine = (text: string) => {
   const line = text.replace(/\s+/g, " ").trim();
@@ -42,7 +44,10 @@ export async function summaries(agent: Agent): Promise<SessionSummary[]> {
     sessions.push(...page.data.map((session) => session.id));
     if (!page.next) break;
   }
-  return Promise.all(sessions.map((session) => summarize(agent, session)));
+  const rows: SessionSummary[] = [];
+  for (let start = 0; start < sessions.length; start += READS)
+    rows.push(...(await Promise.all(sessions.slice(start, start + READS).map((session) => summarize(agent, session)))));
+  return rows;
 }
 
 /** The whole history, oldest first. */

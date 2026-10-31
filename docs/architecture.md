@@ -51,8 +51,8 @@ no usage route that accepts its token (chatgpt.com answers 401), so main answers
 chatgpt.com's usage page itself when asked: the renderer names a provider, never a URL to open. The renderer
 receives window percentages and reset times only.
 
-**duang's own credential file.** Every opened agent, the sign-in and plan usage receive the same
-`CredentialStore`, `credentialFile(userData/auth.json)`; it is never chosen from an agent default, a cached
+**duang's own credential file.** Every opened agent and the sign-in receive the same
+`CredentialStore`, `credentialFile(userData/auth.json)`, and plan usage opens `credentialFile` on the same path, whose lock is a file's, so a refresh anywhere takes the same one; it is never chosen from an agent default, a cached
 provider probe or `FASTAGENT_AUTH_PATH`. Only that file is read: no fallback to the CLI's or pi's
 store, because one OAuth grant in two files is invalidated by whichever refreshes first. Provider
 environment variables still apply when the file has no credential for a provider. FastAgent
@@ -216,7 +216,7 @@ These are data-integrity constraints, not an enterprise audit UI.
 |---|---|---|
 | Agent | its own directory; today chosen by the person, with FastAgent's agent-directory release `~/Agents/<name>/` ([#133](https://github.com/fastagent-sh/duang/issues/133)) / a recipient's own copy | Only the reviewed harness and chosen contexts travel. |
 | Context (planned, [#133](https://github.com/fastagent-sh/duang/issues/133); today the project around a `fastagent/` agent) | its project or folder, outside every Agent directory; a host's copy or clone in that instance's state | Never moved or deleted by removing an Agent. |
-| Local conversations | duang's instance of the Agent (`userData/instances/<agent id>/agent.sqlite`) | Already implemented; not uploaded on publish. |
+| Local conversations | duang's instance of the Agent (`userData/instances/<agent id>/agent.sqlite`) | Already implemented; not uploaded on publish; deleted when the agent is removed from duang. |
 | Online and channel conversations | FastAgent on the owner-controlled host | Access-scoped per visitor or channel, no second client transcript. |
 | Invitation and endpoint access | host-side protection, with optional hosting metadata | Revocable; do not put secrets in a public URL without labeling its bearer semantics. |
 | Model and channel credentials | duang's own `userData/auth.json` for local agents; each remote runtime's credential store or host secrets | Never copy an OAuth login between stores or into a hosted instance. |

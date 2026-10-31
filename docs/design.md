@@ -186,7 +186,7 @@ Renaming an agent changes the name shown, never its directory, as today. The fol
 conversation asks for one. Its header then says what it works on (`works on app · knows handbook`)
 rather than where its directory is. Removing an agent moves its directory, conversations included, to the
 Trash after asking, because duang created that directory; its contexts are never touched. (Today,
-removing an agent deletes only its registry row.)
+removing an agent deletes its registry row and duang's instance of it, conversations included, after asking; the directory stays.)
 
 **Daily local use (current foundation).** Connect a model provider in duang (into its own
 credential file), add an agent (today, from a directory), choose a model, start work,

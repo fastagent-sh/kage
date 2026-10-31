@@ -1,6 +1,6 @@
 import { AgentError, type Agent } from "@fastagent-sh/fastagent";
 import { MODEL_UNAVAILABLE_CODE, STOPPED_CODE } from "../shared/refusals.ts";
-import type { Result } from "../shared/result.ts";
+import type { Result, Sent } from "../shared/result.ts";
 import { refOf, specOf } from "./models.ts";
 
 export const refuse = (code: string, message: string, retryable = true): Result<never> => ({
@@ -38,7 +38,7 @@ export function send(
   stopped: () => boolean,
   offered: (model: string) => Promise<boolean>,
   agentDefault?: string,
-): Promise<Result<{ messageId: string }>> {
+): Promise<Sent> {
   return refusal(async () => {
     if (stopped()) return stoppedBeforeStart;
     const session = await agent.sessions.get(sessionId);
@@ -48,8 +48,15 @@ export function send(
     if (stopped()) return stoppedBeforeStart;
     if (!session.model && agentDefault) await agent.sessions.update(sessionId, { model: refOf(agentDefault) });
     const message = await agent.messages.send({ sessionId, content: text, whenBusy: "steer" });
-    // The Stop came while the message was being recorded: it stops what the Stop meant to stop.
-    if (stopped()) await agent.sessions.cancel(sessionId);
+    if (!stopped()) return { ok: true, messageId: message.id };
+    // The Stop came while the message was being recorded, so it stops what the Stop meant to stop. The message is
+    // recorded either way: a cancel FastAgent refuses is reported beside it, not as a send that did not happen.
+    try {
+      await agent.sessions.cancel(sessionId);
+    } catch (error) {
+      if (!(error instanceof AgentError)) throw error;
+      return { ok: true, messageId: message.id, stopError: { code: error.code, message: error.message, retryable: error.retryable } };
+    }
     return { ok: true, messageId: message.id };
   });
 }

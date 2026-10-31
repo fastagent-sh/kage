@@ -1386,6 +1386,12 @@ if (root) {
       assert.equal(legacy.model, "openai-codex/gpt-5.5", "the default is the one the registry names");
       const legacySend = await evaluate("window.duang.createSession('legacy').then((session) => window.duang.send('legacy', session, 'hello'))");
       assert.equal(legacySend.ok === false && legacySend.error.code, "model_unavailable", "a send on it asks for another model");
+      // Removing an agent deletes duang's instance of it, once released: nothing could reach its conversations again.
+      const instance = (id) => stat(join(data, "instances", id)).then(() => true, () => false);
+      assert.equal(await instance("legacy"), true, "the opened agent has an instance");
+      assert.deepEqual(await evaluate("window.duang.removeAgent('legacy')"), { ok: true });
+      assert.equal(await instance("legacy"), false, "removing it deletes the instance, conversations included");
+      assert.equal(await instance("smoke"), true, "and no other agent's");
       // A default pi does not know: the agent opens on its own model and the picker says the default is gone.
       await writeFile(
         registry,

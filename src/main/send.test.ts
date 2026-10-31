@@ -6,7 +6,7 @@ import { runningSessions, stopRuns } from "./runs.ts";
 
 const model = { provider: "anthropic", modelId: "claude-sonnet-4-5" };
 
-function fake(options: { session?: Partial<Session>; reject?: AgentError } = {}) {
+function fake(options: { session?: Partial<Session>; reject?: AgentError; cancelFails?: Error } = {}) {
   const calls: string[] = [];
   const agent = {
     info: async () => ({ defaultModel: model }),
@@ -18,6 +18,7 @@ function fake(options: { session?: Partial<Session>; reject?: AgentError } = {})
       },
       cancel: async () => {
         calls.push("cancel");
+        if (options.cancelFails) throw options.cancelFails;
         return { stopped: [] };
       },
     },
@@ -173,4 +174,20 @@ test("quitting cancels every running session and waits for each to go idle, but 
     console.error = originalError;
   }
   assert.ok(Date.now() - began < 1500);
+});
+
+test("a Stop that cancels nothing leaves the recorded message a sent one, and says why", async () => {
+  const refused = new AgentError({ code: "unavailable", message: "storage is busy", retryable: true });
+  const failing = fake({ cancelFails: refused });
+  // Not stopped when the send starts and when it hands off; stopped once the message is recorded.
+  const stopAfterRecording = () => {
+    let checks = 0;
+    return () => ++checks > 2;
+  };
+  const result = await send(failing.agent, "s", "hi", stopAfterRecording(), async () => true);
+  assert.deepEqual(failing.calls, ["send:hi:steer", "cancel"]);
+  assert.deepEqual(result, { ok: true, messageId: "m1", stopError: { code: "unavailable", message: "storage is busy", retryable: true } });
+
+  const broken = fake({ cancelFails: new TypeError("not a refusal") });
+  await assert.rejects(send(broken.agent, "s", "hi", stopAfterRecording(), async () => true), /not a refusal/);
 });
