@@ -1,16 +1,20 @@
 import { app } from "electron";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { createPiAgentFromDir } from "@fastagent-sh/fastagent/pi";
-import { NO_SUCH_SESSION_CODE, type SessionResult, type SessionSummary } from "@fastagent-sh/fastagent/session";
-import { authPath } from "./credential-file.ts";
+import { openAgent as openFastAgent, type LocalAgent } from "@fastagent-sh/fastagent";
+import type { Result } from "../shared/result.ts";
+import { credentials } from "./credential-file.ts";
+import { changesForModel, choicesOf, offered, refOf, specOf } from "./models.ts";
+import { runningSessions, stopRuns } from "./runs.ts";
 import { refuse } from "./send.ts";
+import { summaries, type SessionSummary } from "./session-list.ts";
 import {
   AgentRegistry,
   failingConfig,
   freshConfig,
+  hasAgent,
   MissingDirError,
   requireFolder,
-  unknownDefault,
   type AgentRow,
 } from "./agent-files.ts";
 
@@ -21,21 +25,20 @@ export const listAgents = () => registry.list();
 export const addAgent = (dir: string) => registry.add(dir);
 export const renameAgent = (id: string, name: string) => registry.rename(id, name);
 
-type Opened = Awaited<ReturnType<typeof createPiAgentFromDir>> & {
-  control: NonNullable<Awaited<ReturnType<typeof createPiAgentFromDir>>["sessionControl"]>;
-  staleDefault?: string;
-};
+// One instance of the agent per duang, kept apart from the one `fastagent dev` opens in the same folder.
+const instanceDir = (id: string) => join(app.getPath("userData"), "instances", id);
 
 /** Why an agent is not ready: no agent in this folder yet, its folder is gone, or its definition does not load. */
 export type AgentSetup = "no_agent" | "missing_dir" | "broken";
 
 /** What the window's open call answers: the agent's sessions and model, or why it could not be opened. */
 export type OpenResult =
-  | { ok: true; sessions: SessionSummary[]; model?: string; staleDefault?: string }
+  | { ok: true; sessions: SessionSummary[]; model?: string; staleDefault?: string; windows: Record<string, number> }
   | { ok: false; code: AgentSetup; message: string; inConfig?: true };
-// Agent-scoped admission: sends share (a count); a model change or removal excludes them all, including turns
-// still opening. FastAgent's per-session `inProcessLease` cannot express that.
-const opened = new Map<string, Promise<Opened>>();
+
+// Agent-scoped admission: sends share (a count); removing or moving an agent excludes them, including a send
+// still opening its runtime.
+const opened = new Map<string, Promise<LocalAgent>>();
 const sending = new Map<string, number>();
 const changing = new Map<string, Promise<void>>();
 
@@ -43,37 +46,18 @@ class NoAgentError extends Error {}
 // Main keeps the failing path rather than taking one from the window.
 const failedConfigs = new Map<string, string>();
 
-// A default on a retired provider still opens: the first send is refused as `model_unavailable`.
-async function build(row: AgentRow): Promise<Opened> {
+async function build(row: AgentRow): Promise<LocalAgent> {
   // Before anything can fail: a failure that is not the config's must not offer to replace it.
-  // A missing folder must fail here: FastAgent calls it "not a fastagent agent", which offers a scaffold.
+  // A missing folder must fail here: FastAgent opens it as an empty agent and would create files in it.
   failedConfigs.delete(row.id);
   await requireFolder(row.dir);
+  if (!(await hasAgent(row.dir))) throw new NoAgentError(`${row.dir} holds no fastagent.config.ts`);
   try {
-    const assembly = await createPiAgentFromDir(row.dir, {
-      sessionControl: true,
-      authPath,
-      ...(row.model ? { model: row.model } : {}),
-    });
-    if (!assembly.sessionControl) throw new Error(`${row.dir}: no session control`);
-    return { ...assembly, control: assembly.sessionControl };
+    return await openFastAgent(row.dir, { credentials, stateDir: instanceDir(row.id) });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    // FastAgent exposes this setup condition as prose, not an error code.
-    if (/is not a fastagent agent/i.test(message)) throw new NoAgentError(message);
-    const config = failingConfig(message);
+    const config = failingConfig(row.dir, error instanceof Error ? error.message : String(error));
     if (config) failedConfigs.set(row.id, config);
     throw error;
-  }
-}
-
-// Opening only: an unknown default is dropped and reported as `staleDefault`; a model change refuses it.
-async function buildToOpen(row: AgentRow): Promise<Opened> {
-  try {
-    return await build(row);
-  } catch (error) {
-    if (!unknownDefault(error instanceof Error ? error.message : String(error), row.model)) throw error;
-    return { ...(await build({ ...row, model: undefined })), staleDefault: row.model };
   }
 }
 
@@ -84,7 +68,7 @@ export async function agentRow(agentId: string): Promise<AgentRow> {
   return row;
 }
 
-export async function openAgent(row: AgentRow): Promise<Opened> {
+export async function openAgent(row: AgentRow): Promise<LocalAgent> {
   // Wait rather than fail: "try again" is not actionable. The admitting read is stale after the change.
   while (changing.has(row.id)) {
     await changing.get(row.id);
@@ -92,12 +76,20 @@ export async function openAgent(row: AgentRow): Promise<Opened> {
   }
   const cached = opened.get(row.id);
   if (cached) return cached;
-  const promise = buildToOpen(row);
+  const promise = build(row);
   opened.set(row.id, promise);
   void promise.catch(() => {
     if (opened.get(row.id) === promise) opened.delete(row.id);
   });
   return promise;
+}
+
+/** The agents this process has open: what quitting has to look at, and nothing it would have to open. */
+export async function openedAgents(): Promise<{ id: string; agent: LocalAgent }[]> {
+  const settled = await Promise.all(
+    [...opened].map(async ([id, promise]) => ({ id, agent: await promise.catch(() => undefined) })),
+  );
+  return settled.flatMap(({ id, agent }) => (agent ? [{ id, agent }] : []));
 }
 
 /**
@@ -106,8 +98,20 @@ export async function openAgent(row: AgentRow): Promise<Opened> {
  */
 export async function openAgentResult(agentId: string): Promise<OpenResult> {
   try {
-    const { control, modelSpec, staleDefault } = await openAgent(await agentRow(agentId));
-    return { ok: true, sessions: await control.sessions.list(), model: modelSpec, ...(staleDefault && { staleDefault }) };
+    const row = await agentRow(agentId);
+    const agent = await openAgent(row);
+    const info = await agent.info();
+    const models = choicesOf(info);
+    // duang's own default for the agent, over the config's; one this computer's providers no longer offer cannot start anything.
+    const staleDefault = row.model && !models.some(({ spec }) => spec === row.model) ? row.model : undefined;
+    const model = row.model ?? (info.defaultModel && specOf(info.defaultModel));
+    return {
+      ok: true,
+      sessions: await summaries(agent),
+      windows: Object.fromEntries(models.flatMap(({ spec, contextWindow }) => (contextWindow ? [[spec, contextWindow]] : []))),
+      ...(model && { model }),
+      ...(staleDefault && { staleDefault }),
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof NoAgentError) return { ok: false, code: "no_agent", message };
@@ -116,11 +120,15 @@ export async function openAgentResult(agentId: string): Promise<OpenResult> {
   }
 }
 
-/** Count admission as busy too: model changes must not race a turn that is still opening its runtime. */
-export async function withAgentRun(
-  row: AgentRow,
-  run: (agent: Opened) => Promise<SessionResult>,
-): Promise<SessionResult> {
+/** A conversation to start in: on the agent's default for new ones when this computer can still run it. */
+export async function createSession(row: AgentRow): Promise<string> {
+  const agent = await openAgent(row);
+  const model = row.model && (await offered(agent, row.model)) ? { model: refOf(row.model) } : {};
+  return (await agent.sessions.create(model)).id;
+}
+
+/** Count admission as busy too: removing or moving an agent must not race a send that is still opening its runtime. */
+export async function withAgentRun<T>(row: AgentRow, run: (agent: LocalAgent) => Promise<Result<T>>): Promise<Result<T>> {
   if (changing.has(row.id)) return refuse("agent_changing", "Agent settings are changing; try again.");
   sending.set(row.id, (sending.get(row.id) ?? 0) + 1);
   try {
@@ -132,7 +140,7 @@ export async function withAgentRun(
   }
 }
 
-function change(id: string, apply: () => Promise<SessionResult>): Promise<SessionResult> {
+function change(id: string, apply: () => Promise<Result>, afterClose?: () => Promise<void>): Promise<Result> {
   if (changing.has(id)) return Promise.resolve(refuse("agent_changing", "Agent settings are changing; try again."));
   if (sending.has(id))
     return Promise.resolve(
@@ -140,7 +148,19 @@ function change(id: string, apply: () => Promise<SessionResult>): Promise<Sessio
     );
   // Nothing can interleave between starting the work and publishing it: `apply` cannot reach another
   // admission before its first await, and this runs in the same synchronous block.
-  const running = apply();
+  const running = (async () => {
+    const agent = await opened.get(id)?.catch(() => undefined);
+    if (agent && (await runningSessions([{ id, agent }])).length > 0)
+      return refuse("agent_busy", "An agent conversation is running — stop it before changing or removing the agent.");
+    const result = await apply();
+    if (result.ok) {
+      // The instance's storage is held by one opener: it must be released for the agent to open again.
+      opened.delete(id);
+      await agent?.close();
+      await afterClose?.();
+    }
+    return result;
+  })();
   changing.set(
     id,
     running.then(
@@ -151,47 +171,64 @@ function change(id: string, apply: () => Promise<SessionResult>): Promise<Sessio
   return running.finally(() => changing.delete(id));
 }
 
-/** Prepare the replacement first; failed setup must leave the working runtime and saved choice intact. */
-export function setAgentModel(row: AgentRow, model: string, session?: string): Promise<SessionResult> {
-  return change(row.id, async () => {
-    const replacement = await build({ ...row, model });
-    if (session) {
-      const result = await replacement.control.sessions.get(session).update({ model });
-      if (!result.ok && result.error.code !== NO_SUCH_SESSION_CODE) throw new Error(result.error.message);
-    }
-    await registry.setModel(row.id, model);
-    opened.set(row.id, Promise.resolve(replacement));
-    return { ok: true };
-  });
+/**
+ * New conversations start on this model, and the one named (if any) moves to it. Conversations already begun keep
+ * the model they record.
+ */
+export async function setAgentModel(row: AgentRow, model: string, session?: string): Promise<Result> {
+  const agent = await openAgent(row);
+  if (session) await agent.sessions.update(session, await changesForModel(agent, session, model));
+  await registry.setModel(row.id, model);
+  return { ok: true };
 }
 
-export function relocateAgent(id: string, dir: string): Promise<SessionResult> {
+export function relocateAgent(id: string, dir: string): Promise<Result> {
   return change(id, async () => {
     await registry.relocate(id, dir);
     failedConfigs.delete(id);
-    opened.delete(id);
     return { ok: true };
   });
 }
 
 const configFailed = (id: string) => failedConfigs.has(id);
 
-export function resetAgentConfig(row: AgentRow): Promise<SessionResult> {
+export function resetAgentConfig(row: AgentRow): Promise<Result> {
   return change(row.id, async () => {
     const config = failedConfigs.get(row.id);
     if (!config) return refuse("config_loads", "This agent's config is not what failed to load. Retry to see what did.");
     await freshConfig(row.dir, config);
     failedConfigs.delete(row.id);
-    opened.delete(row.id);
     return { ok: true };
   });
 }
 
-export function removeAgent(id: string): Promise<SessionResult> {
-  return change(id, async () => {
-    await registry.remove(id);
-    failedConfigs.delete(id);
-    opened.delete(id);
-    return { ok: true };
-  });
+// The instance is keyed by an id that only this registry row holds: once the row is gone nothing can reach its
+// conversations again, so they go with it, after the instance's storage is released.
+export function removeAgent(id: string): Promise<Result> {
+  return change(
+    id,
+    async () => {
+      await registry.remove(id);
+      failedConfigs.delete(id);
+      return { ok: true };
+    },
+    () => rm(instanceDir(id), { recursive: true, force: true }),
+  );
+}
+
+/** Whether any open agent has a conversation at work. */
+export async function runsBusy(): Promise<boolean> {
+  return (await runningSessions(await openedAgents())).length > 0;
+}
+
+/** Stops every run before a quit, and answers whether they all settled inside `within`. */
+export async function stopAllRuns(within: number): Promise<boolean> {
+  return stopRuns(await openedAgents(), within);
+}
+
+/** Release every instance's storage before the process ends. */
+export async function closeAgents(): Promise<void> {
+  const open = await openedAgents();
+  opened.clear();
+  await Promise.all(open.map(({ agent }) => agent.close()));
 }

@@ -1,18 +1,14 @@
 // The renderer's whole privilege.
 import { contextBridge, ipcRenderer } from "electron";
-import type {
-  AgentCommand,
-  SessionEntries,
-  SessionEvent,
-  SessionResult,
-  SessionState,
-} from "@fastagent-sh/fastagent/session";
+import type { AgentInfo, Entry, Message, Session } from "@fastagent-sh/fastagent";
+import type { Result, Sent } from "../shared/result.ts";
 
 export type { AgentRow } from "../main/agent-files.ts";
 import type { AgentRow } from "../main/agent-files.ts";
 export type { AgentSetup, OpenResult } from "../main/agents.ts";
 import type { OpenResult } from "../main/agents.ts";
-export type { Models } from "../main/models.ts";
+export type { ModelChoice, Models } from "../main/models.ts";
+export type { SessionSummary } from "../main/session-list.ts";
 import type { Models } from "../main/models.ts";
 export type { ProviderUsage, UsageWindow } from "../main/usage.ts";
 export type { AvatarStyle, Network } from "../main/settings.ts";
@@ -22,28 +18,29 @@ export type { LoginMethod, LoginOutcome, LoginStep, ProviderRow } from "../main/
 import type { LoginMethod, LoginOutcome, LoginStep, ProviderRow } from "../main/providers.ts";
 import type { ConnectionCheck, Route } from "../main/proxy.ts";
 import type { Frame } from "../main/follow.ts";
+export type { Result, Sent };
+export type AgentCommand = AgentInfo["commands"][number];
 import type { ProviderUsage } from "../main/usage.ts";
 
-export type SessionFrame = Frame<SessionEvent>;
+export type SessionFrame = Frame;
 
 const api = {
   listAgents: (): Promise<AgentRow[]> => ipcRenderer.invoke("agents:list"),
   addAgent: (): Promise<AgentRow | undefined> => ipcRenderer.invoke("agents:add"),
   openAgent: (agentId: string): Promise<OpenResult> => ipcRenderer.invoke("agent:open", agentId),
-  setModel: (agentId: string, model: string, session?: string): Promise<SessionResult> =>
+  setModel: (agentId: string, model: string, session?: string): Promise<Result> =>
     ipcRenderer.invoke("agent:setModel", agentId, model, session),
-  setThinking: (agentId: string, session: string, level: string): Promise<SessionResult> =>
+  setThinking: (agentId: string, session: string, level: string): Promise<Result> =>
     ipcRenderer.invoke("session:setThinking", agentId, session, level),
   renameAgent: (agentId: string, name: string): Promise<void> => ipcRenderer.invoke("agent:rename", agentId, name),
-  removeAgent: (agentId: string): Promise<SessionResult> => ipcRenderer.invoke("agent:remove", agentId),
-  relocateAgent: (agentId: string): Promise<SessionResult | undefined> => ipcRenderer.invoke("agent:relocate", agentId),
-  resetAgentConfig: (agentId: string): Promise<SessionResult> => ipcRenderer.invoke("agent:resetConfig", agentId),
+  removeAgent: (agentId: string): Promise<Result> => ipcRenderer.invoke("agent:remove", agentId),
+  relocateAgent: (agentId: string): Promise<Result | undefined> => ipcRenderer.invoke("agent:relocate", agentId),
+  resetAgentConfig: (agentId: string): Promise<Result> => ipcRenderer.invoke("agent:resetConfig", agentId),
   scaffoldAgent: (agentId: string): Promise<string> => ipcRenderer.invoke("agent:scaffold", agentId),
   listCommands: (agentId: string): Promise<AgentCommand[]> => ipcRenderer.invoke("agent:commands", agentId),
   revealAgent: (agentId: string): Promise<void> => ipcRenderer.invoke("agent:reveal", agentId),
   revealRegistry: (): Promise<void> => ipcRenderer.invoke("registry:reveal"),
   listModels: (agentId: string): Promise<Models> => ipcRenderer.invoke("models:list", agentId),
-  refreshModels: (agentId: string): Promise<Models> => ipcRenderer.invoke("models:refresh", agentId),
   getSettings: (): Promise<Settings> => ipcRenderer.invoke("settings:get"),
   getRoute: (): Promise<Route> => ipcRenderer.invoke("network:route"),
   setAvatar: (style: AvatarStyle): Promise<void> => ipcRenderer.invoke("settings:setAvatar", style),
@@ -68,24 +65,20 @@ const api = {
   setUnseenCount: (count: number): Promise<void> => ipcRenderer.invoke("app:unseen", count),
   menu: <Id extends string>(items: { id: Id; label: string }[]): Promise<Id | undefined> =>
     ipcRenderer.invoke("menu:popup", items),
-  renameSession: (agentId: string, session: string, name: string): Promise<SessionResult> =>
-    ipcRenderer.invoke("session:rename", agentId, session, name),
-  deleteSession: (agentId: string, session: string): Promise<SessionResult> =>
-    ipcRenderer.invoke("session:delete", agentId, session),
+  createSession: (agentId: string): Promise<string> => ipcRenderer.invoke("session:create", agentId),
   openSession: (
     agentId: string,
     session: string,
     subscription: string,
-  ): Promise<{ state: SessionState; entries: SessionEntries }> =>
-    ipcRenderer.invoke("session:open", agentId, session, subscription),
-  readState: (agentId: string, session: string): Promise<SessionState> =>
+  ): Promise<{ session: Session; entries: Entry[]; lastMessage?: Message }> => ipcRenderer.invoke("session:open", agentId, session, subscription),
+  readState: (agentId: string, session: string): Promise<Session> =>
     ipcRenderer.invoke("session:state", agentId, session),
   closeSession: (subscription: string): Promise<void> => ipcRenderer.invoke("session:close", subscription),
-  readSession: (agentId: string, session: string): Promise<SessionEntries> =>
+  readSession: (agentId: string, session: string): Promise<Entry[]> =>
     ipcRenderer.invoke("session:entries", agentId, session),
-  send: (agentId: string, session: string, text: string): Promise<SessionResult> =>
+  send: (agentId: string, session: string, text: string): Promise<Sent> =>
     ipcRenderer.invoke("session:send", agentId, session, text),
-  abort: (agentId: string, session: string): Promise<SessionResult> =>
+  abort: (agentId: string, session: string): Promise<Result> =>
     ipcRenderer.invoke("session:abort", agentId, session),
   onOpenSettings: (listener: () => void): (() => void) => {
     const handler = (): void => listener();

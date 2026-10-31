@@ -3,7 +3,7 @@
 import { registerAgents } from "./agents.ts";
 import { registerApp } from "./app.ts";
 import { registerProviders, releaseSignIn } from "./providers.ts";
-import { closeWindow, registerSessions, runsBusy, stopAllRuns } from "./sessions.ts";
+import { closeWindow, quitSends, registerSessions } from "./sessions.ts";
 
 export function registerIpc(): void {
   registerSessions();
@@ -19,4 +19,4 @@ export function releaseWindow(senderId: number): void {
 }
 
 export { readAppSettings, requestSettings } from "./app.ts";
-export { runsBusy, stopAllRuns };
+export { quitSends };

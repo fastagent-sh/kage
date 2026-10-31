@@ -62,15 +62,15 @@ if (root) {
   let win;
 
   async function run() {
-    await mkdir(join(workspace, "fastagent"), { recursive: true });
-    await mkdir(join(second, "fastagent"), { recursive: true });
+    await mkdir(workspace, { recursive: true });
+    await mkdir(second, { recursive: true });
     await mkdir(join(root, ".fastagent", ".secrets"), { recursive: true });
     await mkdir(join(data, "Shared Dictionary", "cache"), { recursive: true });
     process.env.HOME = root;
     withoutCredentials(process.env);
     // duang reads only its own credential file, in its user data.
     await writeFile(join(data, "auth.json"), JSON.stringify({ openai: { type: "api_key", key: "shot-key" } }));
-    await writeFile(join(workspace, "fastagent", "fastagent.config.ts"), 'export default { model: "openai/gpt-4o-mini" };\n');
+    await writeFile(join(workspace, "fastagent.config.ts"), 'export default { model: "openai/gpt-4o-mini" };\n');
     // Skills are what the composer's `/` completion lists.
     for (const [name, description] of [
       ["review", "Review a change for correctness and over-engineering before it is merged."],
@@ -83,11 +83,11 @@ if (root) {
       ["migrate", "Plan a migration and list what breaks on the way."],
       ["outline", "Outline a document before it is written."],
     ]) {
-      await mkdir(join(workspace, "fastagent", "skills", name), { recursive: true });
-      await writeFile(join(workspace, "fastagent", "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n---\n\nDo ${name}.\n`);
+      await mkdir(join(workspace, "skills", name), { recursive: true });
+      await writeFile(join(workspace, "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n---\n\nDo ${name}.\n`);
     }
     await writeFile(join(workspace, "hello.txt"), "Hello from the workspace\n");
-    await writeFile(join(second, "fastagent", "fastagent.config.ts"), 'export default { model: "openai/gpt-4o-mini" };\n');
+    await writeFile(join(second, "fastagent.config.ts"), 'export default { model: "openai/gpt-4o-mini" };\n');
     await writeFile(join(data, "agents.json"), JSON.stringify([
       { id: "shot", name: "amazonseo.ai", dir: workspace, colour: 0 },
       { id: "shot-2", name: "compass", dir: second, colour: 1 },

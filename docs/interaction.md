@@ -16,7 +16,7 @@ and again when the session list says it moved on, so a run driven from outside d
 the list is next read. While one of its conversations runs the row says `working` in place of the
 time, and its avatar's face shows what kind of work it is (docs/ui.md §3); a setup problem or an
 unreadable list or history replaces the quote. Reading every row's list
-at launch boots each agent's runtime. A failed list read is shown on
+at launch opens each agent's instance. A failed list read is shown on
 that agent's row, not as an empty list. An agent's name can be changed from its row's context menu
 or by double-clicking it; this renames duang's registry entry, never the directory. The window opens
 at a size that fits the sidebar and the reading column, and reopens where it was left; a window whose
@@ -28,7 +28,7 @@ the header's list button, a round disc beside its info pill, shows and hides; it
 Escape (without stopping a run), and closes when a conversation is chosen or started. Running and
 drafted work stays attached to its originating agent and conversation when navigating.
 
-Adding an agent chooses a directory; a plain project can be scaffolded after confirmation. An agent whose
+Adding an agent chooses a folder; an empty one can be made an agent after confirmation (FastAgent's starter files and a git repository), and one that holds files is refused with FastAgent's reason and left untouched. An agent whose
 directory is no longer there (moved, deleted, a drive not mounted) says so, with Retry and Remove from duang,
 and is never offered a scaffold: its row says `folder not found`. A folder that cannot be looked at (no
 permission, macOS privacy controls) is not missing: it is a broken agent, in the system's own words.
@@ -42,59 +42,44 @@ for a model. Main replaces only the config FastAgent said failed, inside the age
 not name the file. Any other failure offers Retry and Reveal in Finder. A
 broken agent shows its original failure with a way to retry, reveal or remove it; any agent's row menu
 has Reveal in Finder, and the header shows the agent's folder, a click on which opens it. Removal today deletes
-only the local registry row, not the directory or history ([#133](https://github.com/fastagent-sh/duang/issues/133)
-moves the directory duang created to the Trash, after asking). Changing the model or removing an agent
-is refused while one of its conversations is running, including a turn still opening the runtime.
-A default model duang keeps for an agent that this computer no longer knows (its endpoint was removed from a
-`models.json`, say) does not stop the agent opening: it opens on its config's model, or with none, and the picker
-opens with `<model> is no longer available` at its top; the model chosen there becomes the default and, as any
-choice in the picker does, the open conversation's model, which the notice says. Other conversations keep the
+the local registry row and duang's conversations with the agent (its instance), after asking, and not the directory ([#133](https://github.com/fastagent-sh/duang/issues/133)
+moves the directory duang created to the Trash, after asking). Removing an agent, moving it or replacing its config
+is refused while one of its conversations is at work, including a send still being recorded; changing its model is not, since nothing is rebuilt.
+A default model duang keeps for an agent that this computer's providers no longer offer (its provider was
+disconnected, or its config no longer declares the model) does not stop the agent opening: the chip names it, the picker
+opens with `<model> is no longer available` at its top, and a send on it is refused before anything is recorded; the model chosen there becomes
+the default and, as any choice in the picker does, the open conversation's model, which the notice says. Other conversations keep the
 models they recorded. Closed without a choice, it opens again the next time the agent is opened.
 An agent with no default model opens like any other, on the conversation it was left on or its latest: a
 conversation runs on the model it records. Only a conversation that records none (a new one, or one whose
 model is no longer in the catalog) with no default to fall back on asks for one: the picker opens on it and
 the composer says "pick a model to start"; the model chosen there runs that conversation. Closed without a
-choice, the picker stays closed until another conversation is opened or the chip is pressed. A model change replaces the agent's runtime, and the open conversation does not notice: its subscription
-moves to the new runtime in main, so the transcript stays as it is (the same rows, the same scroll position)
-and only the chip and the effort track are read again. While the new model is set up, the composer says
-"changing the model…", not that a conversation is opening.
-The picker lists the models the open agent can run: pi's built-ins, the agent's own
-`fastagent/models.json` and the machine's `~/.fastagent/models.json`, each kept to providers with a
-configured credential: in the credential file, in an environment variable, or as a key written in
-that `models.json`. Switching agents with the picker open reads the new agent's list. It
+choice, the picker stays closed until another conversation is opened or the chip is pressed. A model change leaves the open conversation as it is: the transcript stays (the same rows, the same scroll position)
+and only the chip and the effort track are read again. While it is made, the composer says "changing the model…", not that a conversation is opening.
+The picker lists the models the open agent can run, as FastAgent reports them: pi's built-in providers and the ones the
+agent's own config declares, each kept to providers with a credential here, in duang's credential file or in an
+environment variable. Switching agents with the picker open reads the new agent's list. It
 lists each model by the name it declares (its id when it declares none) with its context window
 (`GPT-5.5  272K`). pi's catalog lists some models twice, the alias that follows the newest snapshot as
 "… (latest)" and that snapshot under its date; that is one row, the alias (a snapshot a conversation runs on
 stays listed, named with its date). "(latest)" is dropped from any name that stays unique in its provider
 without it, and kept where it is what tells two rows apart. It shows the full `provider/id` on hover, searches both the name and the `provider/id`, groups
 the models under their provider with the selected one first, and ends with the conversation's effort: a
-track of the thinking levels the runtime lists for the conversation's model. A new conversation has them
-before its first message (what its first turn would run on), so effort can be set before sending; setting
-it, or the model, makes the runtime keep the conversation, which the list shows as *New conversation*
-until its first message. A conversation with no model yet has no levels, so the picker says effort can be set
-once a model is chosen; when the runtime reports no levels for another reason (it could not read the
-conversation's settings), the picker says that instead, and a model with one level says it has no effort
-setting, and the chip names the level only when there is a choice. The level is set on the
-open conversation only; a conversation never changed follows the agent's `thinkingLevel`, and a model change
-re-reads the levels, since they belong to the model. While a turn runs the chip is disabled with "Stop the
-turn to change the model or effort" (FastAgent refuses either change then, `session_busy`, rather than
-queueing it); the arrow keys move along the track
+track of the levels FastAgent reports the model supports (`info().models[].thinkingLevels`, lowest first). A model that does not reason
+has one level and the picker says it has no effort setting. duang refuses a level the conversation's model lacks, because FastAgent would
+clamp it when it calls the provider and the level shown would not be the level used. Moving a conversation to a model that lacks the level it had sends its effort back to the agent's for the same reason. A new conversation exists in FastAgent from the moment it is started, so effort and
+model can be set before sending; it is listed as *New conversation* until its first message. A conversation with no model yet
+has no track, so the picker says effort can be set once a model is chosen. A conversation never given a level follows the agent's
+`thinkingLevel` and the track says `Agent default`; the chip names a level only once one is set on the conversation, and that level is the
+open conversation's only. While a turn runs the chip is disabled with "Stop the turn to change the model or effort", so the
+transcript's model and the one answering are never apart; the arrow keys move along the track
 and write nothing, and Enter, Space or a click choose. A list of more than 60 models says how many it left out. The picker shows no credential path and
 links to no provider page; with no model to list its one offer is **Connect a provider**, which
 returns to the picker after connecting. It says no model is available rather than that nothing is
-connected: a ChatGPT sign-in whose account model list could not be read when it signed in lists none
-until it is reconnected, and Settings shows it connected. Configuration is not a provider probe.
-The list is what pi's bundled catalog knows, so a model released since the installed pi is missing until
-the catalog is refreshed. The refresh button at the end of the search row asks for that, only when pressed:
-pi.dev is asked for the providers the agent's credentials authenticate, over the same proxy route as a model
-call, and the answer is saved as `models-store.json` in the agent's folder, FastAgent's own file and part of
-the agent's definition (commit it and it ships with a deploy). The button waits for the list to load, spins
-while a refresh runs and is pressed once at a time (a refresh already running for that agent, started before
-the picker was reopened, is joined rather than repeated); a line under the search says how many models arrived, or none, and a failure shows
-FastAgent's reason verbatim (which provider, a timeout after 15 seconds, `PI_OFFLINE`) with the list left as it
-was. The answer belongs to the agent that asked and to the picker opening it: reopening the picker, or leaving
-the agent, drops a late one. A model it adds can be chosen at once, because choosing rebuilds the agent's runtime
-from the file.
+connected. Configuration is not a provider probe. FastAgent refreshes its model lists from pi.dev when
+an agent is opened (at most every four hours, over the same proxy route as a model call) and keeps them in the
+instance's state; a model released since is listed after the next open, and with pi.dev unreachable the lists last kept are used.
+duang has no refresh control.
 The model on a historical conversation can differ from the agent's default.
 
 Settings open from the App menu's **Settings…** (`⌘,`) or the Settings row at the foot of the
@@ -140,12 +125,11 @@ shows no plan windows, never a stale percentage: the numbers are a glance, and a
 not something to act on. The context is FastAgent's, once it reports it
 ([fastagent#608](https://github.com/fastagent-sh/fastagent/issues/608)).
 
-A new conversation is selectable immediately in the client. It becomes a runtime-owned row when
-its first message is recorded or its model or effort is set. Selection reads FastAgent
-history; the client does not save a second transcript. A conversation can be renamed and deleted,
-with destructive deletion confirmed. Until it is named, its row borrows its first message. Renaming is
-`Rename…` in the row's native context menu (also Shift+F10 and the Menu key) or a double click, in place;
-an empty name is not a rename, and duang never invents a name from the model's output. The current local view keeps unsent text with its conversation
+A new conversation is made in FastAgent when it is started (the agent's blank one is reused when it has one), so
+it is selectable at once and listed as *New conversation* until something is said in it. Selection reads FastAgent
+history; the client does not save a second transcript. A conversation's row is quoted from the newest message the person sent in
+it, read when the list is, so it follows the conversation as it goes; one with nothing the person said in view is `Conversation`. FastAgent cannot rename or delete a session,
+and duang does not offer either. The current local view keeps unsent text with its conversation
 across navigation and application restart. A failed draft save shows a warning with its original error
 while editing remains available; the next state publication retries the unsaved value. An invalid stored
 value is preserved in `duang.drafts.unreadable` before new drafts may replace it. If reading or preserving
@@ -189,11 +173,12 @@ Read back from history, the message is the one the runtime recorded, so a slash 
 tool's result, or on calls that never ran) was cut with nothing recorded, because duang or the machine
 stopped mid-run: it says *This run was cut short* and offers Retry the same way. An agent's row
 reads the conversation's state with its history, so a run still going (after a window reload) is not called cut;
-a compaction is not a run, so a turn cut before one still is. A run whose last tool batch ended it on purpose
+A run whose last tool batch ended it on purpose
 (every call answering the last answer returned pi's `terminate`, which its `tool` entries record) also stops on
-a tool's result, and is not called cut. A
-run this window joined midway (opened or reconnected while it ran) is not offered Retry when it fails while
-watched, since where it began is not in what this window heard; reopened, its history says.
+a tool's result, and is not called cut. 
+How the message ended, which no entry records, is read from FastAgent's message: a failure that left no answer entry
+is said as the failure (with FastAgent's own code deciding what to offer, such as signing in for `auth_required`), a
+cancelled one as `run stopped`, and a message that never entered the conversation returns to the composer, saying why when it failed.
 
 The composer is one row: the field with the model chip inside its right end, and one round button
 that is the next action: Send, disabled and saying why while the draft is empty (whitespace is
@@ -201,7 +186,7 @@ empty); Stop while a run is live and nothing is typed; Steer while it is live an
 The model chip moves under the text once the draft is more than one line. It sends with Enter, inserts a newline with Shift+Enter and leaves IME composition to
 the input method. `⌘N` or the header's conversation list's New conversation action starts a conversation in the open
 agent and focuses its composer when ready; Escape dismisses an active overlay before it can stop a
-run. While a run is live the composer steers it (the round button is Stop while the field is empty and Steer once it holds text; Esc always stops); the runtime decides the actual admission. A sent message waits below the output until the runtime reports it entering the conversation, and is placed there; one the run ends with still queued returns to the draft. A refused send is not shown as delivered. The roster is one tab stop with arrow
+run. While a run is live the composer steers it (the round button is Stop while the field is empty and Steer once it holds text; Esc always stops); FastAgent decides the actual admission. A sent message waits below the output until its `user` entry arrives, and is placed there; one that ends without entering returns to the draft. Messages sent from another window or by a channel are placed when they enter, and a message queued elsewhere is not shown until then. A refused send is not shown as delivered. The roster is one tab stop with arrow
 navigation, and the transcript is focusable. While a run waits on the model and nothing has come from it for 30 seconds (a steer of the person's own does not count), its status line adds `no output for 45s`: a thinking model can be that quiet and be fine, so it is said plainly, and a running tool, which has its own clock, does not add it. A tool call reopened from history shows its arguments, as it did live. A long conversation opened at its latest line shows that end at once and draws the rest above it over the next
 moments, while the view stays where it is; one returning to a place it was left at draws from that place the same way. Scrolling up suspends tail-follow; a control returns
 to the latest turn. A conversation is opened at its latest turn, or, when it was left scrolled up, where it was
@@ -209,7 +194,7 @@ left, through Settings or another agent and back (for the window's life, not acr
 at the top of the view, at the same height in it, counted within its turn from the person's message: lines drawn
 above it and output the run added while the person was away do not move it, and a card that was expanded comes back
 folded (a place inside one returns to its top). A conversation left idle is read back from history on return, which
-does not have the lines only this window showed (a "Not sent" note, `ran /cmd`); a place later in the same turn as one
+does not have the lines only this window showed (a "Not sent" note); a place later in the same turn as one
 of them comes back one line off.
 The place is held while the layout settles and while output goes on arriving, until the person scrolls. While the history of a conversation the runtime already
 has is being read (and while an agent opens, until it is known to have none), the pane is empty with the composer in
@@ -217,11 +202,10 @@ place: the new-conversation page is for a conversation nobody has spoken in, and
 before the real one arrives. A view that was at the latest turn stays there while its
 content grows by itself, and choosing the conversation that is already open rebuilds nothing. A failed action
 that belongs to no conversation (adding, renaming, revealing or removing an agent) is said in a strip that
-floats under the header, titled by the action (*The agent was not renamed*), with Dismiss, never written into whichever conversation is open; one about a conversation (renaming or
-deleting it from the list) is said in that conversation when the window holds it, else in the same strip,
+floats under the header, titled by the action (*The agent was not renamed*), with Dismiss, never written into whichever conversation is open; one about a conversation (a refused send, say) is said in that conversation when the window holds it, else in the same strip,
 titled by the action; an agent's row only ever says that its list could not be read.
-Only a registry that cannot be read shows the unreadable-registry page. A subscription the runtime lets go (a backlog that overflowed, a runtime replaced) is listened to again
-by itself once, which is FastAgent's contract for it, unless a send in it is still answering (a refused one
+Only a registry that cannot be read shows the unreadable-registry page. A stream that finishes by itself is listened to again
+by itself once, from the last entry the window holds, unless a send in it is still answering (a refused one
 puts its words back in the composer, which reopening would replace); one that ends again within 30 seconds,
 one duang ended (the agent was removed) and one that failed say so in the same strip, with Reconnect
 (*This conversation stopped updating*, or *The live connection to this conversation was lost*), rather than
@@ -248,7 +232,7 @@ and schedules are not started by duang. The current client has no online contact
 Walk a real task through find → send → switch away → return to result → continue before adding
 controls. A local owner may open a read-only detail view for the Agent actually loaded by
 FastAgent, its contexts and relevant files/diffs; if runtime discovery is unavailable, say so. A local schedule
-shown in this view is **declared**, not guaranteed to run while the app is closed. Compact and
+shown in this view is **declared**, not guaranteed to run while the app is closed. Compacting and
 branching are conditional on demonstrated long-conversation needs, not a checklist of Pi commands.
 
 ## Connecting model providers (stage 1, first version shipped)

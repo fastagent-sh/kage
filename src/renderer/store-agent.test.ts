@@ -1,21 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { SessionResult } from "@fastagent-sh/fastagent/session";
-import type { DuangApi, LoginOutcome, OpenResult, ProviderRow } from "../preload/index.ts";
-import { deferred, empty, harness, listed, panes, ready } from "./store-harness.ts";
+import type { DuangApi, LoginOutcome, OpenResult, ProviderRow, Result } from "../preload/index.ts";
+import { assistantEntry, deferred, empty, events, harness, listed, opened, panes, ready, runningSession, sessionOf } from "./store-harness.ts";
 
 test("an agent's existing conversation opens straight into it, never by way of the new-conversation page", async () => {
   const { api, store } = harness();
   api.openAgent = async () => listed("s1");
-  const history = deferred<ReturnType<typeof empty>>();
-  api.openSession = () => history.promise as never;
+  const history = deferred<ReturnType<typeof opened>>();
+  api.openSession = () => history.promise;
   const { seen, stop } = panes(store);
   const loading = store.load();
   await new Promise((resolve) => setImmediate(resolve));
-  history.resolve({
-    ...empty(),
-    entries: { entries: [{ id: "a1", timestamp: 1, kind: "assistant", data: { text: "done" } }] } as never,
-  });
+  history.resolve(opened([assistantEntry("a1", { text: "done" })], sessionOf("s1")));
   await loading;
   stop();
   assert.deepEqual(seen, ["no-agents", "settling", "transcript"], "the agent list, then the agent opening, then its conversation");
@@ -27,12 +23,12 @@ test("a new conversation is the start page, and the model being changed is said 
   const { api, store } = harness();
   await store.load();
   assert.equal(store.getSnapshot().pane, "start", "an agent with no conversations starts a new one");
-  const change = deferred<SessionResult>();
+  const change = deferred<Result>();
   api.setModel = () => change.promise;
   const picking = store.pickModel("provider/other");
   assert.equal(store.getSnapshot().blocked, "changing the model…");
   assert.equal(store.getSnapshot().pane, "start", "the conversation stays on screen");
-  change.resolve({ ok: true } as SessionResult);
+  change.resolve({ ok: true } as Result);
   await picking;
   assert.equal(store.getSnapshot().changingModel, undefined);
   assert.equal(store.getSnapshot().blocked, undefined);
@@ -43,12 +39,12 @@ test("a new conversation is the start page, and the model being changed is said 
 test("a model change still running when the person goes to another agent does not hold that agent", async () => {
   const { api, store } = harness();
   await store.load();
-  const change = deferred<SessionResult>();
+  const change = deferred<Result>();
   api.setModel = () => change.promise;
   const picking = store.pickModel("provider/other");
   await store.selectAgent("b");
   assert.equal(store.getSnapshot().blocked, undefined, "b can be used while a's model is set up");
-  change.resolve({ ok: true } as SessionResult);
+  change.resolve({ ok: true } as Result);
   await picking;
   await store.selectAgent("a");
   assert.equal(store.getSnapshot().blocked, undefined, "and a is not left changing for good");
@@ -100,9 +96,9 @@ test("a setup problem is its own pane, and its prose is not repeated above it", 
 test("an agent with no default opens on its latest conversation; only a new one with no model asks for one", async () => {
   const { api, store } = harness();
   // No default model: the agent opens all the same, and its conversation runs on the model it recorded.
-  api.openAgent = async () => ({ ok: true, sessions: [{ session: "older", updatedAt: 5, createdAt: 0, messageCount: 2 }] }) as never;
+  api.openAgent = async () => ({ ok: true, sessions: [{ session: "older", updatedAt: 5, preview: "hi" }], windows: {} });
   api.openSession = async (_id, session) =>
-    session === "older" ? { ...empty(), state: { ...empty().state, model: "provider/model" } } : empty();
+    opened([], sessionOf(session, session === "older" ? { model: { provider: "provider", modelId: "model" } } : {}));
   await store.load();
   assert.equal(store.getSnapshot().conversation?.session, "older", "straight to its history, no model asked for");
   assert.equal(store.getSnapshot().blocked, undefined);
@@ -112,7 +108,7 @@ test("an agent with no default opens on its latest conversation; only a new one 
   assert.notEqual(fresh.session, "older");
   assert.equal(store.getSnapshot().blocked, "pick a model to start");
   // Chosen there, it runs on it, and the page stays the one the model was chosen on.
-  api.readState = async () => ({ status: "idle", pending: { steering: [], followUp: [] }, model: "provider/model" });
+  api.readState = async (_id, session) => sessionOf(session, { model: { provider: "provider", modelId: "model" } });
   api.openAgent = async () => listed("older");
   await store.pickModel("provider/model");
   assert.equal(store.getSnapshot().conversation, fresh);
@@ -129,8 +125,8 @@ test("a store that React disposes and loads again still hears its conversations 
   await store.load();
   const c = store.getSnapshot().conversation!;
   assert.equal(c.loading, false);
-  emit(c, "run_started");
-  assert.equal(store.getSnapshot().busy, true, "the run the runtime reported is shown as running");
+  emit(c, events.state(runningSession(c.session)));
+  assert.equal(store.getSnapshot().busy, true, "the run FastAgent reported is shown as running");
   const provider: ProviderRow = { id: "p", name: "P", ways: [{ method: "api_key", label: "P key", subscription: false }] };
   const done = deferred<LoginOutcome>();
   api.login = () => done.promise;
@@ -213,7 +209,7 @@ test("a config that failed to load is offered afresh once, however often the but
   api.openAgent = async () => ({ ok: false, code: "broken", message: "/p/fastagent/fastagent.config.ts: Expression expected", inConfig: true });
   await store.load();
   assert.equal(store.getSnapshot().errorInConfig, true, "main says the failure is in the config");
-  const reset = deferred<SessionResult>();
+  const reset = deferred<Result>();
   let calls = 0;
   api.resetAgentConfig = () => (calls++, reset.promise);
   const first = store.resetConfig();
@@ -323,13 +319,8 @@ test("command names load once per agent, retry after a failure, and never cross 
 });
 
 
-test("the sidebar acts on the agent it names: deleting, listing and opening another agent's conversation", async () => {
+test("the sidebar acts on the agent it names: listing and opening another agent's conversation", async () => {
   const { api, store, opens } = harness();
-  const deletes: string[][] = [];
-  api.deleteSession = async (agentId, session) => {
-    deletes.push([agentId, session]);
-    return { ok: true };
-  };
   api.openAgent = async (id) => (id === "b" ? listed("b-1") : ready);
   await store.load();
   assert.equal(store.getSnapshot().agentId, "a");
@@ -340,12 +331,6 @@ test("the sidebar acts on the agent it names: deleting, listing and opening anot
     ["b-1"],
   );
   assert.equal(store.getSnapshot().agentId, "a", "listing is not opening");
-
-  // Deleting from B's row reaches B and leaves B's list, though A is open.
-  await store.deleteSession("b", "b-1");
-  assert.deepEqual(deletes, [["b", "b-1"]]);
-  assert.deepEqual(store.getSnapshot().sessions["b"], [], "the deleted conversation leaves the list");
-  assert.equal(store.getSnapshot().conversation?.agentId, "a", "A's conversation is untouched");
 
   // Clicking a conversation of another agent is one navigation that lands on that conversation.
   api.openAgent = async (id) => (id === "b" ? listed("b-2") : ready);

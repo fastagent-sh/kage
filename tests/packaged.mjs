@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractAll } from "@electron/asar";
-import { chunk, requireFreshBuild, withoutCredentials, writeMockModels } from "./harness.mjs";
+import { chunk, requireFreshBuild, withoutCredentials, writeMockAgent } from "./harness.mjs";
 import { driver } from "./window.mjs";
 
 const built = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "mac-arm64", "duang.app");
@@ -16,6 +16,12 @@ const built = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "mac-a
 requireFreshBuild([join(built, "Contents", "Resources", "app.asar")], "npm run package");
 const root = mkdtempSync(join(tmpdir(), "duang-packaged-"));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Peers a bundled package declares but nothing duang runs imports. Each needs its reason.
+const UNUSED = {
+  // Only NodeRedis.js imports it. FastAgent loads the NodeHttpServer subpath, inside serve(), which duang never calls.
+  "@effect/platform-node": ["redis"],
+};
 
 function missingDependencies(bundle) {
   const packages = [];
@@ -45,7 +51,7 @@ function missingDependencies(bundle) {
       ...Object.entries(manifest.peerDependenciesMeta ?? {}).flatMap(([name, meta]) => (meta.optional ? [name] : [])),
     ]);
     for (const dependency of [...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.peerDependencies ?? {})])
-      if (!optional.has(dependency) && !resolves(path, dependency))
+      if (!optional.has(dependency) && !(UNUSED[manifest.name] ?? []).includes(dependency) && !resolves(path, dependency))
         missing.push(`${dependency}, needed by ${path.slice(bundle.length + 1)}`);
   }
   return { checked: packages.length, missing };
@@ -96,13 +102,8 @@ async function run() {
   const data = join(root, "user-data");
   const project = join(root, "project");
   mkdirSync(data, { recursive: true });
-  mkdirSync(join(project, "fastagent"), { recursive: true });
-  writeMockModels(project, server.address().port);
-  // A type import, as FastAgent's own scaffold writes: the config is TypeScript, loaded by the app's runtime.
-  writeFileSync(
-    join(project, "fastagent", "fastagent.config.ts"),
-    'import type { FastagentConfig } from "@fastagent-sh/fastagent";\nexport default { model: "mock/mock" } satisfies FastagentConfig;\n',
-  );
+  // The agent's own modules are the app's: the one place outside the repository that has pi-ai.
+  writeMockAgent(project, server.address().port, { modules: join(bundle, "node_modules") });
   writeFileSync(join(data, "agents.json"), JSON.stringify([{ id: "p", name: "Installed", dir: project, colour: 2 }]));
   const binary = join(installed, "Contents", "MacOS", "duang");
   const first = launch(binary, data);

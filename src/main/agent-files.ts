@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { copyFile, mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, realpath, stat, writeFile } from "node:fs/promises";
 import { basename, join, sep } from "node:path";
+import { createAgent } from "@fastagent-sh/fastagent";
 import { readJson, serially, writeJsonAtomic } from "./json-file.ts";
 
 export interface AgentRow {
@@ -127,14 +128,20 @@ export async function requireFolder(dir: string): Promise<void> {
   }
 }
 
-// Only duang's default; a model named in the agent's own config is the config's to fix.
-export function unknownDefault(message: string, model: string | undefined): boolean {
-  return model !== undefined && message.includes(`unknown model "${model}"`);
+// FastAgent opens a folder with no agent in it as an empty one, so the agent is recognised by its config.
+export async function hasAgent(dir: string): Promise<boolean> {
+  return stat(join(dir, CONFIG_FILE)).then(
+    (file) => file.isFile(),
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT" || error.code === "ENOTDIR") return false;
+      throw error;
+    },
+  );
 }
 
-// Every `loadConfig` failure starts with the config's own path.
-export function failingConfig(message: string): string | undefined {
-  return message.match(/^(\/[^\n]*\/fastagent\.config\.ts): /)?.[1];
+// Every failure to load the config starts with its file name.
+export function failingConfig(dir: string, message: string): string | undefined {
+  return message.startsWith(`${CONFIG_FILE}: `) ? join(dir, CONFIG_FILE) : undefined;
 }
 
 export async function freshConfig(dir: string, config: string, now = new Date()): Promise<void> {
@@ -148,18 +155,5 @@ export async function freshConfig(dir: string, config: string, now = new Date())
   await writeFile(real, FRESH_CONFIG);
 }
 
-// Only ever creates a new directory: the project's own files are not ours.
-export async function createAgentIn(dir: string): Promise<string> {
-  const agentDir = join(dir, "fastagent");
-  // No `recursive`: an existing directory fails here with EEXIST and is never touched below.
-  await mkdir(agentDir);
-  try {
-    await writeFile(join(agentDir, CONFIG_FILE), FRESH_CONFIG, { flag: "wx" });
-    await writeFile(join(agentDir, ".gitignore"), ".state/\n.secrets/\n.env\n", { flag: "wx" });
-  } catch (error) {
-    // We created it, and a leftover would make every later attempt fail with EEXIST.
-    await rm(agentDir, { recursive: true });
-    throw error;
-  }
-  return agentDir;
-}
+// The folder is the agent. FastAgent refuses one that holds anything, so the person's own files are never touched.
+export const createAgentIn = (dir: string) => createAgent(dir);

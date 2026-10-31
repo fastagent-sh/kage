@@ -1,10 +1,10 @@
-import type { SessionSummary } from "@fastagent-sh/fastagent/session";
+import type { SessionSummary } from "../preload/index.ts";
 
 export interface Row {
   session: string;
   label: string;
   updatedAt?: number;
-  // Minted here; a session exists once a turn lands in it.
+  // Not in the agent's list yet: made a moment ago, or running somewhere this window only just heard of.
   fresh?: boolean;
   running?: boolean;
   draft?: boolean;
@@ -24,16 +24,15 @@ export function rows(
     ...(drafts.includes(row.session) ? { draft: true } : {}),
     ...(unseen[row.session] ? { unseen: unseen[row.session] } : {}),
   });
-  const known = [...summaries]
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-    // A record with no message yet (its model or effort was set before the first send) is a new conversation.
-    .map((s) =>
-      mark({
-        session: s.session,
-        label: s.name ?? s.preview ?? (s.messageCount === 0 ? "New conversation" : s.session),
-        updatedAt: s.updatedAt,
-      }),
-    );
+  // In the order FastAgent lists them: most recently active first.
+  const known = summaries.map((s) =>
+    mark({
+      session: s.session,
+      // Nothing said in it yet, or nothing the person said within the window FastAgent was asked about.
+      label: s.preview ?? (s.updatedAt === undefined ? "New conversation" : "Conversation"),
+      ...(s.updatedAt !== undefined && { updatedAt: s.updatedAt }),
+    }),
+  );
   const local = [...new Set([...(selected ? [selected] : []), ...running, ...drafts])]
     .filter((session) => !known.some((row) => row.session === session))
     .map((session) =>

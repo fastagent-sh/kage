@@ -139,8 +139,8 @@ export function NeedsAgent({ dir, onCreate, onRemove }: { dir: string; onCreate:
       title="This folder has no agent yet"
       advice={
         <>
-          duang can create one here. The project stays the agent&apos;s workspace, so it works on these files and reads
-          their <span className="font-mono text-[12.5px]">AGENTS.md</span>.
+          duang can make this folder an agent: FastAgent&apos;s starter files and a git repository. An agent lives
+          in a folder of its own, so the folder has to be empty.
         </>
       }
       actions={
@@ -156,11 +156,10 @@ export function NeedsAgent({ dir, onCreate, onRemove }: { dir: string; onCreate:
     >
       <div className="space-y-2 text-left">
         <pre className="rounded-card bg-surface-2 p-3 font-mono text-[12.5px] text-muted">
-          {`${home(dir)}/fastagent/\n  fastagent.config.ts\n  .gitignore`}
+          {`${home(dir)}/\n  SYSTEM.md\n  fastagent.config.ts\n  skills/\n  package.json\n  .gitignore`}
         </pre>
         <p className="text-[12px] text-muted">
-          Two files, nothing else. For the full scaffold (standing instructions, skills, an example tool) run{" "}
-          <span className="font-mono text-[12.5px]">fastagent init</span> instead.
+          A folder that already holds files is refused with FastAgent&apos;s reason, and nothing in it is touched.
         </p>
       </div>
     </Page>

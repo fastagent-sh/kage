@@ -1,6 +1,6 @@
 // The endpoint is undocumented: a changed shape is an error, never an empty result. ChatGPT's usage route
-// refuses our token, so that login answers with its `page`. `getAuth` refreshes under the file's lock.
-import { createPiModels } from "@fastagent-sh/fastagent/pi";
+// refuses our token, so that login answers with its `page`. `providerAuth` refreshes under the file's lock.
+import { credentialFile, providerAuth } from "@fastagent-sh/fastagent";
 
 export interface UsageWindow {
   label: string;
@@ -86,10 +86,10 @@ async function read(provider: string, authPath: string): Promise<ProviderUsage> 
   const fetchedAt = Date.now();
   const endpoint = endpoints[provider];
   if (!endpoint && !PAGES[provider]) return { provider, fetchedAt };
-  const models = createPiModels({ authPath });
-  if ((await models.checkAuth(provider))?.type !== "oauth") return { provider, fetchedAt };
+  const auth = await providerAuth(credentialFile(authPath), provider);
+  if (auth?.type !== "oauth") return { provider, fetchedAt };
   if (!endpoint) return { provider, page: PAGES[provider]!.plan, fetchedAt };
-  const token = (await models.getAuth(provider))?.auth.apiKey;
+  const token = auth.apiKey;
   if (!token) throw new Error(`${provider} has no usable login`);
   return { provider, windows: await endpoint(token), fetchedAt };
 }

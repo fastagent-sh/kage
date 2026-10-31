@@ -1,17 +1,15 @@
 // No Electron import, so it runs under `node --test`. The window never receives a credential.
-import { existsSync } from "node:fs";
 import {
-  createPiModels,
-  fastagentCredentialStore,
-  login,
-  LoginCancelled,
-  loginOptions,
-  type AuthEvent,
-  type AuthPrompt,
-  type LoginMethod,
-} from "@fastagent-sh/fastagent/pi";
+  signIn,
+  SignInCancelled,
+  signInOptions,
+  type CredentialStore,
+  type SignInEvent,
+  type SignInMethod,
+  type SignInPrompt,
+} from "@fastagent-sh/fastagent";
 
-export type { LoginMethod };
+export type LoginMethod = SignInMethod;
 
 export interface ProviderRow {
   id: string;
@@ -19,39 +17,30 @@ export interface ProviderRow {
   ways: { method: LoginMethod; label: string; subscription: boolean }[];
   stored?: LoginMethod;
   ambient?: string;
+  problem?: string;
 }
 
 // pi keeps `openai-codex` only for old logins; Sign in with ChatGPT on `openai` replaced it.
 const RETIRED = new Set(["openai-codex"]);
 export const retired = (providerOrSpec: string) => RETIRED.has(providerOrSpec.split("/")[0]!);
 
-/** A corrupt or unreadable file is an error, never "nothing connected". */
-const loud = (message: string) => {
-  throw new Error(message);
-};
-
-// `ambient` is read over an empty store: a stored credential hides an env variable that keeps answering
-// after a disconnect.
-export async function listProviders(authPath: string, empty: string): Promise<ProviderRow[]> {
-  if (existsSync(empty)) throw new Error(`${empty} must not exist: duang reads it as "no stored credentials". Remove it.`);
-  const held = new Map(
-    (await fastagentCredentialStore(authPath, { warn: loud }).list()).map((info) => [info.providerId, info.type]),
-  );
-  const names = new Map(createPiModels({ authPath, warn: loud }).getProviders().map((p) => [p.id, p.name]));
-  const ambient = createPiModels({ authPath: empty, warn: loud });
+// `ambient` is what the environment alone would authenticate with: a stored credential hides an env variable
+// that keeps answering after a disconnect, and FastAgent reports it apart from `status`.
+export async function listProviders(credentials: CredentialStore): Promise<ProviderRow[]> {
+  const held = new Map((await credentials.list()).map((info) => [info.provider, info.type]));
   const rows = new Map<string, ProviderRow>();
-  for (const option of await loginOptions(authPath)) {
-    if (retired(option.provider)) continue;
+  for (const option of await signInOptions(credentials)) {
+    if (retired(option.provider) || option.external) continue;
     let row = rows.get(option.provider);
     if (!row) {
       const stored = held.get(option.provider);
-      const source = (await ambient.checkAuth(option.provider))?.source;
       row = {
         id: option.provider,
-        name: names.get(option.provider) ?? option.provider,
+        name: option.name,
         ways: [],
         ...(stored ? { stored } : {}),
-        ...(source ? { ambient: source } : {}),
+        ...(option.environment ? { ambient: option.environment } : {}),
+        ...(option.problem ? { problem: option.problem } : {}),
       };
       rows.set(option.provider, row);
     }
@@ -60,17 +49,15 @@ export async function listProviders(authPath: string, empty: string): Promise<Pr
   return [...rows.values()];
 }
 
-export async function disconnect(authPath: string, provider: string): Promise<void> {
-  await fastagentCredentialStore(authPath, { warn: loud }).delete(provider);
-}
+export const disconnect = (credentials: CredentialStore, provider: string): Promise<void> => credentials.delete(provider);
 
 // Distributes over the union so each variant keeps its own fields.
 type WithoutSignal<T> = T extends unknown ? Omit<T, "signal"> : never;
 
 export type LoginStep =
-  | { type: "prompt"; id: string; prompt: WithoutSignal<AuthPrompt> }
+  | { type: "prompt"; id: string; prompt: WithoutSignal<SignInPrompt> }
   | { type: "dismiss"; id: string }
-  | AuthEvent;
+  | SignInEvent;
 
 export type LoginOutcome =
   | { ok: true; verified: "ok" | "unknown" | "n/a" }
@@ -90,12 +77,12 @@ export function openable(url: string): boolean {
 export function startLogin(options: {
   provider: string;
   method: LoginMethod;
-  authPath: string;
+  credentials: CredentialStore;
   send: (step: LoginStep) => void;
   open: (url: string) => Promise<void>;
-  run?: typeof login;
+  run?: typeof signIn;
 }) {
-  const { provider, method, authPath, send, open, run = login } = options;
+  const { provider, method, credentials, send, open, run = signIn } = options;
   const abort = new AbortController();
   const pending = new Map<string, (value: string) => void>();
   const reported = new Set<string>();
@@ -109,7 +96,7 @@ export function startLogin(options: {
   const result: Promise<LoginOutcome> = run({
     provider,
     method,
-    authPath,
+    credentials,
     interaction: {
       signal: abort.signal,
       prompt(prompt) {
@@ -148,7 +135,7 @@ export function startLogin(options: {
   }).then(
     (done): LoginOutcome => ({ ok: true, verified: done.verified }),
     (error: unknown): LoginOutcome =>
-      error instanceof LoginCancelled ? { ok: false, cancelled: true }
+      error instanceof SignInCancelled ? { ok: false, cancelled: true }
         : { ok: false, error: error instanceof Error ? error.message : String(error) },
   );
 

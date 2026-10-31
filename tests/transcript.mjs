@@ -1,11 +1,11 @@
 // The live end of a run in the real window, only the model faked. Each step holds the run where it is checked
 // (a tool waits for a file, the stream for a promise) rather than sleeping.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import electron from "electron";
-import { chunk, isolated, withoutCredentials, writeMockModels } from "./harness.mjs";
+import { chunk, isolated, withoutCredentials, writeMockAgent } from "./harness.mjs";
 import { open, windowDriver } from "./window.mjs";
 
 const root = await isolated(import.meta.url, { name: "transcript", timeout: 120000 });
@@ -15,7 +15,7 @@ if (root) {
   const data = join(root, "user-data");
   const dir = join(root, "project");
   mkdirSync(data, { recursive: true });
-  mkdirSync(join(dir, "fastagent"), { recursive: true });
+  mkdirSync(dir, { recursive: true });
   app.setPath("userData", data);
 
   const script = [];
@@ -46,22 +46,21 @@ if (root) {
     });
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  writeMockModels(dir, server.address().port, { reasoning: true });
-  writeFileSync(join(dir, "fastagent", "fastagent.config.ts"), 'export default { model: "mock/mock" };\n');
-  // A second agent whose one conversation is already long: made by FastAgent itself, before duang starts.
+  writeMockAgent(dir, server.address().port, { model: { reasoning: true } });
+  // A second agent whose one conversation is already long: made by FastAgent itself, in the instance duang will open.
   const long = join(root, "long");
-  mkdirSync(join(long, "fastagent"), { recursive: true });
-  writeFileSync(join(long, "fastagent", "models.json"), readFileSync(join(dir, "fastagent", "models.json")));
-  writeFileSync(join(long, "fastagent", "fastagent.config.ts"), 'export default { model: "mock/mock" };\n');
+  writeMockAgent(long, server.address().port, { model: { reasoning: true } });
   const LONG_TURNS = 40;
   {
-    const { createPiAgentFromDir } = await import("@fastagent-sh/fastagent/pi");
-    const { agent } = await createPiAgentFromDir(long, { sessionControl: true, authPath: join(data, "long-auth.json") });
+    const { openAgent } = await import("@fastagent-sh/fastagent");
+    const agent = await openAgent(long, { stateDir: join(data, "instances", "l") });
+    const { id } = await agent.sessions.create();
     for (let n = 1; n <= LONG_TURNS; n++) {
       script.push({ text: `Answer ${n}.` });
-      for await (const event of agent.invoke({ session: "long" }, { text: `Turn ${n} of the long one` }))
-        if (event.type === "failed") throw new Error(event.details);
+      const message = await agent.messages.send({ sessionId: id, content: `Turn ${n} of the long one` }, { wait: 60 });
+      if (message.status !== "completed") throw new Error(`turn ${n} ${message.status}: ${message.error?.message}`);
     }
+    await agent.close();
   }
   writeFileSync(
     join(data, "agents.json"),

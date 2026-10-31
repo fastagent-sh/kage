@@ -3,9 +3,9 @@ import { test } from "node:test";
 import { complete, completionQuery, matches } from "./commands.ts";
 
 const commands = [
-  { name: "model", source: "builtin" },
-  { name: "compact", source: "builtin" },
-  { name: "commit", source: "prompt", description: "write a commit" },
+  { name: "model" },
+  { name: "compact" },
+  { name: "commit", description: "write a commit" },
 ];
 
 test("a bare slash offers everything; typing narrows it", () => {
@@ -26,14 +26,14 @@ test("a line that does not start with a slash is not a command", () => {
   assert.equal(completionQuery(""), undefined);
 });
 
-test("accepting a name leaves the cursor where arguments go, in the spelling the engine runs", () => {
-  assert.equal(complete({ name: "commit", source: "prompt" }), "/commit ");
-  // pi runs a skill as `/skill:<name>`; a bare `/weather` would reach the model as plain text.
-  assert.equal(complete({ name: "weather", source: "skill" }), "/skill:weather ");
+test("accepting a name leaves the cursor where arguments go, in the spelling FastAgent expands", () => {
+  assert.equal(complete({ name: "commit" }), "/commit ");
+  // FastAgent names a skill's command `skill:<name>`; a bare `/weather` would reach the model as plain text.
+  assert.equal(complete({ name: "skill:weather" }), "/skill:weather ");
 });
 
-test("a skill is found by its name and by the spelling that runs it", () => {
-  const skills = [{ name: "weather", source: "skill" }];
-  assert.deepEqual(matches(skills, "wea").map((c) => c.name), ["weather"]);
-  assert.deepEqual(matches(skills, "skill:w").map((c) => c.name), ["weather"]);
+test("a skill is found by the name it is typed with, and by its own name", () => {
+  const skills = [{ name: "skill:weather" }, { name: "wire" }];
+  assert.deepEqual(matches(skills, "skill:w").map((c) => c.name), ["skill:weather"]);
+  assert.deepEqual(matches(skills, "w").map((c) => c.name), ["skill:weather", "wire"]);
 });

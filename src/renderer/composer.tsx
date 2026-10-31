@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowClockwise, ArrowUp, CaretDown, Check, MagnifyingGlass, Plug, Prohibit, Stop } from "@phosphor-icons/react";
-import { complete, completionQuery, matches, spelling } from "./commands.ts";
+import { ArrowUp, CaretDown, Check, MagnifyingGlass, Plug, Prohibit, Stop } from "@phosphor-icons/react";
+import { complete, completionQuery, matches } from "./commands.ts";
 import { Button } from "./ui.tsx";
 import type { Store, View } from "./store.ts";
 import { home } from "./paths.ts";
@@ -14,20 +14,21 @@ import type { ModelAsk } from "./store.ts";
 type ModelProblem = Extract<ModelAsk, { reason: "gone" | "refused" }>;
 import type { Models } from "../preload/index.ts";
 
-const LEVELS: Record<string, string> = { off: "Off", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high" };
+const LEVELS: Record<string, string> = { off: "Off", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
 const levelName = (level: string) => LEVELS[level] ?? level;
 
 // Choosing writes a durable entry, so it is explicit: buttons, not a radio group that chooses at every
 // stop the arrow keys cross. The track shows only what the runtime reports.
-function Effort({ levels, level, onPick }: { levels: string[]; level: string; onPick: (level: string) => void }) {
+// `level` is absent while the conversation follows the agent's own setting, which FastAgent does not report.
+function Effort({ levels, level, onPick }: { levels: readonly string[]; level?: string; onPick: (level: string) => void }) {
   const stops = useRef<(HTMLButtonElement | null)[]>([]);
-  const index = Math.max(0, levels.indexOf(level));
+  const index = level === undefined ? -1 : levels.indexOf(level);
   const focusStop = (to: number) => stops.current[Math.min(levels.length - 1, Math.max(0, to))]?.focus();
   return (
     <div className="px-3 pt-3 pb-2">
       <div className="mb-2 flex items-baseline justify-between text-[13px]">
         <span className="text-muted">Effort</span>
-        <span className="font-semibold">{levelName(level)}</span>
+        <span className="font-semibold">{level === undefined ? "Agent default" : levelName(level)}</span>
       </div>
       <div
         role="radiogroup"
@@ -45,7 +46,7 @@ function Effort({ levels, level, onPick }: { levels: string[]; level: string; on
         {/* Stops are 20px wide. */}
         <span
           className="absolute left-0 h-2 rounded-full bg-accent-fill"
-          style={{ width: `calc((100% - 20px) * ${levels.length > 1 ? index / (levels.length - 1) : 0} + 10px)` }}
+          style={{ width: index < 0 ? 0 : `calc((100% - 20px) * ${levels.length > 1 ? index / (levels.length - 1) : 0} + 10px)` }}
         />
         {levels.map((name, stop) => (
           <button
@@ -59,7 +60,7 @@ function Effort({ levels, level, onPick }: { levels: string[]; level: string; on
             aria-label={levelName(name)}
             title={levelName(name)}
             // One tab stop for the group, on the chosen level, as a radio group has.
-            tabIndex={name === level ? 0 : -1}
+            tabIndex={name === (level ?? levels[0]) ? 0 : -1}
             onClick={() => name !== level && onPick(name)}
             className={`relative size-5 shrink-0 cursor-pointer rounded-full before:absolute before:top-1/2 before:left-1/2 before:size-1.5 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-full ${stop < index ? "before:bg-white/70" : "before:bg-muted/60"} aria-checked:bg-white aria-checked:shadow-[0_1px_4px_rgb(0_0_0/0.35)] aria-checked:before:hidden focus-visible:outline-2 focus-visible:outline-accent`}
           />
@@ -74,7 +75,6 @@ function ModelPicker({
   store,
   current,
   thinking,
-  needsModel,
   ask,
   onClose,
   onProviders,
@@ -82,13 +82,12 @@ function ModelPicker({
   view: View;
   store: Store;
   current?: string;
-  thinking?: { level: string; levels: string[] };
-  needsModel: boolean;
+  thinking?: { level?: string; levels?: readonly string[] };
   ask?: ModelProblem;
   onClose: () => void;
   onProviders: () => void;
 }) {
-  const { models, modelsError: error, modelsRefresh: refresh } = view;
+  const { models, modelsError: error } = view;
   const onRetry = () => void store.loadModels();
   const [filter, setFilter] = useState("");
   const dialog = useRef<HTMLDialogElement>(null);
@@ -186,30 +185,7 @@ function ModelPicker({
               placeholder="Search models"
               className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted"
             />
-            <Button
-              kind="ghost"
-              size={28}
-              aria-label="Refresh models"
-              title="Check for newly released models. They are saved in models-store.json in this agent's folder."
-              disabled={!models ? "Loading models…" : refresh?.status === "running" && "Checking for new models…"}
-              onClick={() => void store.refreshModels()}
-              icon={<ArrowClockwise size={15} className={refresh?.status === "running" ? "animate-spin motion-reduce:animate-none" : ""} />}
-            />
           </div>
-          {refresh && (
-            <p
-              role={refresh.status === "failed" ? "alert" : "status"}
-              className={`px-4 pb-2 text-[12px] leading-snug break-words ${refresh.status === "failed" ? "text-danger" : "text-muted"}`}
-            >
-              {refresh.status === "running"
-                ? "Checking pi.dev for new models…"
-                : refresh.status === "failed"
-                  ? refresh.error
-                  : refresh.added === 0
-                    ? "No new models."
-                    : `${refresh.added} new model${refresh.added === 1 ? "" : "s"}.`}
-            </p>
-          )}
           <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
             {!models && (
               <p role="status" className="p-2.5 text-[13px] text-muted">
@@ -250,10 +226,8 @@ function ModelPicker({
           </div>
           <div className="border-t border-stroke">
             {!thinking ? (
-              <p className="px-4 py-3 text-[12px] text-muted">
-                {needsModel ? "Effort can be set once a model is chosen." : "The runtime reported no effort levels for this conversation."}
-              </p>
-            ) : thinking.levels.length > 1 ? (
+              <p className="px-4 py-3 text-[12px] text-muted">Effort can be set once a model is chosen.</p>
+            ) : !thinking.levels ? null : thinking.levels.length > 1 ? (
               <Effort levels={thinking.levels} level={thinking.level} onPick={(level) => void store.setThinking(level)} />
             ) : (
               <p className="px-4 py-3 text-[12px] text-muted">This model has no effort setting.</p>
@@ -319,10 +293,9 @@ export function Composer({
   const agent = view.agents.find((row) => row.id === agentId);
   // What the conversation will run with: a chip naming a model the turn will not use is the failure to avoid.
   const model = c?.state?.model ?? view.model;
-  const thinking =
-    c?.state?.thinkingLevel !== undefined && c.state.availableThinkingLevels
-      ? { level: c.state.thinkingLevel, levels: c.state.availableThinkingLevels }
-      : undefined;
+  const thinking = model
+    ? { level: c?.state?.thinkingLevel, levels: view.models?.find((candidate) => candidate.spec === model)?.thinkingLevels }
+    : undefined;
   const { needsModel, modelAsk, modelBlocked, picker: picking } = view;
   const value = c?.draft ?? "";
   const disabled = !!view.blocked;
@@ -423,10 +396,8 @@ export function Composer({
                     command === chosen ? "bg-hover" : ""
                   }`}
                 >
-                  {/* A bare `/weather` typed by hand would reach the model as text. */}
-                  <span className="shrink-0">/{spelling(command)}</span>
+                  <span className="shrink-0">/{command.name}</span>
                   <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{command.description}</span>
-                  <span className="shrink-0 text-[12px] text-muted">{command.source}</span>
                 </button>
               ))}
             </div>
@@ -484,7 +455,7 @@ export function Composer({
               ) : (
                 <span className="truncate">{needsModel ? "pick a model" : "reading model…"}</span>
               )}
-              {thinking && thinking.levels.length > 1 && (
+              {thinking?.level !== undefined && (
                 <span className="shrink-0 text-[13px] text-muted">{levelName(thinking.level)}</span>
               )}
               <CaretDown size={12} className="shrink-0" />
@@ -495,7 +466,6 @@ export function Composer({
                 store={store}
                 current={model}
                 thinking={thinking}
-                needsModel={needsModel}
                 ask={modelAsk?.reason === "needs" ? undefined : modelAsk}
                 onClose={store.closePicker}
                 onProviders={() => {

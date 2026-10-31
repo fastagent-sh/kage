@@ -1,9 +1,9 @@
 // Signing in to a model provider, and the plan usage that login makes readable. One sign-in runs at a time, and
 // no message to the renderer ever carries credential contents.
-import { app, ipcMain, shell } from "electron";
+import { ipcMain, shell } from "electron";
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { authPath } from "../credential-file.ts";
+import { dirname } from "node:path";
+import { authPath, credentials } from "../credential-file.ts";
 import { disconnect, listProviders, startLogin, type LoginMethod, type LoginOutcome } from "../providers.ts";
 import { forgetUsage, providerUsage, usagePage } from "../usage.ts";
 
@@ -15,15 +15,13 @@ export function releaseSignIn(senderId: number): void {
 }
 
 export function registerProviders(): void {
-  // `empty` is never written: reading it shows what env variables alone provide. In userData, not a shared tmp dir.
-  const empty = join(app.getPath("userData"), "no-credentials.json");
-  ipcMain.handle("providers:list", () => listProviders(authPath, empty));
+  ipcMain.handle("providers:list", () => listProviders(credentials));
   ipcMain.handle("providers:reveal", () =>
     existsSync(authPath) ? shell.showItemInFolder(authPath) : shell.openPath(dirname(authPath)),
   );
   ipcMain.handle("providers:disconnect", async (_e, provider: string) => {
     if (typeof provider !== "string" || !provider) throw new Error("Provider must be a non-empty string");
-    await disconnect(authPath, provider);
+    await disconnect(credentials, provider);
     forgetUsage(provider, authPath);
   });
   ipcMain.handle("providers:login", async (e, provider: string, method: LoginMethod): Promise<LoginOutcome> => {
@@ -33,7 +31,7 @@ export function registerProviders(): void {
     const flow = startLogin({
       provider,
       method,
-      authPath,
+      credentials,
       send: (step) => {
         if (!e.sender.isDestroyed()) e.sender.send("providers:step", step);
       },

@@ -48,9 +48,9 @@ taking your message offers Retry, which first asks when the run had already used
 agent may repeat that work. Nothing is ever resent on its own.
 
 **Models and effort per conversation.** The picker lists what the open agent can run: pi's built-in
-models, the agent's `fastagent/models.json` and `~/.fastagent/models.json`, for providers you have
-connected. Each conversation keeps its own model and reasoning effort; the agent's default only
-applies to conversations that never chose. A refresh button fetches models released since your pi.
+models and the providers the agent's config declares, for providers you have connected. Each
+conversation keeps its own model and reasoning effort; the agent's default only applies to
+conversations that never chose. FastAgent fetches models released since when an agent opens.
 
 **Providers connected in the app.** Sign in with a subscription (Claude Pro/Max, ChatGPT, GitHub
 Copilot and the other flows FastAgent supports) in the system browser, or paste an API key, which is
@@ -83,14 +83,14 @@ Requirements: macOS on Apple silicon.
 Each release lists the dmg's SHA-256 (`shasum -a 256 duang-<version>-arm64.dmg` to compare). To update,
 download the new release and replace the app; there are no automatic updates until the app is signed.
 
-**From source** (Node 24 and npm): `git clone https://github.com/fastagent-sh/duang.git`, then
+**From source** (Node 24.15 or later and npm): `git clone https://github.com/fastagent-sh/duang.git`, then
 `npm ci && npm run package` builds the same dmg into `dist/`.
 
 ## Getting started
 
-1. **Add an agent.** Click **+** at the top of the sidebar and choose a FastAgent agent directory, or a plain project: duang
-   offers to create `fastagent/fastagent.config.ts` and a `.gitignore` there, after asking, and never
-   overwrites an existing `fastagent/` directory.
+1. **Add an agent.** Click **+** at the top of the sidebar and choose a FastAgent agent directory, or an
+   empty folder: duang offers to make it an agent (FastAgent's starter files and a git repository), after
+   asking. A folder that already holds files is refused and left as it is.
 2. **Connect a provider.** Settings (`⌘,`) → Model providers, or **Connect a provider** in the model
    picker.
 3. **Pick a model and send.** A new agent has no default model, so its first conversation asks for
@@ -102,12 +102,12 @@ download the new release and replace the app; there are no automatic updates unt
 renderer (React) ── typed preload API ── Electron main ── FastAgent, in-process
 ```
 
-- **Main owns the runtime.** Each agent is assembled with FastAgent's public
-  `createPiAgentFromDir`, inside Electron main, without opening a local port. The renderer runs with
+- **Main owns the runtime.** Each agent is opened with FastAgent's public `openAgent`, inside
+  Electron main, without opening a local port, as its own instance in duang's data directory. The renderer runs with
   context isolation and no Node access; it gets named operations, never the filesystem, a shell or
   credentials.
-- **No second transcript.** Conversations live in each agent's FastAgent state. duang reads history
-  and live events from the runtime; it stores only presentation state (drafts, the open
+- **No second transcript.** Conversations live in duang's instance of each agent (FastAgent's own
+  storage). duang reads history and live events through the Agent API; it stores only presentation state (drafts, the open
   conversation, where you were reading).
 - **duang's own files** live in its data directory, `~/Library/Application Support/duang/`:
   `agents.json` (the agents you added), `settings.json` (network and avatar style) and `auth.json`
@@ -126,10 +126,14 @@ More: [architecture](docs/architecture.md) (processes, state ownership, network 
 ## Known limitations
 
 - macOS on Apple silicon only; not signed or notarized, and no automatic updates.
-- An agent is added from a directory: today a `fastagent/` directory inside a project, which works on
-  the project around it. Creating agents with the folders they work on waits for FastAgent's
-  agent-directory release ([#133](https://github.com/fastagent-sh/duang/issues/133)).
-- Removing an agent removes it from duang only; its directory and conversations stay on disk.
+- An agent is its own directory. duang can make an empty folder one but cannot yet attach the folders it
+  works on, and an agent made inside a project no longer works on the project around it
+  ([#133](https://github.com/fastagent-sh/duang/issues/133)).
+- Conversations cannot be renamed or deleted: FastAgent's sessions have neither. A conversation is titled by
+  the newest message you sent in it.
+- Messages queued from another window or a channel appear when they enter the conversation, not before.
+- Sessions of earlier versions are not read: this version keeps its own instance of each agent.
+- Removing an agent removes it from duang and deletes duang's conversations with it; its directory stays on disk.
 - Credentials are a plain JSON file (mode `0600`), as FastAgent writes it, not the macOS Keychain
   ([fastagent#652](https://github.com/fastagent-sh/fastagent/issues/652)).
 - A proxy that needs a user name and password is not supported.
