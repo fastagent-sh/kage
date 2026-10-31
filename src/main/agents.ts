@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { openAgent as openFastAgent, type LocalAgent } from "@fastagent-sh/fastagent";
 import type { Result } from "../shared/result.ts";
 import { credentials } from "./credential-file.ts";
-import { choicesOf, offered, refOf, specOf } from "./models.ts";
+import { changesForModel, choicesOf, offered, refOf, specOf } from "./models.ts";
 import { runningSessions, stopRuns } from "./runs.ts";
 import { refuse } from "./send.ts";
 import { summaries, type SessionSummary } from "./session-list.ts";
@@ -175,7 +175,7 @@ function change(id: string, apply: () => Promise<Result>): Promise<Result> {
  */
 export async function setAgentModel(row: AgentRow, model: string, session?: string): Promise<Result> {
   const agent = await openAgent(row);
-  if (session) await agent.sessions.update(session, { model: refOf(model) });
+  if (session) await agent.sessions.update(session, await changesForModel(agent, session, model));
   await registry.setModel(row.id, model);
   return { ok: true };
 }

@@ -529,8 +529,9 @@ export function createStore(api: DuangApi) {
       const { model, thinkingLevel } = stateOf(await api.readState(c.agentId, c.session));
       // The read outlived the conversation (closed, or replaced by a reopen): it says nothing about this one.
       if (conversations.get(key(c.agentId, c.session)) !== c || !c.state) return;
-      // Silence about a field is not a change to it.
-      c.state = { ...c.state, ...(model && { model }), ...(thinkingLevel && { thinkingLevel }) };
+      // A model the read does not name is not a change to it; an effort it does not name is one that was cleared.
+      const { thinkingLevel: _stale, ...rest } = c.state;
+      c.state = { ...rest, ...(model && { model }), ...(thinkingLevel && { thinkingLevel }) };
       publish();
     } catch (error) {
       note(c, { error, title: "This conversation's settings could not be read" });

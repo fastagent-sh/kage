@@ -122,6 +122,19 @@ test("a conversation not begun yet takes its effort before its first message, an
 });
 
 
+test("an effort the model change cleared is no longer shown", async () => {
+  const { api, store, emit } = harness();
+  await store.load();
+  const c = store.getSnapshot().conversation!;
+  emit(c, events.state(sessionOf(c.session, { model: model("anthropic/claude-sonnet-4-5"), thinkingLevel: "high" })));
+  assert.equal(c.state?.thinkingLevel, "high");
+  api.readState = async (_id, session) => sessionOf(session, { model: model("openai/gpt-4o-mini") });
+  await store.pickModel("openai/gpt-4o-mini");
+  assert.deepEqual([c.state?.model, c.state?.thinkingLevel], ["openai/gpt-4o-mini", undefined]);
+  store.dispose();
+});
+
+
 test("settings read after a model change land only on the conversation they were read for, and silence keeps the model", async () => {
   const { api, store, closed } = harness();
   await store.load();

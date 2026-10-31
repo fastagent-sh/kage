@@ -1,5 +1,5 @@
-import type { Agent, AgentInfo, ThinkingLevel } from "@fastagent-sh/fastagent";
-import { specOf } from "../shared/model-spec.ts";
+import type { Agent, AgentInfo, SessionChanges, ThinkingLevel } from "@fastagent-sh/fastagent";
+import { refOf, specOf } from "../shared/model-spec.ts";
 import { retired } from "./providers.ts";
 
 export { refOf, specOf } from "../shared/model-spec.ts";
@@ -40,6 +40,17 @@ export async function effortOf(agent: Agent, sessionId: string, agentDefault?: s
   const ref = session.model ?? info.defaultModel;
   const spec = session.model ? specOf(session.model) : (agentDefault ?? (ref && specOf(ref)));
   return choicesOf(info).find((model) => model.spec === spec);
+}
+
+/**
+ * What moving a conversation to `model` changes: its model, and its effort when the new model lacks the level it
+ * had, which goes back to the agent's rather than staying on screen as a level that would be clamped.
+ */
+export async function changesForModel(agent: Agent, sessionId: string, model: string): Promise<SessionChanges> {
+  const [session, info] = await Promise.all([agent.sessions.get(sessionId), agent.info()]);
+  const supported = choicesOf(info).find((choice) => choice.spec === model)?.thinkingLevels;
+  const stale = session.thinkingLevel !== undefined && !supported?.includes(session.thinkingLevel);
+  return { model: refOf(model), ...(stale && { thinkingLevel: null }) };
 }
 
 /** Whether the agent can run this model now: its provider has a credential here and offers it. */

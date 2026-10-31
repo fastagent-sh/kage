@@ -67,7 +67,7 @@ without it, and kept where it is what tells two rows apart. It shows the full `p
 the models under their provider with the selected one first, and ends with the conversation's effort: a
 track of the levels FastAgent reports the model supports (`info().models[].thinkingLevels`, lowest first). A model that does not reason
 has one level and the picker says it has no effort setting. duang refuses a level the conversation's model lacks, because FastAgent would
-clamp it when it calls the provider and the level shown would not be the level used. A new conversation exists in FastAgent from the moment it is started, so effort and
+clamp it when it calls the provider and the level shown would not be the level used. Moving a conversation to a model that lacks the level it had sends its effort back to the agent's for the same reason. A new conversation exists in FastAgent from the moment it is started, so effort and
 model can be set before sending; it is listed as *New conversation* until its first message. A conversation with no model yet
 has no track, so the picker says effort can be set once a model is chosen. A conversation never given a level follows the agent's
 `thinkingLevel` and the track says `Agent default`; the chip names a level only once one is set on the conversation, and that level is the
