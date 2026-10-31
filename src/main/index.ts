@@ -4,10 +4,10 @@ import {
   readAppSettings,
   registerIpc,
   releaseWindow,
+  quitSends,
   requestSettings,
-  runsBusy,
-  stopAllRuns,
 } from "./ipc/index.ts";
+import { closeAgents, runsBusy, stopAllRuns } from "./agents.ts";
 import { applyNetwork } from "./proxy.ts";
 import { DEFAULTS } from "./settings.ts";
 import { rememberBounds, savedBounds } from "./window-state.ts";
@@ -157,27 +157,60 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-// Quitting ends runs and nothing resumes them, so ask. Quit anyway stops them as Stop does and waits briefly:
+// A run keeps going only while duang does, so ask. Quit anyway stops them as Stop does and waits briefly:
 // a stopped run records its outcome, a cut one records nothing.
 const QUIT_WAIT_MS = 5000;
-let quitting = false;
-app.on("before-quit", (event) => {
-  if (quitting || !runsBusy()) return;
-  event.preventDefault();
-  const quit = dialog.showMessageBoxSync({
-    type: "warning",
-    buttons: ["Quit anyway", "Cancel"],
-    defaultId: 1,
-    cancelId: 1,
-    message: "An agent is still working.",
-    detail:
-      "Quitting stops the run, and nothing resumes it afterwards. Work its tools already finished is not undone.",
-  });
-  if (quit !== 0) return;
-  // Quitting again while this waits quits at once.
-  quitting = true;
-  void stopAllRuns(QUIT_WAIT_MS).then((settled) => {
-      if (!settled) console.error(`duang: a stopped run had not settled after ${QUIT_WAIT_MS} ms; quitting cuts it`);
-      app.quit();
+const CLOSE_WAIT_MS = 3000;
+let phase: "running" | "asking" | "stopping" | "leaving" = "running";
+
+// Whether quitting goes on. Releasing an instance's storage is what lets the next launch open it.
+async function readyToQuit(): Promise<boolean> {
+  let busy = false;
+  try {
+    busy = await runsBusy();
+  } catch (error) {
+    // Not being able to look must not keep the app from quitting.
+    console.error("duang: running conversations could not be listed before quitting:", error);
+  }
+  if (busy) {
+    const quit = dialog.showMessageBoxSync({
+      type: "warning",
+      buttons: ["Quit anyway", "Cancel"],
+      defaultId: 1,
+      cancelId: 1,
+      message: "An agent is still working.",
+      detail:
+        "Quitting stops the run, and nothing resumes it afterwards. Work its tools already finished is not undone.",
     });
+    if (quit !== 0) return false;
+    // Quitting again while this waits quits at once.
+    phase = "stopping";
+    quitSends();
+    if (!(await stopAllRuns(QUIT_WAIT_MS)))
+      console.error(`duang: a stopped run had not settled after ${QUIT_WAIT_MS} ms; quitting cuts it`);
+  }
+  await Promise.race([closeAgents(), new Promise((resolve) => setTimeout(resolve, CLOSE_WAIT_MS))]);
+  return true;
+}
+
+app.on("before-quit", (event) => {
+  if (phase === "leaving") return;
+  if (phase === "stopping") {
+    phase = "leaving";
+    return;
+  }
+  event.preventDefault();
+  if (phase === "asking") return;
+  phase = "asking";
+  void readyToQuit().then(
+    (go) => {
+      phase = go ? "leaving" : "running";
+      if (go) app.quit();
+    },
+    (error) => {
+      console.error(error);
+      phase = "leaving";
+      app.quit();
+    },
+  );
 });

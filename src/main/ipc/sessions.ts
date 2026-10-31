@@ -1,65 +1,78 @@
 // Conversations: history, the live subscription each one has here, and the turns sent through it. This module
 // owns that table and the in-flight sends, because quitting and a window's release need them too.
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from "electron";
-import { isAddressableSession, type SessionEvent } from "@fastagent-sh/fastagent/session";
-import { agentRow, openAgent, withAgentRun } from "../agents.ts";
-import { subscriptions, type Listener } from "../follow.ts";
+import type { Entry, LocalAgent, Message, ThinkingLevel } from "@fastagent-sh/fastagent";
+import { agentRow, createSession, openAgent, withAgentRun } from "../agents.ts";
+import { subscriptions, type Frame, type Listener } from "../follow.ts";
 import { offered } from "../models.ts";
 import { syncCommandProxy } from "../proxy.ts";
-import { send, sends } from "../send.ts";
-import type { SessionFrame } from "../../preload/index.ts";
+import { refusal, send, sends } from "../send.ts";
+import { readEntries } from "../session-list.ts";
 
-/** These throw: an unaddressable session id is a bug in this app, not something a person can act on. */
+const LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/** These throw: a malformed session id is a bug in this app, not something a person can act on. */
 export function requireSession(session: string): void {
-  if (typeof session !== "string" || !isAddressableSession(session)) throw new Error("Invalid session id");
+  if (typeof session !== "string" || !session) throw new Error("Invalid session id");
 }
 
-async function sessionOf(agentId: string, session: string) {
-  requireSession(session);
-  return (await openAgent(await agentRow(agentId))).control.sessions.get(session);
+async function agentOf(agentId: string) {
+  return openAgent(await agentRow(agentId));
 }
 
-const sessions = subscriptions(sessionOf);
+const sessions = subscriptions(async (agentId, session, after, signal) =>
+  (await agentOf(agentId)).sessions.events(session, { after, signal }),
+);
 const inFlight = sends();
 
-const listener = (sender: WebContents): Listener<SessionEvent> => ({
+const listener = (sender: WebContents): Listener => ({
   id: sender.id,
-  post: (frame: SessionFrame) => {
+  post: (frame: Frame) => {
     if (!sender.isDestroyed()) sender.send("session:event", frame);
   },
 });
 
 /** A window that is closing or reloading keeps its runs; it just stops hearing them. */
 export const closeWindow = (senderId: number) => sessions.closeWindow(senderId);
-/** The agent's runtime was replaced, so every one of its subscriptions listens again on the new one. */
-export const rebindAgent = (agentId: string) => sessions.rebindAgent(agentId);
 /** Cutting an agent's subscriptions is invisible to the window unless each one says why it ended. */
 export const endAgent = (agentId: string, reason: string) => sessions.endAgent(agentId, reason);
+/** From now on a message is refused rather than started and cut. */
+export const quitSends = () => inFlight.quit();
 
-export const runsBusy = () => inFlight.busy();
-
-/** Stops every run before a quit, and answers whether they all settled inside `within`. */
-export const stopAllRuns = (within: number) =>
-  inFlight.stopAll(async (agentId, session) => (await sessionOf(agentId, session)).abort(), within);
+// How the newest message ended says what a turn that left no answer was: refused, failed or stopped.
+async function lastMessageOf(agent: LocalAgent, sessionId: string, entries: Entry[]): Promise<Message | undefined> {
+  const user = entries.findLast((entry) => entry.kind === "user");
+  const messageId = (user?.data as { messageId?: unknown } | undefined)?.messageId;
+  if (typeof messageId !== "string") return undefined;
+  return agent.messages.get({ sessionId, messageId });
+}
 
 export function registerSessions(): void {
-  ipcMain.handle("session:state", async (_e, id: string, session: string) => (await sessionOf(id, session)).state());
+  ipcMain.handle("session:create", async (_e, id: string) => createSession(await agentRow(id)));
+  ipcMain.handle("session:state", async (_e, id: string, session: string) => {
+    requireSession(session);
+    return (await agentOf(id)).sessions.get(session);
+  });
   ipcMain.handle("session:setThinking", async (_e, id: string, session: string, level: string) => {
-    if (typeof level !== "string") throw new Error("Thinking level must be a string");
-    return (await sessionOf(id, session)).update({ thinkingLevel: level });
+    requireSession(session);
+    if (!LEVELS.includes(level as ThinkingLevel)) throw new Error("Unknown thinking level");
+    return refusal(async () => {
+      await (await agentOf(id)).sessions.update(session, { thinkingLevel: level as ThinkingLevel });
+      return { ok: true };
+    });
   });
-  ipcMain.handle("session:rename", async (_e, id: string, session: string, name: string) => {
-    if (typeof name !== "string" || !name.trim()) throw new Error("A conversation name cannot be empty");
-    return (await sessionOf(id, session)).update({ name: name.trim() });
-  });
-  // A refused delete must leave the live subscription intact.
-  ipcMain.handle("session:delete", async (_e, id: string, session: string) => (await sessionOf(id, session)).delete());
   ipcMain.handle("session:close", (e, subscription: string) => sessions.close(e.sender.id, subscription));
-  ipcMain.handle("session:entries", async (_e, id: string, session: string) => (await sessionOf(id, session)).entries());
+  ipcMain.handle("session:entries", async (_e, id: string, session: string) => {
+    requireSession(session);
+    return readEntries(await agentOf(id), session);
+  });
   ipcMain.handle("session:open", async (e, id: string, session: string, subscription: string) => {
     requireSession(session);
-    const bound = await sessions.open(listener(e.sender), id, session, subscription);
-    return { entries: await bound.entries(), state: await bound.state() };
+    const agent = await agentOf(id);
+    const entries = await readEntries(agent, session);
+    // From the last entry held: what landed since is replayed, so nothing falls between the read and the stream.
+    await sessions.open(listener(e.sender), id, session, subscription, entries.at(-1)?.id ?? "start");
+    return { entries, session: await agent.sessions.get(session), lastMessage: await lastMessageOf(agent, session, entries) };
   });
   ipcMain.handle("session:send", async (_e: IpcMainInvokeEvent, id: string, session: string, text: string) => {
     requireSession(session);
@@ -69,13 +82,11 @@ export function registerSessions(): void {
       // The agent's commands spawn during this run; they get the route as it is now.
       await syncCommandProxy();
       const row = await agentRow(id);
-      return withAgentRun(row, ({ agent, control }) =>
-        send(agent, control.sessions.get(session), text, stopped, (model) => offered(row.dir, model)),
-      );
+      return withAgentRun(row, (agent) => send(agent, session, text, stopped, (model) => offered(agent, model), row.model));
     });
   });
   ipcMain.handle("session:abort", async (_e, id: string, session: string) => {
     requireSession(session);
-    return inFlight.stop(id, session, async () => (await sessionOf(id, session)).abort());
+    return inFlight.stop(id, session, async () => (await agentOf(id)).sessions.cancel(session));
   });
 }

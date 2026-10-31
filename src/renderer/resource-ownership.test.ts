@@ -12,10 +12,10 @@ test("commands from an earlier visit to the same agent cannot replace a later vi
     const first = store.loadCommands();
     await store.selectAgent("b");
     await store.selectAgent("a");
-    api.listCommands = async () => [{ name: "new", description: "", source: "definition" }];
+    api.listCommands = async () => [{ name: "new", description: "" }];
     await store.loadCommands();
     if (fails) old.reject(new Error("old definition failed"));
-    else old.resolve([{ name: "old", description: "", source: "definition" }]);
+    else old.resolve([{ name: "old", description: "" }]);
     await first;
     assert.equal(store.getSnapshot().commands[0]?.name, "new");
     assert.equal(store.getSnapshot().commandsError, undefined);
@@ -39,22 +39,6 @@ test("leaving an agent invalidates its model read even without another read", as
     assert.equal(store.getSnapshot().modelsError, undefined);
     store.dispose();
   }
-});
-
-test("closing the picker invalidates its unfinished model refresh", async () => {
-  const { api, store } = harness();
-  await store.load();
-  await store.loadModels();
-  store.openPicker();
-  const old = deferred<Awaited<ReturnType<DuangApi["refreshModels"]>>>();
-  api.refreshModels = () => old.promise;
-  const first = store.refreshModels();
-  store.closePicker();
-  old.resolve(described(["provider/stale"]));
-  await first;
-  assert.deepEqual(store.getSnapshot().models, described(["provider/model"]));
-  assert.equal(store.getSnapshot().modelsRefresh, undefined);
-  store.dispose();
 });
 
 test("a disconnected provider's unfinished usage read cannot restore its plan", async () => {

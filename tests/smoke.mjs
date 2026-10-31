@@ -4,18 +4,19 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import electron from "electron";
-import { isolated, withoutCredentials } from "./harness.mjs";
+import { isolated, withoutCredentials, writeMockAgent } from "./harness.mjs";
 import { open, windowDriver } from "./window.mjs";
 
-const root = await isolated(import.meta.url, { name: "smoke", timeout: 90000 });
+const root = await isolated(import.meta.url, { name: "smoke", timeout: 150000 });
 if (root) {
   const { app, BrowserWindow, Menu } = electron;
   async function run() {
+    // Empty: duang scaffolds the agent into it, and FastAgent only scaffolds a folder with nothing in it.
     const workspace = join(root, "project");
     const data = join(root, "user-data");
     mkdirSync(join(data, "Shared Dictionary", "cache"), { recursive: true });
     app.setPath("userData", data);
-    const configured = join(root, "configured", "fastagent");
+    const configured = join(root, "configured");
     await Promise.all([
       mkdir(workspace),
       mkdir(configured, { recursive: true }),
@@ -35,31 +36,19 @@ if (root) {
     const selectedAuth = join(data, "auth.json");
     // Stores duang must never read. They hold only `openai-codex` (or a wrong key), so the `anthropic/...`
     // assertions below cannot pass from them.
-    const { GLOBAL_AUTH_PATH } = await import("@fastagent-sh/fastagent/pi");
+    const globalAuth = join(root, ".fastagent", ".secrets", "auth.json");
     const decoy = JSON.stringify({ "openai-codex": codex });
     process.env.FASTAGENT_AUTH_PATH = join(root, "custom-auth.json");
     await writeFile(process.env.FASTAGENT_AUTH_PATH, decoy);
-    await writeFile(GLOBAL_AUTH_PATH, decoy);
+    await writeFile(globalAuth, decoy);
     await writeFile(join(root, ".fastagent", "auth.json"), decoy);
     await writeFile(join(root, ".pi", "agent", "auth.json"), JSON.stringify({ openai: { type: "api_key", key: "wrong-store" } }));
     await writeFile(selectedAuth, JSON.stringify(stored));
-    await writeFile(join(configured, "fastagent.config.ts"), 'export default { model: "openai/gpt-4o-mini" };\n');
-    // A definition-local endpoint (#59): listed for this agent only, and accepted as its model.
-    await writeFile(
-      join(configured, "models.json"),
-      JSON.stringify({
-        providers: {
-          // Enough models with the real catalog's to pass the picker's 60-row cut-off, which says so.
-          local: {
-            baseUrl: "http://127.0.0.1:9/v1",
-            api: "openai-completions",
-            apiKey: "ollama",
-            models: [{ id: "m1" }, ...Array.from({ length: 20 }, (_, i) => ({ id: `m-extra-${i + 1}` }))],
-          },
-        },
-      }),
-    );
-    // A skill is what `commands()` lists, so the composer's `/` completion has something to find.
+    // A model of the agent's own, declared in its config: listed for this agent only, and accepted as its model.
+    // Its endpoint is never reached.
+    // Enough models with the real catalog's to pass the picker's 60-row cut-off, which says so.
+    writeMockAgent(configured, 9, { provider: "local", modelId: "m1", extraModels: 40, defaultModel: "openai/gpt-4o-mini" });
+    // A skill is what the agent's commands list, so the composer's `/` completion has something to find.
     await mkdir(join(configured, "skills", "demo"), { recursive: true });
     await writeFile(
       join(configured, "skills", "demo", "SKILL.md"),
@@ -73,7 +62,6 @@ if (root) {
         `---\nname: demo-${suffix}\ndescription: Another skill for the list to scroll past.\n---\n\nSay ${suffix}.\n`,
       );
     }
-    await writeFile(join(workspace, "hello.txt"), "Hello from the workspace\n");
     await writeFile(
       join(data, "agents.json"),
       JSON.stringify([
@@ -207,6 +195,13 @@ if (root) {
       await evaluate(`document.querySelector('dialog button[data-model="${model}"]').click()`);
     }
     const listOpen = "!!document.querySelector('#conversations:popover-open')";
+    // A row is labelled by the newest message in its conversation, once the list has been read again.
+    const rowListed = (text) =>
+      `[...document.querySelectorAll('#conversations button[data-session]')].some((b) => b.textContent.includes(${JSON.stringify(text)}))`;
+    async function clickListed(text) {
+      await until(rowListed(text), `the list names a conversation by ${text}`);
+      await click(text);
+    }
     async function showConversations() {
       if (!(await evaluate(listOpen))) await evaluate(`document.querySelector('main > header button[title="Conversations"]').click()`);
       await until(listOpen, "the conversation list opens");
@@ -244,6 +239,7 @@ if (root) {
       );
       await click("Create agent here");
       await until("document.querySelector('dialog[open]') !== null", "first model picker opens automatically");
+      await writeFile(join(workspace, "hello.txt"), "Hello from the workspace\n");
       await until(
         "document.querySelector('dialog').innerText.includes('Effort can be set once a model is chosen')",
         "an agent with no model has no levels to offer",
@@ -264,7 +260,9 @@ if (root) {
         "document.querySelector('textarea') && !document.querySelector('textarea').disabled",
         "first model unlocks composer",
       );
-      assert.equal(await readFile(join(workspace, "fastagent", "fastagent.config.ts"), "utf8"), "export default {};\n");
+      // FastAgent's own scaffold, made in the folder itself, with the folder a git repository.
+      for (const file of ["SYSTEM.md", "fastagent.config.ts", ".gitignore"]) await stat(join(workspace, file));
+      await stat(join(workspace, ".git"));
       await send("Read hello.txt and answer.");
       await until(
         "document.querySelector('main').innerText.includes('Smoke answer') && !document.querySelector('main .bounce')",
@@ -379,10 +377,12 @@ if (root) {
         !(await evaluate("document.querySelector('dialog').innerText")).includes("Credentials"),
         "the credential file's path is not the picker's business",
       );
-      assert.ok(
-        (await evaluate("document.querySelector('dialog').innerText")).includes("This model has no effort setting"),
-        "a model with one level offers no track",
+      assert.equal(
+        await evaluate("document.querySelectorAll('dialog [role=radiogroup][aria-label=Effort] [role=radio]').length"),
+        7,
+        "the effort track offers every level FastAgent accepts; which of them a model uses is its to clamp",
       );
+      assert.match(await evaluate("document.querySelector('dialog').innerText"), /Agent default/, "a conversation that was not given one follows the agent's");
       win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
       win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
       await until("document.querySelector('dialog') === null", "Escape dismisses the picker");
@@ -391,8 +391,6 @@ if (root) {
         "Model for this agent: openai/gpt-4o-mini",
         "picker restores focus to its trigger, whose tooltip names the whole model",
       );
-      const firstSession = await evaluate("window.duang.openAgent('smoke').then(r => r.sessions[0].session)");
-      assert.ok(firstSession);
 
       // Reopen through the actual UI and verify runtime-owned history, not the optimistic echo.
       await showConversations();
@@ -426,11 +424,11 @@ if (root) {
         2,
         "the failed turn and its retry both stay in the transcript",
       );
-      // Read back from FastAgent's history, the failure is still there under its turn (fastagent#690).
+      // A conversation is listed by the newest thing said in it. Read back from FastAgent's history, the failure is still there under its turn.
       await evaluate("document.querySelector('button[title^=\"New conversation\"]').click()");
       await until("document.body.innerText.includes('What should we work on')", "left the conversation that failed once");
       await showConversations();
-      await click("Read hello.txt and answer.");
+      await clickListed("Fail once, then answer.");
       await until("document.querySelector('main').innerText.includes('Synthetic key revoked')", "a failure reopens from history");
 
       hold = true;
@@ -496,16 +494,7 @@ if (root) {
       assert.ok(await evaluate("!!document.querySelector('button[aria-label=\"Stop the run\"]')"), "and the run keeps going");
       await evaluate("document.querySelector('button[title^=\"New conversation\"]').click()");
       await until("document.body.innerText.includes('What should we work on')", "background run keeps going");
-      const refused = await evaluate("window.duang.setModel('smoke', 'openai/gpt-4.1')");
-      assert.equal(refused.ok, false);
-      assert.equal(
-        refused.error.code,
-        "agent_busy",
-        "a different conversation cannot strand a running agent by changing its model",
-      );
-      const deletion = await evaluate(`window.duang.deleteSession('smoke', ${JSON.stringify(firstSession)})`);
-      assert.equal(deletion.ok, false, "a refused delete must not unsubscribe the running conversation");
-      await click("Read hello.txt and answer.");
+      await clickListed("Hold this turn so I can stop it.");
       await until("document.querySelector('button[aria-label=\"Stop the run\"]') !== null", "return to active run");
       await evaluate("document.querySelector('button[aria-label=\"Stop the run\"]').click()");
       await until("document.body.innerText.includes('run stopped')", "stopping is a settled transcript outcome");
@@ -577,9 +566,21 @@ if (root) {
       const otherModel = "openai/gpt-5.5";
       assert.ok(models.some((model) => model.spec === otherModel));
       assert.ok(!models.some(({ spec }) => spec.startsWith("openai-codex/")), "the retired route's models are not offered");
-      assert.ok(models.some((model) => model.spec === "local/m1"), "the agent's own models.json endpoint is pickable");
-      assert.ok(!(await evaluate("window.duang.listModels('smoke')")).some((model) => model.spec === "local/m1"), "another agent's endpoint is not");
-      const historical = await evaluate("window.duang.openAgent('configured').then(r => r.sessions[0].session)");
+      assert.ok(models.some((model) => model.spec === "local/m1"), "the agent's own provider is pickable");
+      assert.ok(!(await evaluate("window.duang.listModels('smoke')")).some((model) => model.spec === "local/m1"), "another agent's is not");
+      const sessionSaying = (text) =>
+        evaluate(`window.duang.openAgent('configured').then((r) => r.sessions.find((s) => s.preview?.includes(${JSON.stringify(text)}))?.session)`);
+      const historical = await sessionSaying("Use the configured model");
+      assert.ok(historical, "the conversation that ran on the configured model is listed, by what was said in it");
+      // The conversation's last message ends in FastAgent, after a send has answered: read how it ended.
+      const ended = async (agent, session) => {
+        for (let t = 0; t < 200; t++) {
+          const { lastMessage } = await evaluate(`window.duang.openSession(${JSON.stringify(agent)}, ${JSON.stringify(session)}, 'probe').then(async (r) => (await window.duang.closeSession('probe'), r))`);
+          if (lastMessage && !["queued", "running"].includes(lastMessage.status)) return lastMessage;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        throw new Error("the message did not end");
+      };
       // Replacing the runtime is main's business: no reload, the scroll stays, nothing said broke.
       await evaluate(`window.__transcript = document.querySelector('[aria-label="Transcript"]'); window.__scroll = window.__transcript.scrollTop;`);
       await click("openai/gpt-4o-mini");
@@ -598,23 +599,22 @@ if (root) {
       await send("Use the Anthropic conversation model.");
       await until("document.querySelector('main').innerText.includes('Anthropic smoke answer') && !document.querySelector('main .bounce')", "synthetic Anthropic OAuth request");
       assert.equal(anthropicRequests, 1);
-      // Effort is the conversation's own level, from the list its runtime gives for the model it runs.
+      // Effort is the conversation's own level.
       const chip = `document.querySelector('button[title^="Model for this agent"]')`;
       await evaluate(`${chip}.click()`);
-      await until("document.querySelector('dialog [role=radiogroup][aria-label=Effort]')", "a reasoning model offers an effort track");
+      await until("document.querySelector('dialog [role=radiogroup][aria-label=Effort]')", "a conversation offers an effort track");
       // The list stops at 60 rows, and a provider past them shows no heading: it says there are more.
       await until("document.querySelectorAll('dialog button[data-model]').length > 0", "the models are listed");
       assert.match(await evaluate("document.querySelector('dialog').innerText"), /\d+ more: search to narrow the list/, "a cut-off list says so");
       const levels = await evaluate(`[...document.querySelectorAll('dialog [role=radio]')].map((stop) => stop.getAttribute('aria-label'))`);
-      assert.ok(levels.length > 1 && levels.includes("High"), `the runtime's levels are the stops: ${levels}`);
+      assert.deepEqual(levels, ["Off", "Minimal", "Low", "Medium", "High", "Extra high", "Max"]);
+      const thinkingSession = historical;
+      const levelOf = () => evaluate(`window.duang.readState('configured', ${JSON.stringify(thinkingSession)}).then((s) => s.thinkingLevel)`);
       await evaluate(`document.querySelector('dialog [role=radio][aria-label="High"]').click()`);
-      await until(`${chip}.textContent.includes('High')`, "the chip names the level the runtime reports");
+      await until(`${chip}.textContent.includes('High')`, "the chip names the level");
       await until(`document.querySelector('dialog [role=radio][aria-label="High"]').getAttribute('aria-checked') === 'true'`, "and so does the track");
-      // Each choice is a durable entry: arrows move focus and write nothing, Enter chooses.
-      const thinkingSession = await evaluate("window.duang.openAgent('configured').then(r => r.sessions[0].session)");
-      const levelChanges = () =>
-        evaluate(`window.duang.readSession('configured', ${JSON.stringify(thinkingSession)}).then((r) => r.entries.filter((e) => e.kind === 'thinking_level_change').length)`);
-      const changesBefore = await levelChanges();
+      assert.equal(await levelOf(), "high", "FastAgent holds it on the conversation");
+      // Arrows move focus and write nothing, Enter chooses.
       const target = levels[levels.indexOf("High") - 2];
       await evaluate(`document.querySelector('dialog [role=radio][aria-label="High"]').focus()`);
       for (let i = 0; i < 2; i++) {
@@ -622,18 +622,18 @@ if (root) {
         win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Left" });
       }
       await until(`document.activeElement.getAttribute('aria-label') === ${JSON.stringify(target)}`, `two arrow presses move the focus to ${target}`);
-      assert.equal(await levelChanges(), changesBefore, "moving along the track writes nothing");
-      assert.ok(await evaluate(`${chip}.textContent.includes('High')`), "and the chip still names the runtime's level");
+      assert.equal(await levelOf(), "high", "moving along the track writes nothing");
+      assert.ok(await evaluate(`${chip}.textContent.includes('High')`), "and the chip still names the conversation's level");
       win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Enter" });
       win.webContents.sendInputEvent({ type: "char", keyCode: "\r" });
       win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Enter" });
       await until(`${chip}.textContent.includes(${JSON.stringify(target)})`, `Enter chooses ${target}`);
-      assert.equal((await levelChanges()) - changesBefore, 1, "and it is one level written");
+      assert.equal(await levelOf(), target.toLowerCase(), "and FastAgent holds that one");
       win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
       win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
       await until("document.querySelector('dialog') === null", "Escape closes the picker");
       // The header's edge is the context, always, even when a plan window is fuller (7d at 18% vs 10% here).
-      await until("/context[\\s\\S]*10%/.test(document.querySelector('header').innerText)", "the header shows the conversation's context");
+      await until("/context[\\s\\S]*50%/.test(document.querySelector('header').innerText)", "the header shows the conversation's context");
       // The table is hidden by opacity (so a keyboard can reach a link in it), which innerText does not see.
       const table = "getComputedStyle(document.querySelector('header [aria-label=Usage] .popover').parentElement).opacity";
       assert.equal(await evaluate(table), "0", "the plan's windows wait for a hover");
@@ -648,7 +648,7 @@ if (root) {
         "the plan's windows are one hover away in a conversation with no context yet",
       );
       assert.match(await evaluate("document.querySelector('header').innerText"), /context\s*–/, "and the context says it is not known yet");
-      // Effort set before the first message: the runtime keeps the conversation and the list shows it.
+      // Effort set before the first message lives on a conversation FastAgent already holds, listed as New conversation.
       const newRows = "[...document.querySelectorAll('#conversations button')].filter((b) => b.textContent.includes('New conversation')).length";
       await showConversations();
       const rowsBefore = await evaluate(newRows);
@@ -664,13 +664,12 @@ if (root) {
       await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true, cancelable: true }))`);
       await until("document.body.innerText.includes('What should we work on?')", "another new conversation");
       await showConversations();
-      await until(`${newRows} === ${rowsBefore} + 1`, "the conversation left after setting its effort is still listed, as New conversation");
+      await until(`${newRows} === ${rowsBefore} && ${newRows} >= 1`, "the conversation left after setting its effort is still listed, as New conversation, and not made twice");
       await evaluate("document.getElementById('conversations').hidePopover()");
       await showConversations();
-      await evaluate(`[...document.querySelectorAll('#conversations button')].find((b) => b.textContent.includes('Use the configured model')).click()`);
+      await evaluate(`[...document.querySelectorAll('#conversations button')].find((b) => b.textContent.includes('Use the Anthropic conversation model')).click()`);
       await until("document.querySelector('main').innerText.includes('Anthropic smoke answer')", "back in the conversation with its history");
 
-      // A read issued alongside the change must wait for the new runtime, not report a broken agent.
       assert.deepEqual(await evaluate("window.duang.setModel('configured', 'local/m1')"), { ok: true }, "setModel accepts it");
       assert.equal((await evaluate("window.duang.setModel('configured', 'local/nope')")).error.code, "model_unavailable");
       const racing = await evaluate(`(async () => {
@@ -685,7 +684,7 @@ if (root) {
       assert.equal(racing[0].ok, true);
       assert.ok(
         racing[1].every((read) => read.ok),
-        "a read during a settings change waits for the new runtime, it does not report a broken agent",
+        "a read during a settings change still answers",
       );
       win.webContents.reload();
       await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
@@ -718,7 +717,7 @@ if (root) {
       await evaluate("document.querySelector('button[aria-label=\"Configured\"]').click()");
       await until("!document.querySelector('textarea').disabled", "the Configured agent is open");
       await showConversations();
-      await evaluate(`[...document.querySelectorAll('#conversations button')].find((b) => b.textContent.includes('Use the configured model')).click()`);
+      await evaluate(`[...document.querySelectorAll('#conversations button')].find((b) => b.textContent.includes('Use the Anthropic conversation model')).click()`);
       await until("document.body.innerText.includes('anthropic/claude-sonnet-4-5') && !document.querySelector('textarea').disabled", "history keeps its provider despite Codex default");
       assert.equal(await evaluate("window.duang.openAgent('configured').then(r => r.model)"), otherModel);
       await send("Continue the historical Anthropic conversation.");
@@ -729,24 +728,28 @@ if (root) {
       await writeFile(selectedAuth, JSON.stringify({ openai: stored.openai }));
       const missing = await evaluate(`window.duang.send('configured', ${JSON.stringify(historical)}, 'Missing provider check')`);
       assert.equal(missing.ok, false);
-      assert.equal(missing.error.code, "model_unavailable", "refused before the run, in duang's words rather than pi's CLI advice");
+      assert.equal(missing.error.code, "model_unavailable", "refused before anything is recorded, in duang's words rather than the CLI's advice");
       assert.match(missing.error.message, /^anthropic\/claude-sonnet-4-5 cannot run: .*Connect the provider/);
       assert.equal(anthropicRequests, 2);
       assert.ok(!(await evaluate("window.duang.listModels('configured')")).some(({ spec }) => spec.startsWith("anthropic/")));
       const expired = { ...stored, anthropic: { ...stored.anthropic, expires: 0 } };
       await writeFile(selectedAuth, JSON.stringify(expired));
       assert.ok((await evaluate("window.duang.listModels('configured')")).some((model) => model.spec === "anthropic/claude-sonnet-4-5"), "picker does not attempt OAuth refresh");
-      const refreshFailure = await evaluate(`window.duang.send('configured', ${JSON.stringify(historical)}, 'Expired token check')`);
-      assert.equal(refreshFailure.ok, false);
+      // The send is recorded; the refresh that fails is the message's own end, which FastAgent keeps.
+      assert.equal((await evaluate(`window.duang.send('configured', ${JSON.stringify(historical)}, 'Expired token check')`)).ok, true);
+      const refreshFailure = await ended("configured", historical);
+      assert.equal(refreshFailure.status, "failed");
       assert.match(refreshFailure.error.message, /Synthetic OAuth refresh rejected/);
       assert.deepEqual(JSON.parse(await readFile(selectedAuth, "utf8")), expired, "failed refresh preserves the credential");
       await writeFile(selectedAuth, "{invalid");
-      assert.match(await evaluate("window.duang.listModels('configured').then(() => '', error => error.message)"), /corrupt auth file/);
+      assert.match(await evaluate("window.duang.listModels('configured').then(() => '', error => error.message)"), /corrupt/i);
       await writeFile(selectedAuth, JSON.stringify(stored));
       assert.ok((await evaluate("window.duang.listModels('configured')")).some((model) => model.spec === "anthropic/claude-sonnet-4-5"));
       const recovered = await evaluate(`window.duang.send('configured', ${JSON.stringify(historical)}, 'Retry with restored credentials')`);
       assert.equal(recovered.ok, true);
+      for (let t = 0; t < 200 && anthropicRequests < 3; t++) await new Promise((resolve) => setTimeout(resolve, 50));
       assert.equal(anthropicRequests, 3);
+      assert.equal((await ended("configured", historical)).status, "completed");
       assert.deepEqual(JSON.parse(await readFile(selectedAuth, "utf8")), stored, "valid tokens are not refreshed or copied");
       // `/` completion: the names come from the agent's definition, Escape dismisses the list, and
       // accepting one leaves the line in the composer instead of sending it.
@@ -794,7 +797,6 @@ if (root) {
       await until("document.querySelector('textarea').value === '/skill:demo '", "Enter accepts the skill in the spelling pi runs, it does not send");
       await type("");
 
-      // An agent with no skills must say so; silence here reads as a broken composer.
       await evaluate("document.querySelector('button[aria-label=\"Smoke\"]').click()");
       await until("document.querySelector('main').innerText.includes('Smoke answer')", "back to the scaffolded agent");
       // Each row quotes the newest output of the conversation it would open.
@@ -806,14 +808,14 @@ if (root) {
       // Its conversations are in the header's list instead, and Escape puts the list away.
       await showConversations();
       assert.ok(
-        (await evaluate("document.querySelector('#conversations').innerText")).includes("Read hello.txt and answer."),
+        (await evaluate("document.querySelector('#conversations').innerText")).includes("Answer while I look elsewhere."),
         "the header's list holds the open agent's conversations",
       );
       win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
       win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
       await until(`!${listOpen}`, "Escape closes the list");
       await type("/");
-      await until("document.body.innerText.includes('No commands')", "an empty command list explains itself");
+      await until("document.body.innerText.includes('/skill:writing-great-skills')", "the scaffolded agent's own skill is offered");
       await type("");
 
       // A registered directory that no longer exists breaks only its own agent, and stays removable.
@@ -863,21 +865,6 @@ if (root) {
         input.dispatchEvent(new Event('input', { bubbles: true }));
       })()`);
       await until("document.querySelector('dialog').innerText.includes('Nothing matches')", "no filter matches");
-
-      // Tests must never reach pi.dev: under PI_OFFLINE FastAgent refuses the refresh by name, and the list stays usable.
-      process.env.PI_OFFLINE = "1";
-      await evaluate(`document.querySelector('dialog button[aria-label="Refresh models"]').click()`);
-      await until(
-        "document.querySelector('dialog [role=alert]')?.innerText.includes('PI_OFFLINE is set')",
-        "the refresh failure, in FastAgent's words",
-      );
-      delete process.env.PI_OFFLINE;
-      assert.ok(await evaluate("document.querySelector('dialog input') !== null"), "a failed refresh keeps the list");
-      assert.notEqual(
-        await evaluate(`document.querySelector('dialog button[aria-label="Refresh models"]').getAttribute('aria-disabled')`),
-        "true",
-        "and the button can be pressed again",
-      );
       win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
       win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
       await until("document.querySelector('dialog') === null", "picker closes again");
@@ -931,31 +918,6 @@ if (root) {
       await until("document.activeElement.getAttribute('aria-label') === 'Configured'", "Up reaches the agent above");
       await press("Home");
       await until("document.activeElement.getAttribute('aria-label') === 'Smoke'", "Home reaches the first");
-
-      // The Rename menu is native, so drive the other way in: a double click on the row.
-      await showConversations();
-      await evaluate(`(() => {
-        const row = [...document.querySelectorAll('#conversations button[data-session]')].find((b) =>
-          b.textContent.includes('Read hello.txt and answer.'),
-        );
-        if (!row) throw new Error('Missing the conversation row');
-        row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-      })()`);
-      await until("document.querySelector('#conversations input[aria-label=\"Conversation name\"]') !== null", "rename opens");
-      await evaluate(`(() => {
-        const input = document.querySelector('#conversations input[aria-label="Conversation name"]');
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'The i18n check');
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      })()`);
-      await until(
-        "document.querySelector('#conversations').innerText.includes('The i18n check')",
-        "the runtime reports the name it was given",
-      );
-      assert.ok(
-        !(await evaluate("document.querySelector('#conversations').innerText")).includes("Read hello.txt and answer."),
-        "a named conversation stops falling back to its first message",
-      );
 
       // A way back to the live turn: absent at the bottom, offered once the tail is not followed,
       // and gone again after it takes you back.
@@ -1074,19 +1036,6 @@ if (root) {
       );
       await evaluate(`document.getElementById('grow-probe').remove()`);
       win.setSize(size[0], size[1]);
-
-      // The row keeps focus after a click, so the control follows its own focus. Read after the transition settles.
-      await showConversations();
-      const actionsOpacity = `(() => {
-        const actions = [...document.querySelectorAll('#conversations button[title="Conversation actions"]')][0];
-        return getComputedStyle(actions).opacity;
-      })()`;
-      await evaluate("[...document.querySelectorAll('#conversations button[title=\"Conversation actions\"]')][0].focus()");
-      await until(`${actionsOpacity} === '1'`, "a focused actions control is visible");
-      await evaluate(
-        "[...document.querySelectorAll('#conversations button[title=\"Conversation actions\"]')][0].closest('.group').querySelector('button').focus()",
-      );
-      await until(`${actionsOpacity} === '0'`, "and hides again when the row takes the focus back");
 
       // Whitespace is not a message, and the composer stops growing at eight lines.
       await type("   \n  ");
@@ -1355,7 +1304,7 @@ if (root) {
       assert.deepEqual(deepseekKeys, ["Bearer sk-bad", "Bearer sk-good"], "each key was checked once, with the provider itself");
       let saved = JSON.parse(await readFile(selectedAuth, "utf8"));
       assert.deepEqual(saved.deepseek, { type: "api_key", key: "sk-good" }, "written to duang's own file");
-      assert.equal(JSON.parse(await readFile(GLOBAL_AUTH_PATH, "utf8")).deepseek, undefined, "never to the CLI's");
+      assert.equal(JSON.parse(await readFile(globalAuth, "utf8")).deepseek, undefined, "never to the CLI's");
       await disconnectDeepSeek("a disconnected provider leaves the list");
       saved = JSON.parse(await readFile(selectedAuth, "utf8"));
       assert.equal(saved.deepseek, undefined);
@@ -1432,7 +1381,7 @@ if (root) {
       const legacy = await evaluate("window.duang.openAgent('legacy')");
       assert.equal(legacy.ok, true, legacy.message);
       assert.equal(legacy.model, "openai-codex/gpt-5.5", "the default is the one the registry names");
-      const legacySend = await evaluate("window.duang.send('legacy', crypto.randomUUID(), 'hello')");
+      const legacySend = await evaluate("window.duang.createSession('legacy').then((session) => window.duang.send('legacy', session, 'hello'))");
       assert.equal(legacySend.ok === false && legacySend.error.code, "model_unavailable", "a send on it asks for another model");
       // A default pi does not know: the agent opens on its own model and the picker says the default is gone.
       await writeFile(
@@ -1490,19 +1439,6 @@ if (root) {
       assert.ok(named.width <= named.available + 1, "the name stays inside the header");
       assert.equal(named.title, longName, "with the whole of it as a tooltip");
       assert.ok(named.folder?.startsWith("/"), "and the folder under it, a button that opens it");
-      await showConversations();
-      await evaluate(`document.querySelector('#conversations button[aria-current="page"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
-      await until("document.querySelector('#conversations input[aria-label=\"Conversation name\"]')", "conversation rename opens");
-      const topic = "A topic that the header must not print";
-      await evaluate(`(() => {
-        const input = document.querySelector('#conversations input[aria-label="Conversation name"]');
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(topic)});
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      })()`);
-      await until(`document.querySelector('#conversations')?.innerText.includes(${JSON.stringify(topic)})`, "the conversation is renamed in the list");
-      assert.ok(!(await evaluate(headerName)).text.includes(topic), "and the header does not print its title");
-
       // Both routes open the folder of the agent they are on, not the open one's. Shell and menu are stubbed.
       const revealed = [];
       const showItemInFolder = electron.shell.showItemInFolder;

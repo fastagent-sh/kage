@@ -1,6 +1,6 @@
 // Keeps the developer's credentials and proxy out of every end-to-end run.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,8 +43,10 @@ export function requireFreshBuild(outputs = BUILT, how = "npm run build") {
   );
 }
 
+// FastAgent asks pi.dev for newer model lists whenever an agent opens; a test must not depend on the network.
 export function withoutCredentials(env) {
   for (const name of Object.keys(env)) if (PRIVATE.test(name)) delete env[name];
+  env.FASTAGENT_OFFLINE = "1";
   return env;
 }
 
@@ -75,11 +77,38 @@ export async function isolated(script, { name, timeout, home = true, prepare }) 
 export const chunk = (delta, finish = null) =>
   `data: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", created: 0, model: "mock", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
 
-export function writeMockModels(dir, port, model = {}) {
+/**
+ * An agent directory whose only model, `mock/mock`, is an OpenAI-compatible endpoint on `port`. The config imports
+ * pi-ai, so the directory gets `modules` (the repository's, or an extracted app's) the way `npm install` would.
+ */
+export function writeMockAgent(dir, port, { provider = "mock", modelId = "mock", extraModels = 0, defaultModel, model = {}, config = "", modules = join(ROOT, "node_modules") } = {}) {
+  mkdirSync(dir, { recursive: true });
+  if (!existsSync(join(dir, "node_modules"))) symlinkSync(modules, join(dir, "node_modules"));
   writeFileSync(
-    join(dir, "fastagent", "models.json"),
-    JSON.stringify({
-      providers: { mock: { baseUrl: `http://127.0.0.1:${port}/v1`, api: "openai-completions", apiKey: "mock", models: [{ id: "mock", ...model }] } },
+    join(dir, "fastagent.config.ts"),
+    `import { createProvider } from "@earendil-works/pi-ai";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+
+const baseUrl = "http://127.0.0.1:${port}/v1";
+const mock = createProvider({
+  id: ${JSON.stringify(provider)},
+  name: ${JSON.stringify(provider)},
+  baseUrl,
+  auth: { apiKey: { name: "Mock", resolve: async () => ({ auth: { apiKey: "mock" } }) } },
+  models: ${JSON.stringify(
+    Array.from({ length: extraModels + 1 }, (_, n) => {
+      const id = n === 0 ? modelId : `${modelId}-extra-${n}`;
+      return {
+        id, name: id, api: "openai-completions", provider, baseUrl: "BASE_URL",
+        reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 65536, maxTokens: 8192, ...model,
+      };
     }),
+  ).replaceAll('"BASE_URL"', "baseUrl")},
+  api: openAICompletionsApi(),
+});
+
+export default { model: ${JSON.stringify(defaultModel ?? `${provider}/${modelId}`)}, providers: [mock]${config ? `, ${config}` : ""} };
+`,
   );
 }

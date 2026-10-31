@@ -1,6 +1,6 @@
-import type { SessionResult } from "@fastagent-sh/fastagent/session";
+import type { Entry, Message, Session, SessionEvent } from "@fastagent-sh/fastagent";
 import type { Ending } from "../main/follow.ts";
-import type { DuangApi, Models, LoginStep, OpenResult, SessionFrame } from "../preload/index.ts";
+import type { DuangApi, Models, LoginStep, OpenResult, Result, SessionFrame } from "../preload/index.ts";
 import { createStore } from "./store.ts";
 
 export function deferred<T>() {
@@ -12,17 +12,45 @@ export function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-export const described = (specs: string[]): Models => specs.map((spec) => ({ spec, thinkingLevels: ["off"] }));
+export const described = (specs: string[]): Models => specs.map((spec) => ({ spec }));
 
 // `satisfies`, not a type annotation: an imported binding is not narrowed to the literal, and the tests spread this one.
-export const ready = { ok: true, model: "provider/model", sessions: [] } satisfies OpenResult;
+export const ready = { ok: true, model: "provider/model", sessions: [], windows: {} } satisfies OpenResult;
 
-export const listed = (session: string): OpenResult =>
-  ({ ok: true, model: "provider/model", sessions: [{ session, updatedAt: 5, createdAt: 0, messageCount: 2 }] }) as never;
-export const empty = () => ({
-  state: { status: "idle" as const, pending: { steering: [], followUp: [] } },
-  entries: { entries: [] },
+export const listed = (session: string): OpenResult => ({
+  ...ready,
+  sessions: [{ session, updatedAt: 5, preview: "an earlier message" }],
 });
+
+// FastAgent's objects, as little of them as a test needs.
+export const sessionOf = (id: string, extra: Partial<Session> = {}) =>
+  ({ id, status: "idle", usage: { models: {}, tools: {} }, ...extra }) as Session;
+export const runningSession = (id = "s", extra: Partial<Session> = {}) => sessionOf(id, { status: "running", ...extra });
+export const opened = (entries: Entry[] = [], session: Session = sessionOf("s"), lastMessage?: Message) => ({
+  session,
+  entries,
+  ...(lastMessage && { lastMessage }),
+});
+export const empty = () => opened();
+
+export const userEntry = (id: string, text: string, messageId?: string): Entry =>
+  ({ id, timestamp: Number(id.replace(/\D/g, "")) || 1, kind: "user", data: { content: [{ type: "text", text }], ...(messageId && { messageId }) } }) as Entry;
+export const assistantEntry = (id: string, data: object = {}): Entry =>
+  ({ id, timestamp: Number(id.replace(/\D/g, "")) || 1, kind: "assistant", data: { text: "", usage: {}, ...data } }) as Entry;
+export const resultEntry = (id: string, toolCallId: string, text = "ok"): Entry =>
+  ({ id, timestamp: Number(id.replace(/\D/g, "")) || 1, kind: "tool_result", data: { toolCallId, toolName: "bash", isError: false, content: [{ type: "text", text }] } }) as Entry;
+export const messageOf = (id: string, status: Message["status"], extra: Partial<Message> = {}) =>
+  ({ id, sessionId: "s", status, ...extra }) as Message;
+
+export const events = {
+  entry: (entry: Entry): SessionEvent => ({ type: "entry", entry }),
+  state: (session: Session): SessionEvent => ({ type: "state", session }),
+  delta: (text: string, channel: "text" | "thinking" = "text"): SessionEvent => ({ type: "delta", channel, text }),
+  toolStarted: (toolCallId: string, name = "bash", args: Record<string, string> = {}): SessionEvent => ({ type: "tool_started", toolCallId, name, args }),
+  toolProgress: (toolCallId: string, text: string): SessionEvent => ({ type: "tool_progress", toolCallId, text }),
+  retrying: (attempt: number, reason: string): SessionEvent => ({ type: "retrying", attempt, maxAttempts: 3, delayMs: 1000, reason }),
+  done: (message: Message): SessionEvent => ({ type: "done", message }),
+};
 export function harness() {
   let listener!: (frame: SessionFrame) => void;
   let stepListener!: (step: LoginStep) => void;
@@ -35,10 +63,10 @@ export function harness() {
     ],
     addAgent: async () => undefined,
     openAgent: async () => ready,
-    setModel: async () => ({ ok: true }) as SessionResult,
-    setThinking: async () => ({ ok: true }) as SessionResult,
-    readState: async () => ({ status: "idle", pending: { steering: [], followUp: [] } }),
-    removeAgent: async () => ({ ok: true }) as SessionResult,
+    setModel: async () => ({ ok: true }) as Result,
+    setThinking: async () => ({ ok: true }) as Result,
+    readState: async (_id, session) => sessionOf(session),
+    removeAgent: async () => ({ ok: true }) as Result,
     scaffoldAgent: async () => "/a/fastagent",
     relocateAgent: async () => undefined,
     resetAgentConfig: async () => ({ ok: true }),
@@ -46,7 +74,6 @@ export function harness() {
     revealAgent: async () => {},
     revealRegistry: async () => {},
     listModels: async () => (described(["provider/model"])),
-    refreshModels: async () => (described(["provider/model"])),
     providerUsage: async (provider) => ({ provider, fetchedAt: 0 }),
     openUsagePage: async () => {},
     getSettings: async () => ({ network: { mode: "automatic" }, avatar: "gaze" }),
@@ -59,17 +86,16 @@ export function harness() {
     setUnseenCount: async () => {},
     menu: async () => undefined,
     renameAgent: async () => {},
-    renameSession: async () => ({ ok: true }),
-    deleteSession: async () => ({ ok: true }),
+    createSession: async () => crypto.randomUUID(),
     openSession: async (_id, session) => {
       opens.push(session);
-      return empty();
+      return opened([], sessionOf(session));
     },
-    readSession: async () => ({ entries: [] }),
+    readSession: async () => [],
     closeSession: async (subscription) => {
       closed.push(subscription);
     },
-    send: async () => ({ ok: true }),
+    send: async () => ({ ok: true, messageId: crypto.randomUUID() }),
     abort: async () => ({ ok: true }),
     onSessionEvent: (fn) => {
       listener = fn;
@@ -93,13 +119,8 @@ export function harness() {
     },
   };
   const store = createStore(api);
-  const emit = (c: NonNullable<ReturnType<typeof store.getSnapshot>["conversation"]>, type: string, data = {}) => {
-    listener({
-      agentId: c.agentId,
-      session: c.session,
-      subscription: c.subscription,
-      event: { type, data, timestamp: 1, runId: "run" },
-    });
+  const emit = (c: NonNullable<ReturnType<typeof store.getSnapshot>["conversation"]>, event: SessionEvent) => {
+    listener({ agentId: c.agentId, session: c.session, subscription: c.subscription, event });
   };
   const end = (
     c: NonNullable<ReturnType<typeof store.getSnapshot>["conversation"]>,

@@ -1,31 +1,33 @@
-import { availableModelsFromDir, refreshModelCatalog } from "@fastagent-sh/fastagent/pi";
-import type { ModelDescriptor } from "@fastagent-sh/fastagent/session";
-import { authPath } from "./credential-file.ts";
-import { inflight } from "./inflight.ts";
+import type { Agent, AgentInfo } from "@fastagent-sh/fastagent";
+import { specOf } from "../shared/model-spec.ts";
 import { retired } from "./providers.ts";
 
-export type Models = ModelDescriptor[];
+export { refOf, specOf } from "../shared/model-spec.ts";
 
-const credentials = {
-  authPath,
-  // A corrupt or unreadable file must be an error here, not an empty list.
-  warn(message: string): never {
-    throw new Error(message);
-  },
-};
+export interface ModelChoice {
+  /** `provider/modelId`, which is how duang names a model everywhere outside FastAgent's API. */
+  spec: string;
+  name?: string;
+  contextWindow?: number;
+}
+export type Models = ModelChoice[];
 
 // Configuration, not a health check: OAuth refresh and provider errors surface at execution.
-export async function modelsFor(dir: string): Promise<Models> {
-  return (await availableModelsFromDir(dir, credentials)).filter((model) => !retired(model.spec));
+export function choicesOf({ models }: AgentInfo): Models {
+  return models
+    .map(({ name, contextWindow, ...ref }): ModelChoice => ({
+      spec: specOf(ref),
+      ...(name !== undefined && { name }),
+      ...(contextWindow !== undefined && { contextWindow }),
+    }))
+    .filter((model) => !retired(model.spec));
 }
 
-/** Whether the agent can run this model now: its own `models.json`, the shared one, and pi's catalog. */
-export async function offered(dir: string, model: string): Promise<boolean> {
-  return (await modelsFor(dir)).some((candidate) => candidate.spec === model);
+export async function modelsOf(agent: Agent): Promise<Models> {
+  return choicesOf(await agent.info());
 }
 
-// Only on request, never on its own; when it rejects the old list stays valid.
-export const refreshModels = inflight(async (dir: string): Promise<Models> => {
-  await refreshModelCatalog(dir, credentials);
-  return modelsFor(dir);
-});
+/** Whether the agent can run this model now: its provider has a credential here and offers it. */
+export async function offered(agent: Agent, model: string): Promise<boolean> {
+  return (await modelsOf(agent)).some((candidate) => candidate.spec === model);
+}

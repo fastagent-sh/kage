@@ -7,7 +7,7 @@ A working implementation is not evidence that all of a milestone's user workflow
 
 ## Set up and verify locally
 
-Use Node 24 and npm. FastAgent is an exact version from npm (`@fastagent-sh/fastagent` in
+Use Node 24.15 or later and npm. FastAgent is an exact version from npm (`@fastagent-sh/fastagent` in
 `package.json` and the lockfile), so a standalone checkout is all there is to set up:
 
 ```bash
@@ -87,7 +87,7 @@ threads; address every item before resolving its thread.
 ## Product-specific verification
 
 `Desktop checks` runs tests, a production build, `node tests/smoke.mjs` and `node tests/transcript.mjs` on
-macOS with Node 24 — both launch a real Electron window, so they run on the only platform duang supports. The
+macOS with Node 24.15 or later — both launch a real Electron window, so they run on the only platform duang supports. The
 smoke drives the real Electron/preload/IPC/FastAgent stack with synthetic credentials and fake HTTP. The
 transcript check holds runs at the steps the live end of a run must draw as one line (calls running, a
 thought, an answer being written, a retry waited out) against a local fake model endpoint. Run

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { DotsThree, GearSix, Plus, WarningCircle } from "@phosphor-icons/react";
+import { GearSix, Plus, WarningCircle } from "@phosphor-icons/react";
 import type { AgentRow, DuangApi } from "../preload/index.ts";
 import { stamp } from "./time.ts";
 import type { Row } from "./sessions.ts";
@@ -285,9 +285,6 @@ export function ConversationList({
   onToggle,
   onOpen,
   onNew,
-  onRename,
-  onDelete,
-  onMenu,
 }: {
   rows: Row[];
   session?: string;
@@ -296,40 +293,19 @@ export function ConversationList({
   onToggle: (open: boolean) => void;
   onOpen: (session: string) => void;
   onNew: () => void;
-  onRename: (session: string, name: string) => void;
-  onDelete: (session: string) => void;
-  onMenu: DuangApi["menu"];
 }) {
   const panel = useRef<HTMLDivElement>(null);
-  const [renaming, setRenaming] = useState<Row>();
-  const restore = useRestoreFocus((key) =>
-    panel.current?.querySelector<HTMLElement>(`button[data-session="${CSS.escape(key)}"]`),
-  );
-  const endRename = (row: Row) => {
-    restore.current = row.session;
-    setRenaming(undefined);
-  };
   // An open popover that unmounts fires no toggle event, so whoever mirrors its state is told here.
   useEffect(() => () => onToggle(false), [onToggle]);
   const close = () => panel.current?.hidePopover();
-  // A deleted row hands focus to its neighbour first, so the list stays reachable.
   const onKeyDown = (event: React.KeyboardEvent) => {
     const all = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button[data-session]")];
     const index = all.indexOf(event.target as HTMLButtonElement);
     if (index < 0) return;
     const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
-    if (step) {
-      event.preventDefault();
-      all[index + step]?.focus();
-      return;
-    }
-    const row = rows.find((candidate) => candidate.session === all[index]!.dataset.session);
-    // Never heard of by the runtime, so `delete()` would answer `no_such_session`.
-    if ((event.key === "Delete" || event.key === "Backspace") && row && !row.fresh) {
-      event.preventDefault();
-      (all[index + 1] ?? all[index - 1])?.focus();
-      onDelete(row.session);
-    }
+    if (!step) return;
+    event.preventDefault();
+    all[index + step]?.focus();
   };
   return (
     <div
@@ -367,41 +343,13 @@ export function ConversationList({
       <div className="max-h-[min(28rem,65vh)] overflow-y-auto" onKeyDown={onKeyDown}>
         {rows.map((row) => {
           const current = row.session === session;
-          const menu = row.fresh
-            ? undefined
-            : () =>
-                void onMenu([
-                  { id: "rename", label: "Rename…" },
-                  { id: "delete", label: "Delete Conversation" },
-                ]).then((chosen) => {
-                  if (chosen === "rename") setRenaming(row);
-                  if (chosen === "delete") onDelete(row.session);
-                });
-          return renaming?.session === row.session ? (
-            <RenameField
-              key={row.session}
-              label="Conversation name"
-              value={renaming.label}
-              className="my-0.5 block w-full font-prose text-[13px]"
-              onCancel={() => endRename(row)}
-              onCommit={(name) => {
-                endRename(row);
-                if (name.trim() && name.trim() !== renaming.label) onRename(row.session, name);
-              }}
-            />
-          ) : (
+          return (
             <div key={row.session} className="group relative">
               <button
                 data-session={row.session}
                 onClick={() => {
                   close();
                   onOpen(row.session);
-                }}
-                onDoubleClick={() => !row.fresh && setRenaming(row)}
-                onContextMenu={(event) => {
-                  if (!menu) return;
-                  event.preventDefault();
-                  menu();
                 }}
                 disabled={disabled}
                 aria-current={current ? "page" : undefined}
@@ -426,25 +374,12 @@ export function ConversationList({
                   <span className="shrink-0 text-[11px] italic text-muted">unsent</span>
                 ) : (
                   row.updatedAt !== undefined && (
-                    <span className="shrink-0 text-[11px] text-muted tabular-nums group-hover:invisible">
+                    <span className="shrink-0 text-[11px] text-muted tabular-nums">
                       {stamp(row.updatedAt)}
                     </span>
                   )
                 )}
               </button>
-              {/* The same menu the right click raises, not a shortcut to the most destructive action. */}
-              {menu && (
-                <Button
-                  kind="ghost"
-                  size={28}
-                  tabIndex={-1}
-                  onClick={menu}
-                  title="Conversation actions"
-                  aria-label={`Actions for ${row.label}`}
-                  icon={<DotsThree size={16} weight="bold" />}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus:opacity-100"
-                />
-              )}
             </div>
           );
         })}

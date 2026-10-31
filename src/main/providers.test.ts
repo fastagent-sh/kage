@@ -3,18 +3,17 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { LoginCancelled } from "@fastagent-sh/fastagent/pi";
+import { credentialFile, SignInCancelled } from "@fastagent-sh/fastagent";
 import { disconnect, listProviders, openable, startLogin, type LoginStep } from "./providers.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "duang-providers-"));
-const empty = join(dir, "never-written.json");
 
 test("providers list pi's own names and ways, what duang's file holds, and a variable the file hides", async () => {
   const auth = join(dir, "list.json");
   await writeFile(auth, JSON.stringify({ openai: { type: "api_key", key: "sk-stored" } }), { mode: 0o600 });
   process.env.OPENAI_API_KEY = "sk-env";
   try {
-    const rows = await listProviders(auth, empty);
+    const rows = await listProviders(credentialFile(auth));
     const openai = rows.find((row) => row.id === "openai")!;
     assert.equal(openai.name, "OpenAI");
     assert.equal(openai.stored, "api_key");
@@ -33,13 +32,6 @@ test("providers list pi's own names and ways, what duang's file holds, and a var
   }
 });
 
-test("a file where the empty store must be is refused, not read as ambient credentials", async () => {
-  const auth = join(dir, "planted-auth.json");
-  const planted = join(dir, "planted.json");
-  await writeFile(planted, JSON.stringify({ anthropic: { type: "api_key", key: "someone-else" } }));
-  await assert.rejects(listProviders(auth, planted), /must not exist/);
-});
-
 test("disconnect removes only that provider from duang's file, and a corrupt file is an error", async () => {
   const auth = join(dir, "disconnect.json");
   await writeFile(
@@ -47,12 +39,12 @@ test("disconnect removes only that provider from duang's file, and a corrupt fil
     JSON.stringify({ openai: { type: "api_key", key: "a" }, anthropic: { type: "api_key", key: "b" } }),
     { mode: 0o600 },
   );
-  await disconnect(auth, "openai");
+  await disconnect(credentialFile(auth), "openai");
   assert.deepEqual(Object.keys(JSON.parse(await readFile(auth, "utf8"))), ["anthropic"]);
 
   const corrupt = join(dir, "corrupt.json");
   await writeFile(corrupt, "{nope");
-  await assert.rejects(listProviders(corrupt, empty), /corrupt/, "never shown as nothing connected");
+  await assert.rejects(listProviders(credentialFile(corrupt)), /corrupt/, "never shown as nothing connected");
 });
 
 test("only https, or http to this machine, may be opened", () => {
@@ -70,7 +62,7 @@ test("a sign-in relays prompts and events, withdraws a prompt its flow no longer
   const flow = startLogin({
     provider: "anthropic",
     method: "oauth",
-    authPath: join(dir, "flow.json"),
+    credentials: credentialFile(join(dir, "flow.json")),
     send: (step) => sent.push(step),
     open: async (url) => void opened.push(url),
     run: async ({ interaction }) => {
@@ -113,7 +105,7 @@ test("a browser that does not open is said, and reopening it rejects", async () 
   const flow = startLogin({
     provider: "anthropic",
     method: "oauth",
-    authPath: join(dir, "nobrowser.json"),
+    credentials: credentialFile(join(dir, "nobrowser.json")),
     send: (step) => sent.push(step),
     open: async () => {
       throw new Error("no application to open https");
@@ -136,12 +128,12 @@ test("cancelling ends the flow as a decision, not a failure", async () => {
   const flow = startLogin({
     provider: "openai",
     method: "api_key",
-    authPath: join(dir, "cancel.json"),
+    credentials: credentialFile(join(dir, "cancel.json")),
     send: () => {},
     open: async () => {},
     run: async ({ interaction }) => {
       await interaction.prompt({ type: "secret", message: "Key" }).catch(() => {
-        throw new LoginCancelled("cancelled");
+        throw new SignInCancelled("cancelled");
       });
       throw new Error("unreachable");
     },
@@ -153,7 +145,7 @@ test("cancelling ends the flow as a decision, not a failure", async () => {
   const failed = startLogin({
     provider: "openai",
     method: "api_key",
-    authPath: join(dir, "fail.json"),
+    credentials: credentialFile(join(dir, "fail.json")),
     send: () => {},
     open: async () => {},
     run: async () => {

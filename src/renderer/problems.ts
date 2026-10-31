@@ -53,8 +53,18 @@ const RULES: { test: RegExp; explained: Explained }[] = [
 
 export const recognise = (reason: string): Explained | undefined => RULES.find(({ test }) => test.test(reason))?.explained;
 
-export function explainRunFailure(reason: string): Explained {
-  return recognise(reason) ?? { title: "The run stopped with an error" };
+// FastAgent's own codes say what the words would only hint at.
+const BY_CODE: Record<string, Explained> = {
+  auth_required: {
+    title: "This model has no sign-in",
+    advice: "Sign in to its provider, or choose a model whose provider is connected.",
+    fix: "providers",
+  },
+  missing_model: { title: "This conversation has no model", advice: "Choose a model for it, then send again.", fix: "model" },
+};
+
+export function explainRunFailure(reason: string, code?: string): Explained {
+  return (code && BY_CODE[code]) || recognise(reason) || { title: "The run stopped with an error" };
 }
 
 // Nothing while the list loads, which would say the wrong thing first.

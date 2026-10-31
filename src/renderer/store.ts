@@ -1,16 +1,17 @@
-import { ABORTED_CODE } from "@fastagent-sh/fastagent/core";
-import { NO_ACTIVE_RUN_CODE, type SessionSummary } from "@fastagent-sh/fastagent/session";
-import { MODEL_UNAVAILABLE_CODE } from "../shared/refusals.ts";
-import type { AgentRow, AgentSetup, DuangApi, SessionFrame } from "../preload/index.ts";
-import { fromEntries, phase, previewOf, queueView, type Activity, type Place } from "./transcript.ts";
+import { MODEL_UNAVAILABLE_CODE, STOPPED_CODE } from "../shared/refusals.ts";
+import type { AgentRow, AgentSetup, DuangApi, SessionFrame, SessionSummary } from "../preload/index.ts";
+import { foldEntries, itemsOf, noLive } from "./fold.ts";
+import { phase, previewOf, queueView, type Activity, type Place } from "./transcript.ts";
 import {
   accepted,
+  addLine,
   backfill,
   busy,
   createConversation,
   lost,
   receive,
   sent,
+  stateOf,
   unsent,
   type Conversation,
   type Settled,
@@ -85,6 +86,8 @@ export interface View extends SettingsView, AgentResourcesView {
   agentId?: string;
   states: Record<string, AgentState>;
   sessions: Record<string, SessionSummary[]>;
+  // The window of each model the open agent offers, in tokens: what the context meter is measured against.
+  contextWindows: Record<string, number>;
   // An empty list and a failed one are not the same.
   sessionsError: Record<string, string>;
   model?: string;
@@ -137,7 +140,7 @@ function paneOf(view: View): Pane {
   const sessions = view.sessions[agentId] ?? [];
   // A ready agent with no conversation open is about to open one: its newest, if it has any.
   if (c ? c.loading && sessions.some((s) => s.session === c.session) : sessions.length > 0) return "settling";
-  const shown = c && (c.items.length > 0 || queueView(c.waiting, c.state?.pending.steering ?? []).length > 0);
+  const shown = c && (c.items.length > 0 || queueView(c.waiting).length > 0);
   return shown ? "transcript" : "start";
 }
 function alertOf(view: View): Trouble | undefined {
@@ -152,7 +155,7 @@ function alertOf(view: View): Trouble | undefined {
 function modelBlockedBy(view: View): string | undefined {
   const { agentId, conversation: c } = view;
   if (!agentId) return "Select an agent first";
-  // FastAgent refuses either change while a run holds the conversation (`session_busy`) rather than queueing it.
+  // A model change mid-run would leave the transcript's model and the one answering apart for a step.
   if (view.busy) return "Stop the turn to change the model or effort";
   const state = view.states[agentId];
   if (view.loading || view.changingModel === agentId || c?.loading || state === "broken" || state === "no_agent" || state === "missing_dir")
@@ -228,6 +231,7 @@ export function createStore(api: DuangApi) {
     agents: [],
     states: {},
     sessions: {},
+    contextWindows: {},
     sessionsError: {},
     loading: false,
     busy: false,
@@ -280,7 +284,8 @@ export function createStore(api: DuangApi) {
       sessions.some((s) => s.session === session) || held.some((c) => c.session === session);
     const left = lastOpened.get(id);
     if (left && (known(left) || drafts.get(key(id, left))?.trim() || left === freshSession)) return left;
-    return held.find(busy)?.session ?? [...sessions].sort((a, b) => b.updatedAt - a.updatedAt)[0]?.session;
+    // The runtime lists the most recently active first.
+    return held.find(busy)?.session ?? sessions[0]?.session;
   };
   const selectedSession = (id: string): string | undefined =>
     view.conversation?.agentId === id ? view.conversation.session : openable(id, view.sessions[id] ?? []);
@@ -322,16 +327,10 @@ export function createStore(api: DuangApi) {
     const reason = message(problem.error);
     if (!c) return fail(problem.title, problem.error);
     const { error: _error, tone = "error", ...said } = problem;
-    c.items = [...c.items, { kind: "note", tone, text: reason, reason, ...said, at: Date.now() }];
+    addLine(c, { kind: "note", tone, text: reason, reason, ...said, at: Date.now() });
     publish();
   };
   const fail = (title: string, error: unknown) => publish({ failure: { title, reason: message(error) } });
-  // Never on its agent's row, which means the list could not be read: a refused delete is not that.
-  const reportOn = (agentId: string, session: string, title: string, error: unknown, tone: "warning" | "error") => {
-    const held = conversations.get(key(agentId, session));
-    if (held) note(held, { error, title, tone });
-    else fail(title, error);
-  };
   const close = (c: Conversation) => {
     drafts.set(key(c.agentId, c.session), c.draft);
     if (conversations.get(key(c.agentId, c.session)) === c) conversations.delete(key(c.agentId, c.session));
@@ -379,8 +378,8 @@ export function createStore(api: DuangApi) {
     try {
       // The state too: a run still going (after a reload, say) has not been cut short. A compaction is not a
       // run (FastAgent admits one only at a boundary), so a turn cut before it is still cut.
-      const [history, state] = await Promise.all([api.readSession(id, session), api.readState(id, session)]);
-      preview = { session, ...previewOf(fromEntries(history.entries, history.leafEntryId, state.status === "running")) };
+      const [entries, state] = await Promise.all([api.readSession(id, session), api.readState(id, session)]);
+      preview = { session, ...previewOf(itemsOf(foldEntries(entries), stateOf(state).status === "running", noLive())) };
     } catch (error) {
       preview = { session, error: message(error) };
     }
@@ -437,7 +436,7 @@ export function createStore(api: DuangApi) {
 
   async function submit(c: Conversation, text: string) {
     // Notes from before this send are not this send's: a refusal said for an earlier message is said again.
-    const before = c.items.length;
+    const before = c.fold.items.length;
     const echo = sent(c, text, Date.now());
     // Once it entered, what happens to it is the run's.
     const waiting = () => c.waiting.includes(echo);
@@ -445,7 +444,13 @@ export function createStore(api: DuangApi) {
     publish();
     try {
       const result = await api.send(c.agentId, c.session, text);
-      if (!result.ok) {
+      if (result.ok) {
+        // Once it entered, what happens to it is the run's.
+        if (waiting()) {
+          const outcome = accepted(c, echo, result.messageId, Date.now());
+          if (outcome) settled(c, outcome);
+        }
+      } else {
         // Once it entered, the failure is the run's, and the run's note already says it.
         if (!waiting()) return;
         const model = c.state?.model ?? view.model;
@@ -457,12 +462,12 @@ export function createStore(api: DuangApi) {
           return;
         }
         if (
-          result.error.code !== ABORTED_CODE &&
-          !c.items.slice(before).some((item) => item.kind === "note" && item.text.includes(result.error.message))
+          result.error.code !== STOPPED_CODE &&
+          !c.fold.items.slice(before).some((item) => item.kind === "note" && item.text.includes(result.error.message))
         )
           note(c, { error: result.error.message, tone: "warning", title: "Not sent", advice: "Your message is back in the composer." });
         unsent(c, echo);
-      } else if (waiting()) accepted(c, echo, Date.now());
+      }
     } catch (error) {
       note(c, { error, title: "The message could not be sent" });
       if (waiting()) unsent(c, echo);
@@ -470,6 +475,11 @@ export function createStore(api: DuangApi) {
       c.sends--;
       publish();
     }
+  }
+
+  // A conversation to start in: a blank one the agent already has, else a new one.
+  async function begin(id: string, known: SessionSummary[]): Promise<string> {
+    return known.find((s) => s.updatedAt === undefined)?.session ?? api.createSession(id);
   }
 
   async function selectAgent(id: string, session?: string) {
@@ -496,13 +506,15 @@ export function createStore(api: DuangApi) {
       publish({
         loading: false,
         model: result.model,
+        contextWindows: result.windows,
         ...(listCurrent() ? { sessions: { ...view.sessions, [id]: result.sessions } } : {}),
         states: { ...view.states, [id]: "ready" },
       });
       staleDefault = result.staleDefault ? { agentId: id, model: result.staleDefault } : undefined;
       // Opened here, inside the navigation guard: a `.then(open)` outside would land on whichever agent the
       // selection had moved to by then.
-      await open(session ?? openable(id, result.sessions) ?? crypto.randomUUID());
+      await open(session ?? openable(id, result.sessions) ?? (await begin(id, result.sessions)));
+      if (request !== navigation) return;
       // After the conversation opened: opening one is what sets the ask, by what it can run.
       if (request === navigation) publish();
     } catch (error) {
@@ -511,26 +523,20 @@ export function createStore(api: DuangApi) {
     }
   }
 
-  // Read again after a model change: its `state_changed` came before the subscription moved.
+  // Read again after a model change, which the session's own events may not have reported before it was subscribed.
   async function readSettings(c: Conversation) {
     try {
-      const { model, thinkingLevel, availableThinkingLevels } = await api.readState(c.agentId, c.session);
+      const { model, thinkingLevel } = stateOf(await api.readState(c.agentId, c.session));
       // The read outlived the conversation (closed, or replaced by a reopen): it says nothing about this one.
       if (conversations.get(key(c.agentId, c.session)) !== c || !c.state) return;
-      // The runtime leaves all three out when it cannot resolve them (no session boundary, or an entry chain
-      // it cannot read); what the events already said about the model is not erased by that silence.
-      c.state = {
-        ...c.state,
-        ...(model !== undefined && { model }),
-        ...(thinkingLevel !== undefined && { thinkingLevel }),
-        ...(availableThinkingLevels !== undefined && { availableThinkingLevels }),
-      };
+      // Silence about a field is not a change to it.
+      c.state = { ...c.state, ...(model && { model }), ...(thinkingLevel && { thinkingLevel }) };
       publish();
     } catch (error) {
       note(c, { error, title: "This conversation's settings could not be read" });
     }
   }
-  // Setting a model on a conversation not begun yet makes the runtime record it; re-list so it stays reachable.
+  // A conversation made since the list was read is listed once it is chosen.
   async function keepListed(c: Conversation) {
     if (!view.sessions[c.agentId]?.some((s) => s.session === c.session)) await listSessions(c.agentId);
   }
@@ -544,7 +550,7 @@ export function createStore(api: DuangApi) {
     const c = conversations.get(key(frame.agentId, frame.session));
     if (!c || c.subscription !== frame.subscription) return;
     if (frame.ended) {
-      lost(c, frame.ended, Date.now());
+      lost(c, frame.ended);
       publish();
       // FastAgent's contract for a subscriber it let go: listen again and read the history. Once by itself; again
       // soon after waits for the person. Not while a send answers: a refusal refills this composer, which reopening replaces.
@@ -592,7 +598,10 @@ export function createStore(api: DuangApi) {
       const start = agents.find((row) => row.id === lastAgent) ?? agents[0];
       // Reading each list boots each runtime, the same as opening it would.
       for (const row of agents) if (row !== start) void listSessions(row.id);
-      if (fresh) freshSession = crypto.randomUUID();
+      if (fresh && start) {
+        // A conversation the crash did not touch; if the agent cannot make one, it says why when it is opened.
+        freshSession = await api.createSession(start.id).catch(() => undefined);
+      }
       if (start) await selectAgent(start.id, fresh ? freshSession : undefined);
     } catch (error) {
       publish({ loading: false, registryError: message(error) });
@@ -644,7 +653,23 @@ export function createStore(api: DuangApi) {
         fail("The usage page did not open", error);
       }
     },
-    newConversation: () => open(crypto.randomUUID()),
+    /** The conversation it opened, when it is still the open one. */
+    async newConversation(): Promise<Conversation | undefined> {
+      const id = view.agentId;
+      if (!id) return undefined;
+      const request = navigation;
+      try {
+        const session = await begin(id, view.sessions[id] ?? []);
+        if (request !== navigation) return undefined;
+        await open(session);
+        void listSessions(id);
+        const opened = view.conversation;
+        return opened?.agentId === id && opened.session === session ? opened : undefined;
+      } catch (error) {
+        fail("A new conversation could not be started", error);
+        return undefined;
+      }
+    },
     setDraft: (draft: string) => {
       if (view.conversation) {
         view.conversation.draft = draft;
@@ -692,7 +717,7 @@ export function createStore(api: DuangApi) {
         if (request === navigation) note(c, { error, title: "The model was not changed" });
       }
     },
-    // Nothing shown ahead of the runtime: the new level arrives as its own `state_changed`.
+    // Nothing shown ahead of FastAgent: the level shown is the one read back from the conversation.
     async setThinking(level: string) {
       const id = view.agentId;
       const c = view.conversation;
@@ -700,7 +725,10 @@ export function createStore(api: DuangApi) {
       try {
         const result = await api.setThinking(id, c.session, level);
         if (!result.ok) note(c, { error: result.error.message, tone: "warning", title: "The effort was not changed" });
-        else await keepListed(c);
+        else {
+          await readSettings(c);
+          await keepListed(c);
+        }
       } catch (error) {
         note(c, { error, title: "The effort was not changed" });
       }
@@ -772,34 +800,6 @@ export function createStore(api: DuangApi) {
         fail("The agent was not removed", error);
       }
     },
-    async renameSession(id: string, session: string, name: string) {
-      try {
-        const result = await api.renameSession(id, session, name);
-        if (!result.ok) return reportOn(id, session, "The conversation was not renamed", result.error.message, "warning");
-        // Re-read rather than patch, so a failed read is reported instead of keeping the old label.
-        await listSessions(id);
-      } catch (error) {
-        reportOn(id, session, "The conversation was not renamed", error, "warning");
-      }
-    },
-    async deleteSession(id: string, session: string) {
-      try {
-        const result = await api.deleteSession(id, session);
-        if (!result.ok) return reportOn(id, session, "The conversation was not deleted", result.error.message, "warning");
-        const c = conversations.get(key(id, session));
-        if (c) close(c);
-        drafts.delete(key(id, session));
-        scrolls.delete(key(id, session));
-        publish({
-          sessions: { ...view.sessions, [id]: (view.sessions[id] ?? []).filter((s) => s.session !== session) },
-        });
-        if (id !== view.agentId) return void (await readPreview(id));
-        if (view.conversation?.session === session) await open(crypto.randomUUID());
-        await listSessions(id);
-      } catch (error) {
-        reportOn(id, session, "The conversation was not deleted", error, "error");
-      }
-    },
     async send() {
       const c = view.conversation;
       const text = c?.draft.trim();
@@ -821,9 +821,7 @@ export function createStore(api: DuangApi) {
       if (!c) return;
       try {
         const result = await api.abort(c.agentId, c.session);
-        // Nothing left running: the run ended as Stop was pressed, and its own ending is already in the
-        // transcript. Main answers a Stop for a send that has not started a run yet with `ok`.
-        if (!result.ok && result.error.code !== NO_ACTIVE_RUN_CODE)
+        if (!result.ok)
           note(c, { error: result.error.message, title: "The run could not be stopped" });
       } catch (error) {
         note(c, { error, title: "The run could not be stopped" });

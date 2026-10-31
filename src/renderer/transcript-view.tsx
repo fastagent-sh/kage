@@ -43,7 +43,7 @@ import {
   type Place,
   type Work,
 } from "./transcript.ts";
-import type { SessionState } from "@fastagent-sh/fastagent/session";
+import type { SessionState } from "./conversation.ts";
 import { clock } from "./time.ts";
 import { Badge, Button, useCopy, type Tone } from "./ui.tsx";
 import { Problem } from "./problem.tsx";

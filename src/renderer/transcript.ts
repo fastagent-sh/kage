@@ -1,18 +1,10 @@
-import type {
-  AnswerOutcome,
-  KnownSessionEvent,
-  ServingErrorEvent,
-  SessionEntry,
-  SessionEvent,
-  SessionState,
-} from "@fastagent-sh/fastagent/session";
 import { explainRunFailure, recognise, type Fix } from "./problems.ts";
 
 // Required, not optional: day separators and message times read it, and a producer that forgets it must not compile.
 type At = { at: number };
 
 export type Item = At &
-  ({ kind: "user"; text: string; steered?: boolean; entryId?: string; opens?: boolean }
+  ({ kind: "user"; text: string; steered?: boolean; entryId?: string; messageId?: string; opens?: boolean }
   | { kind: "assistant"; text: string; open: boolean }
   // `started` survives the restamp of `at` on settling; "thought for 8s" counts from the first token.
   | { kind: "thinking"; text: string; open: boolean; started: number }
@@ -44,25 +36,16 @@ export type Item = At &
       of?: number;
     });
 
-type RetryNote = Extract<Item, { kind: "note" }> & { retry: number };
-const isRetry = (item: Item | undefined): item is RetryNote => item?.kind === "note" && !!item.retry;
-const retriedText = (count: number, reason: string) => `retried ${count === 1 ? "once" : `${count} times`}: ${retryReason(reason)}`;
-
-// A retry the run went on from reads in the past tense: `retrying 2/3` would claim a wait that is over.
-export function wentOn(items: Item[]): Item[] {
-  const index = items.findLastIndex((item) => isRetry(item) && item.of !== undefined);
-  if (index < 0) return items;
-  const { of: _waiting, ...note } = items[index] as RetryNote;
-  return items.with(index, { ...note, text: retriedText(note.retry, note.reason ?? "") });
-}
-
 // Never a failure's ending: a retrying run goes on.
-const retryReason = (reason: string) => {
+export const retryReason = (reason: string) => {
   const title = recognise(reason)?.title;
   return title ? title.charAt(0).toLowerCase() + title.slice(1) : reason.split("\n")[0]!;
 };
 
-function failed(reason: string) {
+const isRetry = (item: Item | undefined): item is Extract<Item, { kind: "note" }> & { retry: number } =>
+  item?.kind === "note" && !!item.retry;
+
+export function failed(reason: string, code?: string) {
   // OpenAI's documented code for a ChatGPT plan's limit, which pi passes on in the run's error.
   if (reason.includes("subscription_sharing_usage_limit_exceeded"))
     return {
@@ -72,7 +55,7 @@ function failed(reason: string) {
       limit: "openai",
       fix: "model" as const,
     };
-  return { ...explainRunFailure(reason), reason };
+  return { ...explainRunFailure(reason, code), reason };
 }
 
 // Crossing the calendar year earns the year: read in January, `Dec 25` looks like this year's.
@@ -87,30 +70,16 @@ export function dayLabel(at: number, now: number = Date.now()): string {
   return date.toLocaleDateString([], { month: "short", day: "numeric", year: sameYear ? undefined : "numeric" });
 }
 
+
 export type UserItem = Extract<Item, { kind: "user" }>;
 
-// Else the oldest slash command: the runtime reports a command expanded.
-// ponytail: text is the only key; a client-supplied prompt id upstream is the fix if several clients steer at once.
-export function claim(waiting: UserItem[], text: string): UserItem | undefined {
-  return waiting.find((item) => item.text === text) ?? waiting.find((item) => item.text.startsWith("/"));
-}
+// A message sent while the conversation is running joins that run; one sent to an idle conversation opens it.
+export const opensRun = (status: "idle" | "running" | undefined): boolean => status !== "running";
 
-// A message sent during a compaction opens the run after it, not the compaction it did not ask for.
-export function opensRun(status: SessionState["status"] | undefined, runHasUser: boolean): boolean {
-  if (status === "compacting") return false;
-  return status !== "running" || !runHasUser;
-}
-
-// `opens`: reads above the run's working mark, since that work is what it asked for.
-export function queueView(waiting: UserItem[], pending: string[]): { item: UserItem; listed: boolean; opens: boolean }[] {
-  let left = waiting;
-  const listed = pending.map((text) => {
-    const own = claim(left, text);
-    if (own) left = left.filter((item) => item !== own);
-    // Listed as queued, it is a steer for the run on screen, whatever it was sent as.
-    return { item: own ?? { kind: "user" as const, text, at: 0 }, listed: true, opens: false };
-  });
-  return [...listed, ...left.map((item) => ({ item, listed: false, opens: item.opens === true }))];
+// `listed`: FastAgent holds it (it has a message id). `opens`: reads above the run's working mark, since that
+// work is what it asked for.
+export function queueView(waiting: UserItem[]): { item: UserItem; listed: boolean; opens: boolean }[] {
+  return waiting.map((item) => ({ item, listed: item.messageId !== undefined, opens: item.opens === true }));
 }
 
 export type Line = Item | { kind: "day"; at: number };
@@ -236,9 +205,8 @@ export type Activity = "thinking" | "tool" | "answering";
 
 export function phase(
   items: Item[],
-  status: SessionState["status"] | undefined,
+  status: "idle" | "running" | undefined,
 ): { word: string; detail?: string; activity: Activity } {
-  if (status === "compacting") return { word: "compacting", activity: "thinking" };
   if (status !== "running") return { word: "starting", activity: "thinking" };
   const running = items.filter((item): item is Tool => item.kind === "tool" && item.status === "running");
   if (running.length > 1) return { word: `running ${running.length} tools`, activity: "tool" };
@@ -252,161 +220,12 @@ export function phase(
   }
   const last = items.at(-1);
   if (last?.kind === "assistant" && last.open) return { word: "answering", activity: "answering" };
-  // Waiting out pi's retry delay is not thinking: it says the retry, and what it is retrying.
+  // Waiting out the agent's retry delay is not thinking: it says the retry, and what it is retrying.
   if (isRetry(last) && last.of !== undefined)
     return { word: `retrying ${last.retry}/${last.of}`, detail: retryReason(last.reason ?? ""), activity: "thinking" };
   const thought = last?.kind === "thinking" && last.open ? thinkingLine(last.text, true) || undefined : undefined;
   return { word: "thinking", detail: thought, activity: "thinking" };
 }
-
-// A tool call and its result arrive apart (`toolCalls` in the answer, then a `tool` entry by `toolCallId`).
-// A conversation not running that stops mid-turn was cut with nothing recorded, unless every call carries
-// `terminate` (pi ended the run on purpose). Calls after the last user message of a running conversation are
-// still executing; history has no start time for them.
-export function fromEntries(entries: SessionEntry[], leafEntryId?: string, running = false): Item[] {
-  if (leafEntryId) {
-    const byId = new Map(entries.map((entry) => [entry.id, entry]));
-    const path: SessionEntry[] = [];
-    const seen = new Set<string>();
-    let id: string | undefined = leafEntryId;
-    while (id) {
-      const entry = byId.get(id);
-      if (!entry || seen.has(id)) throw new Error(`Invalid session entry chain at ${id}`);
-      seen.add(id);
-      path.push(entry);
-      id = entry.parentId;
-    }
-    entries = path.reverse();
-  }
-  const items: Item[] = [];
-  let failure: { index: number; message: string } | undefined;
-  // History does not say where a run began; the live view counts from `run_started` instead.
-  let unconcluded = 0;
-  let open = false;
-  let batch = new Map<string, boolean>();
-  const concluded = (index: number) => {
-    const before = items[index - 1];
-    if (before?.kind !== "note" || !before.retry) return index;
-    items.splice(index - 1, 1);
-    return index - 1;
-  };
-  const retried = () => {
-    if (!failure) return;
-    const { index, message } = failure;
-    failure = undefined;
-    // Retries in a row are one line that counts them.
-    const previous = items[index - 1];
-    const count = previous?.kind === "note" && previous.retry ? previous.retry + 1 : 1;
-    const at = items[index]!.at;
-    if (count > 1) items.splice(index - 1, 1);
-    items[count > 1 ? index - 1 : index] = {
-      kind: "note",
-      tone: "info",
-      text: retriedText(count, message),
-      reason: message,
-      retry: count,
-      at,
-    };
-  };
-  for (const entry of entries) {
-    const data = (entry.data ?? {}) as {
-      text?: string;
-      toolCalls?: { id?: string; name?: string; args?: unknown }[];
-      toolCallId?: string;
-      toolName?: string;
-      isError?: boolean;
-      outcome?: AnswerOutcome;
-      terminate?: true;
-      thinking?: string;
-    };
-    const at = entry.timestamp;
-    if (entry.kind === "user") {
-      // The failure ended its run; what follows is the next one.
-      if (failure) unconcluded = concluded(failure.index) + 1;
-      failure = undefined;
-      open = true;
-      items.push({ kind: "user", text: data.text ?? "", at, entryId: entry.id });
-    } else if (entry.kind === "assistant") {
-      retried();
-      // How long it took is not recorded.
-      if (data.thinking) items.push({ kind: "thinking", text: data.thinking, open: false, started: at, at });
-      if (data.text) items.push({ kind: "assistant", text: data.text, open: false, at });
-      for (const call of data.toolCalls ?? []) {
-        items.push({
-          kind: "tool",
-          id: call.id ?? "",
-          name: call.name ?? "tool",
-          args: call.args,
-          status: "interrupted",
-          at,
-        });
-      }
-      const outcome = data.outcome;
-      if (outcome?.status === "truncated") items.push({ kind: "note", tone: "info", text: TRUNCATED, at });
-      else if (outcome?.status === "aborted") items.push({ kind: "note", tone: "info", text: "run stopped", at });
-      else if (outcome?.status === "failed") {
-        const message = outcome.error?.message ?? "";
-        const turn = items.findLast((item) => item.kind === "user");
-        const toolsRan = items.slice(unconcluded).some((item) => item.kind === "tool");
-        failure = { index: items.length, message };
-        items.push({
-          kind: "note",
-          tone: "error",
-          text: `run failed${message ? `: ${message}` : ""}`,
-          at,
-          ...(turn?.kind === "user" ? { resend: { text: turn.text, toolsRan } } : {}),
-          ...failed(message),
-        });
-      }
-      // An answer with no tool call ends its work: a later failure cannot repeat what came before it.
-      if (!outcome && !data.toolCalls?.length) unconcluded = items.length;
-      open = !outcome && !!data.toolCalls?.length;
-      batch = new Map((data.toolCalls ?? []).map((call) => [call.id ?? "", false]));
-    } else if (entry.kind === "tool") {
-      const index = items.findLastIndex((item) => item.kind === "tool" && item.id === data.toolCallId);
-      const result: Item = {
-        at,
-        kind: "tool",
-        id: data.toolCallId ?? entry.id,
-        name: data.toolName ?? "tool",
-        args: index < 0 ? undefined : (items[index] as Extract<Item, { kind: "tool" }>).args,
-        result: data.text ?? "",
-        isError: data.isError ?? false,
-        status: "done",
-      };
-      if (index < 0) items.push(result);
-      else items[index] = result;
-      if (data.terminate && batch.has(result.id)) batch.set(result.id, true);
-      // Every call asked to end the run: it ended here on purpose.
-      const ended = batch.size > 0 && [...batch.values()].every(Boolean);
-      open = !ended;
-      if (ended) unconcluded = items.length;
-    }
-  }
-  if (!running && failure) concluded(failure.index);
-  if (!running) {
-    const turn = items.findLast((item) => item.kind === "user");
-    if (open && turn?.kind === "user")
-      items.push({
-        kind: "note",
-        tone: "error",
-        text: "run cut short: no answer was recorded",
-        title: "This run was cut short",
-        advice: "duang or the computer stopped before an answer was recorded. What it did up to here is kept.",
-        at: items.at(-1)!.at,
-        resend: { text: turn.text, toolsRan: items.slice(unconcluded).some((item) => item.kind === "tool") },
-      });
-    return items;
-  }
-  // A failure the running run has not answered yet is a retry waiting out its delay.
-  retried();
-  const turn = items.findLastIndex((item) => item.kind === "user");
-  return items.map((item, index) =>
-    index > turn && item.kind === "tool" && item.status === "interrupted" ? { ...item, status: "running" } : item,
-  );
-}
-
-const TRUNCATED = "answer cut off at the model's output limit";
 
 // Results arrive MCP-shaped (`{ content: [{ type: "text", text }] }`). Anything but text parts keeps its JSON:
 // a result nobody can see is worse than an ugly one.
@@ -493,125 +312,3 @@ export function previewOf(items: Item[]): { text: string; at: number } | undefin
   return undefined;
 }
 
-// Thinking ends when the model does something else, not when the message settles minutes later.
-function stopThinking(items: Item[], at: number): Item[] {
-  return items.map((item) => (item.kind === "thinking" && item.open ? { ...item, open: false, at } : item));
-}
-
-// The one cast: narrowed by `type`, so a field the contract renames fails to compile.
-type ReadEvent = KnownSessionEvent | ServingErrorEvent;
-export const known = (event: SessionEvent) => event as ReadEvent;
-
-// Unchanged items stay the same object: `SettledMessage` skips them, or every streamed word redraws everything.
-export function apply(items: Item[], event: SessionEvent): Item[] {
-  const e = known(event);
-  switch (e.type) {
-    case "message_delta": {
-      items = wentOn(items);
-      const last = items.at(-1);
-      const delta = e.data.delta;
-      if (e.data.channel === "thinking") {
-        if (last?.kind === "thinking" && last.open) {
-          return [...items.slice(0, -1), { ...last, text: last.text + delta }];
-        }
-        return [...items, { kind: "thinking", text: delta, open: true, at: event.timestamp, started: event.timestamp }];
-      }
-      if (last?.kind === "assistant" && last.open) {
-        return [...items.slice(0, -1), { ...last, text: last.text + delta }];
-      }
-      return [...stopThinking(items, event.timestamp), { kind: "assistant", text: delta, open: true, at: event.timestamp }];
-    }
-    case "message_finished": {
-      // Stamped on settling, matching the time history carries. Only open items: restamping a settled one moves
-      // an older answer's time and stretches `thinking · Ns`.
-      const settled = items.map((item) =>
-        (item.kind === "assistant" || item.kind === "thinking") && item.open
-          ? { ...item, open: false, at: event.timestamp }
-          : item,
-      );
-      // A failed or stopped answer is said by the run's own ending (`run_settled`), or by the retry pi schedules.
-      return e.data.outcome?.status === "truncated"
-        ? [...settled, { kind: "note", tone: "info", text: TRUNCATED, at: event.timestamp }]
-        : settled;
-    }
-    case "tool_started":
-      return [
-        ...stopThinking(wentOn(items), event.timestamp),
-        {
-          kind: "tool",
-          id: e.data.id,
-          name: e.data.name,
-          args: e.data.args,
-          status: "running",
-          at: event.timestamp,
-          started: event.timestamp,
-        },
-      ];
-    case "tool_progress":
-    case "tool_finished": {
-      const id = e.data.id;
-      const index = items.findLastIndex((item) => item.kind === "tool" && item.id === id);
-      if (index < 0) return items;
-      const tool = items[index] as Extract<Item, { kind: "tool" }>;
-      const updated: Item =
-        e.type === "tool_finished"
-          ? { ...tool, result: e.data.content, isError: e.data.isError, status: "done", ended: event.timestamp }
-          : { ...tool, result: e.data.partialResult };
-      return [...items.slice(0, index), updated, ...items.slice(index + 1)];
-    }
-    case "run_settled": {
-      items = items.map((item): Item => {
-        if ((item.kind === "assistant" || item.kind === "thinking") && item.open) return { ...item, open: false };
-        if (item.kind === "tool" && item.status === "running")
-          return { ...item, status: "interrupted", ended: event.timestamp };
-        return item;
-      });
-      // A run that ends after pi's retries no longer needs the line counting them: its ending says how it ended.
-      const lastLine = items.at(-1);
-      if (lastLine?.kind === "note" && lastLine.retry) items = items.slice(0, -1);
-      if (e.data.status === "completed") return items;
-      const stopped = e.data.status === "aborted";
-      // A stopped run carries the abort machinery's words; the person pressed Stop, so only a failure keeps its message.
-      const error = stopped ? undefined : e.data.error;
-      return [
-        ...items,
-        {
-          kind: "note",
-          at: event.timestamp,
-          tone: stopped ? "info" : "error",
-          // A run the person ended is `stopped`, never `aborted` or `failed` (§9).
-          text: `run ${stopped ? "stopped" : e.data.status}${error?.message ? `: ${error.message}` : ""}`,
-          ...(stopped ? {} : failed(error?.message ?? "")),
-        },
-      ];
-    }
-    case "retry_scheduled":
-      // pi tries again by itself: a quiet line that moves on with each attempt, not a failure.
-      return [
-        ...(items.at(-1)?.kind === "note" && (items.at(-1) as { retry?: number }).retry ? items.slice(0, -1) : items),
-        {
-          kind: "note",
-          tone: "info",
-          at: event.timestamp,
-          text: `retrying ${e.data.attempt}/${e.data.maxAttempts}: ${retryReason(e.data.error)}`,
-          reason: e.data.error,
-          retry: e.data.attempt,
-          of: e.data.maxAttempts,
-        },
-      ];
-    case "serving_error":
-      return [
-        ...items,
-        {
-          kind: "note",
-          tone: "error",
-          text: e.data.message,
-          title: "The agent's runtime reported a problem",
-          reason: e.data.message,
-          at: event.timestamp,
-        },
-      ];
-    default:
-      return items;
-  }
-}

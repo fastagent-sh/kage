@@ -3,8 +3,8 @@ import { chmod, mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeF
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createPiAgentFromDir } from "@fastagent-sh/fastagent/pi";
-import { AgentRegistry, createAgentIn, failingConfig, freshConfig, MissingDirError, requireFolder, unknownDefault } from "./agent-files.ts";
+import { openAgent } from "@fastagent-sh/fastagent";
+import { AgentRegistry, createAgentIn, failingConfig, freshConfig, hasAgent, MissingDirError, requireFolder } from "./agent-files.ts";
 
 test("registry serializes writes in one process, survives restart and deduplicates real paths", async () => {
   const root = await mkdtemp(join(tmpdir(), "duang-registry-"));
@@ -96,34 +96,39 @@ test("invalid or unreadable registry fails visibly and is never replaced with an
   }
 });
 
-test("scaffolding creates only a new agent directory and never overwrites existing files", async () => {
+test("scaffolding fills only an empty folder and never overwrites what is there", async () => {
   const root = await mkdtemp(join(tmpdir(), "duang-scaffold-"));
   try {
-    const dir = await createAgentIn(root);
-    assert.equal(await readFile(join(dir, "fastagent.config.ts"), "utf8"), "export default {};\n");
-    await writeFile(join(dir, "fastagent.config.ts"), "existing config");
-    await assert.rejects(createAgentIn(root), { code: "EEXIST" });
-    assert.equal(await readFile(join(dir, "fastagent.config.ts"), "utf8"), "existing config");
-    await rm(dir, { recursive: true });
+    const dir = join(root, "agent");
     await mkdir(dir);
-    await assert.rejects(createAgentIn(root), { code: "EEXIST" });
-    assert.deepEqual(await readdir(dir), [], "even an empty existing directory must remain untouched");
+    const created = await createAgentIn(dir);
+    assert.equal(created.dir, dir);
+    assert.ok(created.created.includes("fastagent.config.ts"));
+    assert.ok(await hasAgent(dir));
+    await writeFile(join(dir, "fastagent.config.ts"), "existing config");
+    await assert.rejects(createAgentIn(dir), /already a fastagent agent/);
+    assert.equal(await readFile(join(dir, "fastagent.config.ts"), "utf8"), "existing config");
+
+    const project = join(root, "project");
+    await mkdir(project);
+    await writeFile(join(project, "notes.md"), "mine");
+    await assert.rejects(createAgentIn(project), /empty/i);
+    assert.deepEqual(await readdir(project), ["notes.md"], "a folder with the person's files in it is left alone");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("a scaffold that cannot write its files leaves no directory behind", async (t) => {
-  if (process.getuid?.() === 0) return t.skip("root ignores the permission bits this test relies on");
-  const root = await mkdtemp(join(tmpdir(), "duang-scaffold-"));
-  // A umask without the write bit makes the new directory read-only, so the first writeFile fails.
-  const previous = process.umask(0o222);
-  t.after(async () => {
-    process.umask(previous);
+test("an agent is a folder with a config in it; one that cannot be looked at says why", async () => {
+  const root = await mkdtemp(join(tmpdir(), "duang-has-"));
+  try {
+    assert.equal(await hasAgent(root), false);
+    assert.equal(await hasAgent(join(root, "gone")), false);
+    await writeFile(join(root, "fastagent.config.ts"), "export default {};\n");
+    assert.equal(await hasAgent(root), true);
+  } finally {
     await rm(root, { recursive: true, force: true });
-  });
-  await assert.rejects(createAgentIn(root), { code: "EACCES" });
-  assert.deepEqual(await readdir(root), [], "a retry must not hit EEXIST on our own leftovers");
+  }
 });
 
 test("a moved folder is the same agent where it is now; a folder that is another agent is refused", async () => {
@@ -147,31 +152,34 @@ test("a moved folder is the same agent where it is now; a folder that is another
   }
 });
 
-test("a fresh config replaces only the agent's own, and keeps the old one beside it, never over a copy", async () => {
+test("a fresh config replaces only the agent's own, keeps the old one beside it, never over a copy, and loads", async () => {
   const root = await mkdtemp(join(tmpdir(), "duang-file-"));
   try {
     const dir = join(root, "agent");
-    await mkdir(join(dir, "fastagent"), { recursive: true });
-    const config = join(dir, "fastagent", "fastagent.config.ts");
+    await mkdir(dir, { recursive: true });
+    const config = join(dir, "fastagent.config.ts");
     await writeFile(config, "export default { model: ,};\n");
-    await writeFile(join(dir, "fastagent", "persona.ts"), "x");
+    await writeFile(join(dir, "persona.ts"), "x");
     await mkdir(join(root, "elsewhere"));
     await writeFile(join(root, "elsewhere", "fastagent.config.ts"), "outside");
     await symlink(join(root, "elsewhere"), join(dir, "linked"));
 
-    await assert.rejects(freshConfig(dir, join(dir, "fastagent", "persona.ts")), /is not this agent's fastagent.config.ts/);
+    await assert.rejects(freshConfig(dir, join(dir, "persona.ts")), /is not this agent's fastagent.config.ts/);
     await assert.rejects(freshConfig(dir, join(root, "elsewhere", "fastagent.config.ts")), /is not this agent's/);
     await assert.rejects(freshConfig(dir, join(dir, "linked", "fastagent.config.ts")), /is not this agent's/, "a link out of the folder");
     assert.equal(await readFile(join(root, "elsewhere", "fastagent.config.ts"), "utf8"), "outside");
 
     const at = new Date(2026, 9, 3, 14, 40, 0);
     await freshConfig(dir, config, at);
-    const kept = join(dir, "fastagent", "fastagent.config.ts.broken-20261003-144000");
+    const kept = join(dir, "fastagent.config.ts.broken-20261003-144000");
     assert.equal(await readFile(kept, "utf8"), "export default { model: ,};\n", "the person's file is kept as it was");
     assert.equal(await readFile(config, "utf8"), "export default {};\n");
     // A second reset in the same second (a double click) must not put the fresh file over the person's copy.
     await assert.rejects(freshConfig(dir, config, at), /EEXIST/);
     assert.equal(await readFile(kept, "utf8"), "export default { model: ,};\n");
+
+    const agent = await openAgent(dir, { stateDir: join(root, "state") });
+    await agent.close();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -182,28 +190,28 @@ test("a load that failed in the config is told apart by FastAgent's own words", 
   const failure = async (name: string, files: Record<string, string>) => {
     const dir = join(root, name);
     for (const [file, text] of Object.entries(files)) {
-      await mkdir(join(dir, "fastagent", file, ".."), { recursive: true });
-      await writeFile(join(dir, "fastagent", file), text);
+      await mkdir(join(dir, file, ".."), { recursive: true });
+      await writeFile(join(dir, file), text);
     }
-    const error = await createPiAgentFromDir(dir, { sessionControl: true }).then(
+    const error = await openAgent(dir, { stateDir: join(root, `${name}-state`) }).then(
       () => assert.fail(`${name} loaded`),
       (error: Error) => error.message,
     );
-    return { message: error, config: join(dir, "fastagent", "fastagent.config.ts") };
+    return { dir, message: error };
   };
   try {
     const cases: Record<string, Record<string, string>> = {
       syntax: { "fastagent.config.ts": "export default {\n  model: ,\n};\n" },
       key: { "fastagent.config.ts": "export default { modle: 'x' };\n" },
-      imported: { "fastagent.config.ts": "import t from './tools/t.ts';\nexport default { tools: [t] };\n", "tools/t.ts": "export default {;\n" },
+      imported: { "fastagent.config.ts": "import t from './tools/t.ts';\nexport default { extensions: [t] };\n", "tools/t.ts": "export default {;\n" },
       package: { "fastagent.config.ts": "import 'no-such-package-here';\nexport default {};\n" },
     };
     for (const [name, files] of Object.entries(cases)) {
-      const { message, config } = await failure(name, files);
-      assert.equal(failingConfig(message), config, `${name}: ${message}`);
+      const { dir, message } = await failure(name, files);
+      assert.equal(failingConfig(dir, message), join(dir, "fastagent.config.ts"), `${name}: ${message}`);
     }
-    assert.equal(failingConfig("missing model: set --model"), undefined);
-    assert.equal(failingConfig("/x/fastagent/fastagent.config.ts.broken-1: nope"), undefined);
+    assert.equal(failingConfig("/x", "missing model: set --model"), undefined);
+    assert.equal(failingConfig("/x", "fastagent.config.ts.broken-1: nope"), undefined);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -224,30 +232,6 @@ test("only a folder that is not there is missing; one that cannot be looked at s
     );
   } finally {
     await chmod(join(root, "locked"), 0o755).catch(() => {});
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("a load that failed on duang's default model is told apart from one on the config's own", async () => {
-  const root = await mkdtemp(join(tmpdir(), "duang-default-"));
-  const message = async (config: string, model?: string) => {
-    await rm(join(root, "fastagent"), { recursive: true, force: true });
-    await mkdir(join(root, "fastagent"));
-    await writeFile(join(root, "fastagent", "fastagent.config.ts"), config);
-    return createPiAgentFromDir(root, { sessionControl: true, authPath: join(root, "auth.json"), ...(model ? { model } : {}) }).then(
-      () => assert.fail("it loaded"),
-      (error: Error) => error.message,
-    );
-  };
-  try {
-    // An endpoint that was in a models.json and is not any more: pi does not know the model.
-    const gone = await message("export default {};\n", "local/gone");
-    assert.ok(unknownDefault(gone, "local/gone"), gone);
-    // The config's own unknown model is the config's to fix, with or without a default of duang's beside it.
-    const own = await message('export default { model: "local/also-gone" };\n');
-    assert.equal(unknownDefault(own, undefined), false, own);
-    assert.equal(unknownDefault(own, "local/gone"), false, own);
-  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

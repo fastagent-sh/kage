@@ -195,7 +195,7 @@ plans and reports in speech balloons fragments a record that needs to be scanned
   written reads as a fragment, so the last complete one is shown.
 - **A fact about the session is one quiet line**; a problem the person may have to act on is a card
   (§9b).
-- **A message is placed where the runtime says it entered**, not where it was sent: a steer is read at
+- **A message is placed where FastAgent says it entered**, not where it was sent: a steer is read at
   the run's next turn boundary. Until then it waits below the output, saying `sending` or `queued`. A
   steered message is marked as such only live: the history does not say it, and FastAgent declined to
   record it ([fastagent#595](https://github.com/fastagent-sh/fastagent/issues/595)) because its
@@ -218,7 +218,7 @@ Three tiers, decided by what the person has to do about it.
 
 One vocabulary everywhere, so a condition is never `working` in one place and `running` in another:
 
-`working` · `thinking` · `running` · `reading` · `searching` · `editing` · `fetching` · `answering` · `compacting` · `starting` · `done` · `failed` · `stopped` · `refused` · `unsent` ·
+`working` · `thinking` · `running` · `reading` · `searching` · `editing` · `fetching` · `answering` · `starting` · `done` · `failed` · `stopped` · `refused` · `unsent` ·
 `no agent yet` · `folder not found` · `broken`
 
 Copy says what something means for the person, never how duang is built: "Saved on this computer", not
@@ -285,22 +285,20 @@ The whole list, so it lives in one place instead of being read out of the handle
 | `Shift+F10`, `Menu` | roster | Its menu: `Rename…` |
 | `Enter` `Space` | header's list button | Show or hide the conversation list |
 | `↓` `↑` | conversation list | Move between conversations |
-| `Shift+F10`, `Menu` | conversation list | Its menu: `Rename…`, `Delete Conversation` |
-| `Delete` `Backspace` | conversation list | Delete it, after confirming |
 | `Esc` | conversation list | Close it |
-| `Enter` | renaming an agent or a conversation | Keep the name |
-| `Esc` | renaming an agent or a conversation | Drop it |
+| `Enter` | renaming an agent | Keep the name |
+| `Esc` | renaming an agent | Drop it |
 | `Enter` | composer | Send |
 | `⇧Enter` | composer | Newline |
 | `/` | composer | Command completion |
 | `↓` `↑` | composer, list open | Move through the completions |
-| `Enter` `Tab` | composer, list open | Accept the name rather than send; a skill is inserted as `/skill:<name>`, the spelling pi runs |
+| `Enter` `Tab` | composer, list open | Accept the name rather than send; a skill is inserted as `/skill:<name>`, the spelling FastAgent expands |
 | `Esc` | composer, list open | Dismiss the completions |
 | `Esc` | model picker | Close it and return focus to the chip that opened it |
 | arrows, `PageUp` `PageDown` | transcript, focused | Scroll, from Chromium |
 
 An IME composing text keeps `Enter`: sending there would cut a word in half. Deliberately absent: `F2`
-for rename (the Windows convention; macOS renames from the context menu or a double click) and global
+for rename (the Windows convention; macOS renames from the context menu or a double click, and only an agent can be renamed) and global
 search, until there is a search surface to focus.
 
 ## 12. Brand

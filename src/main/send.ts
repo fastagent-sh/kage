@@ -1,14 +1,14 @@
-import { ABORTED_CODE, SESSION_BUSY_CODE, type Agent } from "@fastagent-sh/fastagent/core";
-import { NO_ACTIVE_RUN_CODE, type Session, type SessionResult } from "@fastagent-sh/fastagent/session";
-import { MODEL_UNAVAILABLE_CODE } from "../shared/refusals.ts";
+import { AgentError, type Agent } from "@fastagent-sh/fastagent";
+import { MODEL_UNAVAILABLE_CODE, STOPPED_CODE } from "../shared/refusals.ts";
+import type { Result } from "../shared/result.ts";
+import { refOf, specOf } from "./models.ts";
 
-// A thrown refusal would reach the renderer wrapped in Electron's `Error invoking remote method`.
-export const refuse = (code: string, message: string): SessionResult => ({
+export const refuse = (code: string, message: string, retryable = true): Result<never> => ({
   ok: false,
-  error: { code, message, retryable: true },
+  error: { code, message, retryable },
 });
 
-const stoppedBeforeStart = refuse(ABORTED_CODE, "Stopped before the run started");
+const stoppedBeforeStart = refuse(STOPPED_CODE, "Stopped before the message was sent");
 
 const unavailable = (model: string) =>
   refuse(
@@ -16,87 +16,75 @@ const unavailable = (model: string) =>
     `${model} cannot run: its provider is not connected, or the model is not offered to it. Connect the provider, or choose another model for this conversation.`,
   );
 
-// `stopped` is checked right before each hand-off, so a Stop that came first makes no call. A run starts only
-// on a model the picker would offer; anything else is refused before anything is recorded.
-export async function send(
+/** A refusal FastAgent reports as an error is a refusal here too, with its words and its `retryable`. */
+export async function refusal<T>(work: () => Promise<Result<T>>): Promise<Result<T>> {
+  try {
+    return await work();
+  } catch (error) {
+    if (error instanceof AgentError) return refuse(error.code, error.message, error.retryable);
+    throw error;
+  }
+}
+
+// `stopped` is checked right before each hand-off, so a Stop that came first makes no call. A message goes only to
+// a model the picker would offer; anything else is refused before anything is recorded. A conversation with no
+// model of its own is given the agent's default here, so what runs is what was shown and is recorded with it.
+// A busy conversation takes the message as a steer (an idle one starts on it), and what becomes of it is
+// reported by the conversation's own events.
+export function send(
   agent: Agent,
-  session: Session,
+  sessionId: string,
   text: string,
   stopped: () => boolean,
   offered: (model: string) => Promise<boolean>,
-): Promise<SessionResult> {
-  const state = await session.state();
-  if (state.status === "running") {
+  agentDefault?: string,
+): Promise<Result<{ messageId: string }>> {
+  return refusal(async () => {
     if (stopped()) return stoppedBeforeStart;
-    const result = await session.steer({ text });
-    if (result.ok || result.error.code !== NO_ACTIVE_RUN_CODE) return result;
-  }
-  if (state.model && !(await offered(state.model))) return unavailable(state.model);
-  if (stopped()) return stoppedBeforeStart;
-  let first = true;
-  for await (const event of agent.invoke({ session: session.id }, { text })) {
-    if (first && event.type === "failed" && event.code === SESSION_BUSY_CODE) {
-      return stopped() ? stoppedBeforeStart : session.steer({ text });
-    }
-    first = false;
-    if (event.type === "failed") {
-      return {
-        ok: false,
-        error: { code: event.code ?? "run_failed", message: event.details, retryable: event.retryable },
-      };
-    }
-  }
-  return { ok: true };
+    const session = await agent.sessions.get(sessionId);
+    const spec =
+      (session.model && specOf(session.model)) ?? agentDefault ?? ((await agent.info()).defaultModel && specOf((await agent.info()).defaultModel!));
+    if (spec && !(await offered(spec))) return unavailable(spec);
+    if (stopped()) return stoppedBeforeStart;
+    if (!session.model && agentDefault) await agent.sessions.update(sessionId, { model: refOf(agentDefault) });
+    const message = await agent.messages.send({ sessionId, content: text, whenBusy: "steer" });
+    // The Stop came while the message was being recorded: it stops what the Stop meant to stop.
+    if (stopped()) await agent.sessions.cancel(sessionId);
+    return { ok: true, messageId: message.id };
+  });
 }
 
-// Before a send reaches the runtime there is no run to abort, so a Stop is recorded here and the send gives up.
+// Before a send reaches the agent there is nothing to cancel, so a Stop is recorded here and the send gives up.
 export function sends() {
-  type Ticket = { stopped: boolean; finished: Promise<unknown> };
-  type Held = { agentId: string; session: string; tickets: Set<Ticket> };
+  type Ticket = { stopped: boolean };
+  type Held = Set<Ticket>;
   const held = new Map<string, Held>();
   const keyOf = (agentId: string, session: string) => `${agentId}/${session}`;
   let quitting = false;
-  const stop = async (agentId: string, session: string, abort: () => Promise<SessionResult>): Promise<SessionResult> => {
-    const tickets = held.get(keyOf(agentId, session))?.tickets;
-    for (const ticket of tickets ?? []) ticket.stopped = true;
-    const result = await abort();
-    return !result.ok && result.error.code === NO_ACTIVE_RUN_CODE && tickets?.size ? { ok: true } : result;
-  };
   return {
-    hold(agentId: string, session: string, run: (stopped: () => boolean) => Promise<SessionResult>): Promise<SessionResult> {
+    hold<T>(agentId: string, session: string, run: (stopped: () => boolean) => Promise<Result<T>>): Promise<Result<T>> {
       if (quitting) return Promise.resolve(refuse("quitting", "duang is quitting: the message was not sent"));
       const key = keyOf(agentId, session);
-      const ticket: Ticket = { stopped: false, finished: Promise.resolve() };
-      const entry = held.get(key) ?? { agentId, session, tickets: new Set() };
-      held.set(key, entry);
-      entry.tickets.add(ticket);
-      const finished = run(() => ticket.stopped).finally(() => {
-        entry.tickets.delete(ticket);
-        if (entry.tickets.size === 0 && held.get(key) === entry) held.delete(key);
+      const ticket: Ticket = { stopped: false };
+      const tickets = held.get(key) ?? new Set();
+      held.set(key, tickets);
+      tickets.add(ticket);
+      return run(() => ticket.stopped).finally(() => {
+        tickets.delete(ticket);
+        if (tickets.size === 0 && held.get(key) === tickets) held.delete(key);
       });
-      ticket.finished = finished.catch(() => {});
-      return finished;
     },
-    busy: () => held.size > 0,
-    // The limit starts before the aborts: pi's abort waits for its run to go idle, so it can take as long as the run.
-    async stopAll(abort: (agentId: string, session: string) => Promise<SessionResult>, within: number): Promise<boolean> {
-      // The window stays open while this waits: a message sent meanwhile is refused, not started and cut.
+    /** Stops what is on its way, then what the agent is doing. */
+    async stop(agentId: string, session: string, cancel: () => Promise<unknown>): Promise<Result> {
+      for (const ticket of held.get(keyOf(agentId, session)) ?? []) ticket.stopped = true;
+      return refusal(async () => {
+        await cancel();
+        return { ok: true };
+      });
+    },
+    /** From now on a message is refused rather than started and cut. */
+    quit() {
       quitting = true;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const timeout = new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), within)));
-      const finished = [...held.values()].flatMap(({ tickets }) => [...tickets].map((ticket) => ticket.finished));
-      // A conversation that cannot be stopped must not keep the app from quitting; it is said, not hidden.
-      for (const { agentId, session } of held.values()) {
-        const failed = (reason: unknown) =>
-          console.error(`duang: ${keyOf(agentId, session)} could not be stopped before quitting:`, reason);
-        stop(agentId, session, () => abort(agentId, session)).then((result) => {
-          if (!result.ok) failed(result.error.message);
-        }, failed);
-      }
-      const done = await Promise.race([Promise.all(finished).then(() => true), timeout]);
-      clearTimeout(timer);
-      return done;
     },
-    stop,
   };
 }

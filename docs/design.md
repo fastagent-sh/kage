@@ -122,17 +122,17 @@ provider, and the reverse, and duang says so before it happens.
 
 Known limitation: the file is plain JSON with mode `0600`, as FastAgent writes it. Desktop apps
 usually keep secrets in the OS keychain (VS Code, GitHub Desktop, Docker Desktop, Zed). FastAgent's
-runtime and login read and write a file today; storing them in the keychain needs a pluggable
-credential store upstream ([fastagent#652](https://github.com/fastagent-sh/fastagent/issues/652)).
+`credentialFile` reads and writes a file; since 0.26 a host may pass a `CredentialStore` of its own, so a
+keychain-backed store is possible and not built ([fastagent#652](https://github.com/fastagent-sh/fastagent/issues/652)).
 
-**Custom endpoints (after the first version).** Ollama, LM Studio or a gateway, in pi's
-`models.json` schema: name, API type, base URL, optional key and the model ids. Ollama and LM Studio
-are prefills, not separate integrations. A relay in front of Anthropic or OpenAI is a custom endpoint
+**Custom endpoints (after the first version).** Ollama, LM Studio or a gateway, as a provider in an
+agent's `fastagent.config.ts` (`providers`, built with pi-ai's `createProvider`): name, API type, base URL,
+optional key and the model ids. Ollama and LM Studio are prefills, not separate integrations. A relay in front of Anthropic or OpenAI is a custom endpoint
 under its own provider id: duang never redirects a built-in provider's `baseUrl`, so a subscription
 token or official key cannot be sent to a third party by a setting left behind from another
-credential. An agent's own `fastagent/models.json` already works (#59). Where duang writes the
-endpoint definitions it adds is still open: the machine-level `~/.fastagent/models.json` is shared
-with the CLI, which the credential decision above avoids for keys.
+credential. An agent's own config can already declare providers, but 0.25 removed `models.json` and the
+machine-level model catalog, so where duang would write endpoint definitions it adds is open again: a
+config is code, and part of the Agent a copy carries.
 
 **Network (shipped).** *Automatic* is the default and needs no setup: model and sign-in requests
 follow the system proxy per request, including its bypass list and PAC rules, and pick up a VPN
@@ -192,7 +192,7 @@ removing an agent deletes only its registry row.)
 credential file), add an agent (today, from a directory), choose a model, start work,
 switch away, return to the real outcome, continue. Stage 1 strengthens the return-to-work flow,
 visibility of the loaded Agent and relevant local change review, using real tasks before adding
-compact, fork or a complete file tree. The current client already covers the basic chat, history,
+compacting, forking or a complete file tree. The current client already covers the basic chat, history,
 steering, stop, drafts and background navigation.
 
 **Give someone the Agent (planned stage 2).** They get their own copy of the Agent; review exactly

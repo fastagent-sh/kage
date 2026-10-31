@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import type { DuangApi } from "../preload/index.ts";
 import { createStore } from "./store.ts";
 import { rows } from "./sessions.ts";
+import { contextUsed } from "./conversation.ts";
 import { queueView } from "./transcript.ts";
 import { providerOf } from "./catalog.ts";
 import { BrokenAgent, MissingFolder, NeedsAgent, NewConversation, NoAgents, UnreadableRegistry } from "./panels.tsx";
@@ -57,12 +58,10 @@ export default function App() {
   }, [store]);
   useEffect(() => duang.onOpenSettings(openSettings), []);
   const newConversation = useCallback(() => {
-    const opened = store.newConversation();
-    const target = store.getSnapshot().conversation;
-    void opened.then(() => {
+    void store.newConversation().then((opened) => {
       const current = store.getSnapshot();
-      // Match the originating conversation so a late open cannot steal another conversation's focus.
-      if (target && current.conversation === target && !current.blocked)
+      // Match the conversation it opened so a late open cannot steal another conversation's focus.
+      if (opened && current.conversation === opened && !current.blocked)
         document.querySelector<HTMLTextAreaElement>('main textarea[aria-label="Message"]')?.focus();
     });
   }, [store]);
@@ -113,9 +112,7 @@ export default function App() {
       onProviders={() => setSettings({ fromPicker: true })}
     />
   );
-  const usage = c?.state?.usage;
-  const pending = c?.state?.pending;
-  const waiting = c ? queueView(c.waiting, pending?.steering ?? []) : [];
+  const waiting = c ? queueView(c.waiting) : [];
   const { pane, alert } = view;
   // A new conversation's composer sits where its transcript's will, so the first send does not move it.
   const reading = pane === "settling" || pane === "transcript" || pane === "start";
@@ -254,12 +251,12 @@ export default function App() {
                     return { count: others.length, open: others.length === 1 ? () => void store.open(others[0]!) : undefined };
                   })()}
                   context={
-                    usage?.contextTokens !== undefined && usage.contextWindow
-                      ? { used: usage.contextTokens, window: usage.contextWindow }
+                    c && model && contextUsed(c) !== undefined && view.contextWindows[model]
+                      ? { used: contextUsed(c)!, window: view.contextWindows[model]! }
                       : undefined
                   }
                   plan={provider ? view.usage[provider] : undefined}
-                  queued={pending ? pending.steering.length + pending.followUp.length : undefined}
+                  queued={c ? waiting.filter(({ listed }) => listed).length : undefined}
                   list={
                     agentState === "ready"
                       ? { open: listOpen, unseen: Object.keys(view.unseen[agent.id] ?? {}).length }
@@ -278,11 +275,6 @@ export default function App() {
                   onToggle={setListOpen}
                   onOpen={(session) => void store.open(session)}
                   onNew={newConversation}
-                  onRename={(session, name) => void store.renameSession(agent.id, session, name)}
-                  onDelete={(session) => {
-                    if (confirm("Delete this conversation? Its history is gone.")) void store.deleteSession(agent.id, session);
-                  }}
-                  onMenu={duang.menu}
                 />
               )}
               {pane === "unreadable-registry" ? (

@@ -1,6 +1,21 @@
 // Changed in place: the store tells a closed or reopened conversation from the current one by identity.
-import type { SessionEntries, SessionEvent, SessionState } from "@fastagent-sh/fastagent/session";
-import { apply, claim, fromEntries, known, opensRun, queueView, wentOn, type Item, type UserItem } from "./transcript.ts";
+import type { Entry, Message, Session, SessionEvent } from "@fastagent-sh/fastagent";
+import { specOf } from "../shared/model-spec.ts";
+import {
+  emptyFold,
+  failureOf,
+  foldEntries,
+  foldEntry,
+  foldLine,
+  foldNote,
+  itemsOf,
+  liveStep,
+  noLive,
+  stoppedNote,
+  type Fold,
+  type Live,
+} from "./fold.ts";
+import { opensRun, type Item, type UserItem } from "./transcript.ts";
 
 export interface Trouble {
   title: string;
@@ -8,10 +23,25 @@ export interface Trouble {
   reason: string;
 }
 
+export interface SessionState {
+  status: "idle" | "running";
+  model?: string;
+  thinkingLevel?: string;
+}
+
+/** A status this app does not know counts as running (FastAgent's rule for an open set). */
+export const stateOf = (session: Session): SessionState => ({
+  status: session.status === "idle" ? "idle" : "running",
+  ...(session.model && { model: specOf(session.model) }),
+  ...(session.thinkingLevel && { thinkingLevel: session.thinkingLevel }),
+});
+
 export interface Conversation {
   agentId: string;
   session: string;
   subscription: string;
+  fold: Fold;
+  live: Live;
   items: Item[];
   state?: SessionState;
   draft: string;
@@ -20,132 +50,170 @@ export interface Conversation {
   ended?: string;
   sends: number;
   events: SessionEvent[];
-  // Shown below the live output until `user_message` places them: a steer is read at the next turn boundary.
+  // Shown below the live output until FastAgent takes them in: a steer is read at the next step.
   waiting: UserItem[];
-  returned: Set<UserItem>;
-  runHasUser: boolean;
+  // Messages that ended before the answer to their send arrived.
+  finished: Map<string, Message>;
   started?: number;
   heard?: number;
-  run?: { message?: string; toolsRan: boolean };
 }
 
 export type Settled = "completed" | "failed" | "aborted";
 
-// What the person did, not run output: these do not end the model's silence.
-const PERSON_SIDE = new Set(["queue_changed", "user_message", "state_changed"]);
+const FINISHED_KEPT = 50;
 
 export function createConversation(agentId: string, session: string, draft: string): Conversation {
   return {
     agentId,
     session,
     subscription: crypto.randomUUID(),
+    fold: emptyFold(),
+    live: noLive(),
     items: [],
     draft,
     loading: true,
     sends: 0,
     events: [],
     waiting: [],
-    returned: new Set(),
-    runHasUser: false,
+    finished: new Map(),
   };
 }
 
-export const busy = (c: Conversation) => c.sends > 0 || c.state?.status === "running" || c.state?.status === "compacting";
+export const busy = (c: Conversation) => c.sends > 0 || c.state?.status === "running" || c.waiting.some((item) => item.messageId !== undefined);
+
+/** How full the context is now, in tokens; unknown after a compaction until the next answer. */
+export const contextUsed = (c: Conversation) => c.fold.context;
+
+const refresh = (c: Conversation) => {
+  c.items = itemsOf(c.fold, c.state?.status === "running", c.live);
+};
+
+/** A line only this window says (a refusal, a failed request), placed with what the record holds so it stays put. */
+export function addLine(c: Conversation, item: Item): void {
+  c.fold = foldLine(c.fold, item);
+  refresh(c);
+}
+
+export interface Opened {
+  session: Session;
+  entries: Entry[];
+  // The message of the newest user entry, which says how a turn that left no answer ended.
+  lastMessage?: Message;
+}
 
 // A running local turn keeps its subscription across navigation, so its deltas never come from history.
-export function backfill(c: Conversation, opened: { entries: SessionEntries; state: SessionState }, now: number): Settled[] {
-  const { entries, state } = opened;
-  c.items = fromEntries(entries.entries, entries.leafEntryId, state.status === "running");
-  c.state = state;
-  // Opened mid-run, the run's opening message is already in the history just read; its silence counts from now.
-  c.runHasUser = state.status === "running";
-  if (c.runHasUser) c.heard = now;
+export function backfill(c: Conversation, opened: Opened, now: number): Settled[] {
+  c.fold = foldEntries(opened.entries);
+  c.state = stateOf(opened.session);
+  c.live = liveStep(noLive(), { type: "state", session: opened.session }, now);
+  if (c.state.status === "running") {
+    // Opened mid-run: its silence counts from now, and its clock from the message it is answering.
+    c.heard = now;
+    c.started = c.fold.items.findLast((item) => item.kind === "user")?.at;
+  } else if (c.fold.open && opened.lastMessage) {
+    const { lastMessage: message } = opened;
+    const note =
+      message.status === "failed" && message.error
+        ? failureOf(c.fold, message.error, now)
+        : message.status === "canceled"
+          ? stoppedNote(c.fold, now)
+          : undefined;
+    if (note) c.fold = foldNote(c.fold, note);
+  }
   c.loading = false;
-  const settled = c.events.flatMap((event) => fold(c, event, now) ?? []);
+  refresh(c);
+  const settled = c.events.flatMap((event) => apply(c, event, now) ?? []);
   c.events = [];
   return settled;
 }
 
+// What the person did, not run output: these do not end the model's silence.
+const personSide = (event: SessionEvent) => event.type === "state" || (event.type === "entry" && event.entry.kind === "user");
+
 export function receive(c: Conversation, event: SessionEvent, now: number): Settled | undefined {
-  if (!PERSON_SIDE.has(event.type)) c.heard = now;
+  if (!personSide(event)) c.heard = now;
   if (c.loading) {
     c.events.push(event);
     return undefined;
   }
-  return fold(c, event, now);
+  return apply(c, event, now);
 }
 
-function fold(c: Conversation, event: SessionEvent, now: number): Settled | undefined {
-  const state = c.state ?? { status: "idle", pending: { steering: [], followUp: [] } };
-  const e = known(event);
-  const run = c.run;
-  if (e.type === "run_started") {
-    c.runHasUser = false;
-    c.started = e.timestamp;
-    c.run = { toolsRan: false };
-    c.state = { ...state, status: "running", activeRunId: e.runId };
-  } else if (e.type === "run_settled") {
-    dropQueued(c, state.pending.steering);
-    c.started = undefined;
-    c.run = undefined;
-    c.state = { ...state, status: "idle", activeRunId: undefined, pending: { steering: [], followUp: [] } };
-  } else if (e.type === "user_message") {
-    enter(c, e.data.entryId, e.data.text, e.timestamp);
-  } else if (e.type === "tool_started") {
-    if (c.run) c.run.toolsRan = true;
-  } else if (e.type === "queue_changed") {
-    c.state = { ...state, pending: e.data };
-  } else if (e.type === "state_changed") {
-    c.state = { ...state, ...e.data };
+function running(c: Conversation, now: number) {
+  if (c.state?.status === "running") return;
+  c.state = { ...c.state, status: "running" };
+  c.started = now;
+}
+
+function apply(c: Conversation, event: SessionEvent, now: number): Settled | undefined {
+  c.live = liveStep(c.live, event, now);
+  let settled: Settled | undefined;
+  if (event.type === "entry") {
+    const before = c.fold;
+    c.fold = foldEntry(before, event.entry);
+    if (c.fold !== before && event.entry.kind === "user") {
+      enter(c);
+      // FastAgent reports a status only in the snapshot, so a message taken is what starts a run here.
+      running(c, now);
+    }
+  } else if (event.type === "state") {
+    const was = c.state?.status;
+    c.state = stateOf(event.session);
+    if (c.state.status === "running" && was !== "running") c.started = now;
+    if (c.state.status !== "running") c.started = undefined;
+  } else if (event.type === "done") {
+    settled = finish(c, event.message, now);
+    // The next message is taken in the same commit: its entry follows at once, so it is not an idle moment.
+    if (c.state && !c.waiting.some((item) => item.messageId !== undefined)) {
+      c.state = { ...c.state, status: "idle" };
+      c.started = undefined;
+    }
   }
-  c.items = apply(c.items, event);
-  // A run heard from its start that failed after taking a message offers it again. `toolsRan` counts every tool
-  // since `run_started`; history cannot, so live and reopened answers may differ (docs/interaction.md).
-  const failure = c.items.at(-1);
-  if (e.type === "run_settled" && e.data.status === "failed" && run?.message !== undefined && failure?.kind === "note")
-    c.items = [...c.items.slice(0, -1), { ...failure, resend: { text: run.message, toolsRan: run.toolsRan } }];
-  if (e.type !== "run_settled") return undefined;
-  ranNothing(c, now);
-  return e.data.status;
+  refresh(c);
+  return settled;
 }
 
-// An entry the history already holds (backfill overlapping the live stream) is not added twice.
-function enter(c: Conversation, entryId: string, text: string, at: number) {
-  const known = c.items.some((item) => item.kind === "user" && item.entryId === entryId);
-  const own = known ? undefined : claim(c.waiting, text);
-  if (own) {
-    c.waiting = c.waiting.filter((item) => item !== own);
-    c.returned.delete(own);
+// A message the history already holds (backfill overlapping the live stream) is not placed twice. Claimed by
+// message id; by text for one whose send has not been answered yet, since the entry can land first.
+function enter(c: Conversation) {
+  const placed = c.fold.items.at(-1);
+  if (placed?.kind !== "user") return;
+  const own =
+    c.waiting.find((item) => placed.messageId !== undefined && item.messageId === placed.messageId) ??
+    c.waiting.find((item) => item.messageId === undefined && item.text === placed.text);
+  if (!own) return;
+  c.waiting = c.waiting.filter((item) => item !== own);
+  const items = [...c.fold.items];
+  items[items.length - 1] = { ...placed, steered: !own.opens };
+  c.fold = { ...c.fold, items };
+}
+
+function finish(c: Conversation, message: Message, now: number): Settled {
+  c.finished.set(message.id, message);
+  if (c.finished.size > FINISHED_KEPT) c.finished.delete(c.finished.keys().next().value!);
+  const entered = c.fold.items.some((item) => item.kind === "user" && item.messageId === message.id);
+  const echo = c.waiting.find((item) => item.messageId === message.id);
+  if (echo && !entered) {
+    // It never entered the conversation, so it is still the person's: it goes back to the composer.
+    c.waiting = c.waiting.filter((item) => item !== echo);
+    c.draft = c.draft ? `${echo.text}\n${c.draft}` : echo.text;
+    if (message.status === "failed" && message.error)
+      c.fold = foldNote(c.fold, { kind: "note", tone: "warning", text: message.error.message, reason: message.error.message, title: "Not sent", advice: "Your message is back in the composer.", at: now });
+  } else if (entered) {
+    const note =
+      message.status === "failed" && message.error
+        ? failureOf(c.fold, message.error, now)
+        : message.status === "canceled"
+          ? stoppedNote(c.fold, now)
+          : undefined;
+    if (note) c.fold = foldNote(c.fold, note);
   }
-  // A steer typed while pi waited out a retry enters as the next attempt starts: the wait is over.
-  if (!known) c.items = [...wentOn(c.items), { kind: "user", text: own?.text ?? text, at, steered: c.runHasUser, entryId }];
-  c.runHasUser = true;
-  // The message the run is answering now; a steer replaces the opening one. What was typed, if it was ours.
-  if (c.run) c.run.message = own?.text ?? text;
+  return message.status === "failed" ? "failed" : message.status === "canceled" ? "aborted" : "completed";
 }
 
-// What is still queued when the run ends never entered; it returns to the draft. After a reload the runtime's
-// queue is the only place such a steer still exists, so this includes messages this window did not send.
-function dropQueued(c: Conversation, pending: string[]) {
-  const dropped = queueView(c.waiting, pending).flatMap(({ item, listed }) => (listed ? [item] : []));
-  if (!dropped.length) return;
-  c.waiting = c.waiting.filter((item) => !dropped.includes(item));
-  for (const item of dropped) c.returned.delete(item);
-  c.draft = [...dropped.map((item) => item.text), c.draft].filter(Boolean).join("\n");
-}
-
-// An extension command that did its work without sending anything: it ran, so it neither returns nor vanishes.
-function ranNothing(c: Conversation, now: number) {
-  const ran = c.waiting.filter((item) => c.returned.has(item));
-  if (!ran.length) return;
-  c.waiting = c.waiting.filter((item) => !c.returned.has(item));
-  c.returned.clear();
-  c.items = [...c.items, ...ran.map((item): Item => ({ kind: "note", tone: "info", text: `ran ${item.text}`, at: now }))];
-}
-
-// Where it goes is the runtime's report: it waits below the output until `user_message` places it.
+// Where it goes is FastAgent's report: it waits below the output until its user entry places it.
 export function sent(c: Conversation, text: string, now: number): UserItem {
-  const echo: UserItem = { kind: "user", text, at: now, opens: opensRun(c.state?.status, c.runHasUser) };
+  const echo: UserItem = { kind: "user", text, at: now, opens: opensRun(c.state?.status) };
   // A new run's silence counts from its message; a steer is the person, not the model, and leaves it be.
   if (echo.opens) c.heard = now;
   c.waiting = [...c.waiting, echo];
@@ -157,21 +225,24 @@ export function unsent(c: Conversation, echo: UserItem): void {
   c.draft = c.draft ? `${echo.text}\n${c.draft}` : echo.text;
 }
 
-// A stream that ended cannot say whether it entered: Retry re-reads the history.
-export function accepted(c: Conversation, echo: UserItem, now: number): void {
-  c.returned.add(echo);
-  if (c.state?.status !== "running" && !c.ended && !c.error) ranNothing(c, now);
+/** FastAgent recorded the message. It may already have ended: the answer to a send can arrive after its events. */
+export function accepted(c: Conversation, echo: UserItem, messageId: string, now: number): Settled | undefined {
+  if (!c.waiting.includes(echo)) return undefined;
+  echo.messageId = messageId;
+  const ended = c.finished.get(messageId);
+  if (!ended) return undefined;
+  const settled = finish(c, ended, now);
+  refresh(c);
+  return settled;
 }
 
-export function lost(c: Conversation, ending: { reason: string; why: "let_go" | "ended" | "failed" }, now: number): void {
+export function lost(c: Conversation, ending: { reason: string; why: "let_go" | "ended" | "failed" }): void {
   // Nothing will report the end of a run this view can no longer hear, so stop waiting for one.
-  // Retry re-opens and re-reads the runtime's real state.
-  if (c.state) c.state = { ...c.state, status: "idle", activeRunId: undefined };
-  // A tool's clock is a claim that it is still being watched. It stops where this view stopped
-  // hearing; how long the tool really ran is no longer knowable here.
-  c.items = c.items.map((item) =>
-    item.kind === "tool" && item.status === "running" && item.ended === undefined ? { ...item, ended: now } : item,
-  );
+  // Retry re-opens and re-reads FastAgent's real state.
+  if (c.state) c.state = { ...c.state, status: "idle" };
+  c.started = undefined;
+  c.live = noLive();
+  refresh(c);
   if (ending.why !== "failed") c.ended = ending.reason;
   else
     c.error = {
