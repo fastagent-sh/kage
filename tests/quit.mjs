@@ -1,6 +1,7 @@
 // Quitting with a run in progress, through the real window: "Quit anyway" records a stop and the app exits at once;
 // the next launch finds the message canceled, not answered, and its tool not run again.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -9,6 +10,8 @@ import { chunk, isolated, withoutCredentials, writeMockAgent } from "./harness.m
 import { open, sleep, windowDriver } from "./window.mjs";
 
 const AGENT = "q";
+// Longer than quitting may take and shorter than a leftover would be worth keeping; the number names it for `pgrep`.
+const TOOL = "sleep 23";
 
 const root = await isolated(import.meta.url, {
   name: "quit",
@@ -18,6 +21,8 @@ const root = await isolated(import.meta.url, {
     assert.equal(result.dialogs, 1, "the person was asked once");
     assert.equal(result.asked, "An agent is still working.");
     assert.ok(result.quitMs < 6000, `quitting did not wait for the tool to finish (${result.quitMs} ms)`);
+    // `pgrep` exits 1 when nothing matches: a cancel that did not end the tool leaves it running after the app.
+    assert.equal(spawnSync("pgrep", ["-f", TOOL]).status, 1, `the cancelled tool (${TOOL}) is not left running`);
     // Electron has exited: open the instance as the next launch would.
     process.env.FASTAGENT_OFFLINE = "1";
     const project = join(root, "project");
@@ -55,7 +60,7 @@ if (root) {
     req.on("end", () => {
       modelCalls++;
       res.writeHead(200, { "content-type": "text/event-stream" });
-      const command = "echo ran >> ran.txt; sleep 60";
+      const command = `echo ran >> ran.txt; ${TOOL}`;
       res.write(chunk({ role: "assistant", content: "Working.", tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: "bash", arguments: JSON.stringify({ command }) } }] }));
       res.write(chunk({}, "tool_calls"));
       res.end("data: [DONE]\n\n");

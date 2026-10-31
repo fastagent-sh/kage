@@ -187,7 +187,9 @@ async function readyToQuit(): Promise<boolean> {
     quitSends();
     await stopAllRuns();
   }
-  await Promise.race([closeAgents(), new Promise((resolve) => setTimeout(resolve, CLOSE_WAIT_MS))]);
+  const gaveUp = new Promise<false>((resolve) => setTimeout(() => resolve(false), CLOSE_WAIT_MS));
+  if (!(await Promise.race([closeAgents().then(() => true), gaveUp])))
+    console.error(`duang: the agents had not closed after ${CLOSE_WAIT_MS} ms; quitting cuts them, and the next launch may find an instance still held`);
   return true;
 }
 
