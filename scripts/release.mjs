@@ -105,6 +105,7 @@ async function main() {
   run("npm", ["run", "test:package"]);
   run("node", ["tests/smoke.mjs"]);
   run("node", ["tests/transcript.mjs"]);
+  run("node", ["tests/quit.mjs"]);
 
   run("git", ["add", "package.json", "package-lock.json"]);
   run("git", ["commit", "-m", `chore: release ${version}`]);
@@ -120,6 +121,7 @@ async function main() {
     "- `npm run test:package` (type check, build, package, and the installed app run outside the checkout)",
     "- `node tests/smoke.mjs`",
     "- `node tests/transcript.mjs`",
+    "- `node tests/quit.mjs`",
     "",
     "### After merge",
     "",

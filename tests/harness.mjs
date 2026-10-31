@@ -51,7 +51,7 @@ export function withoutCredentials(env) {
 }
 
 // The root goes only after Electron exited, so Chromium has stopped writing its caches into it.
-export async function isolated(script, { name, timeout, home = true, prepare }) {
+export async function isolated(script, { name, timeout, home = true, prepare, after }) {
   if (process.versions.electron) {
     const root = process.env.DUANG_TEST_ROOT;
     if (!root) throw new Error(`Run with node tests/${name}.mjs so the fixture is isolated`);
@@ -68,6 +68,8 @@ export async function isolated(script, { name, timeout, home = true, prepare }) 
       timeout,
     });
     process.exitCode = child.status ?? 1;
+    // What can only be read once Electron has exited and let go of its files.
+    if (child.status === 0) await after?.(root);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -86,12 +86,14 @@ threads; address every item before resolving its thread.
 
 ## Product-specific verification
 
-`Desktop checks` runs tests, a production build, `node tests/smoke.mjs` and `node tests/transcript.mjs` on
-macOS with Node 24.15 or later — both launch a real Electron window, so they run on the only platform duang supports. The
+`Desktop checks` runs tests, a production build, `node tests/smoke.mjs`, `node tests/transcript.mjs` and `node tests/quit.mjs` on
+macOS with Node 24.15 or later — all three launch a real Electron window, so they run on the only platform duang supports. The
 smoke drives the real Electron/preload/IPC/FastAgent stack with synthetic credentials and fake HTTP. The
 transcript check holds runs at the steps the live end of a run must draw as one line (calls running, a
-thought, an answer being written, a retry waited out) against a local fake model endpoint. Run
-`npm run test:smoke` locally to build and run both. A second job, `Package (macOS)`, builds the app and its dmg,
+thought, an answer being written, a retry waited out) against a local fake model endpoint. The quit check
+starts a run that does not end, answers "Quit anyway", and after Electron exits opens the instance as the next
+launch would: the message must be canceled and its tool not run again. Run
+`npm run test:smoke` locally to build and run all three. A second job, `Package (macOS)`, builds the app and its dmg,
 checks that the bundle carries every module it needs, runs the installed app outside the checkout against a fake
 model endpoint, and keeps the dmg as an artifact; `npm run test:package` does the same locally. None of these checks signing or
 notarization, and none claims Windows/Linux support, real-provider/OAuth validation or full Week 1 acceptance. The
@@ -164,7 +166,7 @@ npm run release:patch   # or release:minor / release:major / node scripts/releas
 
 The script refuses to start from anything but a clean `main` identical to `origin/main`, or for a version
 whose branch or tag exists. It bumps `package.json` and the lockfile on `chore/release-X.Y.Z`, runs
-`npm test`, `npm run test:package`, `node tests/smoke.mjs` and `node tests/transcript.mjs`, and opens the
+`npm test`, `npm run test:package`, `node tests/smoke.mjs`, `node tests/transcript.mjs` and `node tests/quit.mjs`, and opens the
 PR. It never merges, tags or creates the Release. After a maintainer squash-merges the PR, a repository
 admin tags that merge commit (check `git log -1` is `chore: release X.Y.Z (#N)`):
 
