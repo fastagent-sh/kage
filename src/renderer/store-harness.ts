@@ -12,7 +12,7 @@ export function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-export const described = (specs: string[]): Models => specs.map((spec) => ({ spec }));
+export const described = (specs: string[]): Models => specs.map((spec) => ({ spec, thinkingLevels: ["off"] as const }));
 
 // `satisfies`, not a type annotation: an imported binding is not narrowed to the literal, and the tests spread this one.
 export const ready = { ok: true, model: "provider/model", sessions: [], windows: {} } satisfies OpenResult;

@@ -14,15 +14,13 @@ import type { ModelAsk } from "./store.ts";
 type ModelProblem = Extract<ModelAsk, { reason: "gone" | "refused" }>;
 import type { Models } from "../preload/index.ts";
 
-// FastAgent names the levels a session accepts; which of them a model can use it does not say, and clamps.
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const LEVELS: Record<string, string> = { off: "Off", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
 const levelName = (level: string) => LEVELS[level] ?? level;
 
 // Choosing writes a durable entry, so it is explicit: buttons, not a radio group that chooses at every
 // stop the arrow keys cross. The track shows only what the runtime reports.
 // `level` is absent while the conversation follows the agent's own setting, which FastAgent does not report.
-function Effort({ levels, level, onPick }: { levels: string[]; level?: string; onPick: (level: string) => void }) {
+function Effort({ levels, level, onPick }: { levels: readonly string[]; level?: string; onPick: (level: string) => void }) {
   const stops = useRef<(HTMLButtonElement | null)[]>([]);
   const index = level === undefined ? -1 : levels.indexOf(level);
   const focusStop = (to: number) => stops.current[Math.min(levels.length - 1, Math.max(0, to))]?.focus();
@@ -84,7 +82,7 @@ function ModelPicker({
   view: View;
   store: Store;
   current?: string;
-  thinking?: { level?: string; levels: string[] };
+  thinking?: { level?: string; levels?: readonly string[] };
   ask?: ModelProblem;
   onClose: () => void;
   onProviders: () => void;
@@ -229,8 +227,10 @@ function ModelPicker({
           <div className="border-t border-stroke">
             {!thinking ? (
               <p className="px-4 py-3 text-[12px] text-muted">Effort can be set once a model is chosen.</p>
-            ) : (
+            ) : !thinking.levels ? null : thinking.levels.length > 1 ? (
               <Effort levels={thinking.levels} level={thinking.level} onPick={(level) => void store.setThinking(level)} />
+            ) : (
+              <p className="px-4 py-3 text-[12px] text-muted">This model has no effort setting.</p>
             )}
           </div>
         </>
@@ -293,7 +293,9 @@ export function Composer({
   const agent = view.agents.find((row) => row.id === agentId);
   // What the conversation will run with: a chip naming a model the turn will not use is the failure to avoid.
   const model = c?.state?.model ?? view.model;
-  const thinking = model ? { level: c?.state?.thinkingLevel, levels: THINKING_LEVELS } : undefined;
+  const thinking = model
+    ? { level: c?.state?.thinkingLevel, levels: view.models?.find((candidate) => candidate.spec === model)?.thinkingLevels }
+    : undefined;
   const { needsModel, modelAsk, modelBlocked, picker: picking } = view;
   const value = c?.draft ?? "";
   const disabled = !!view.blocked;

@@ -65,8 +65,9 @@ lists each model by the name it declares (its id when it declares none) with its
 stays listed, named with its date). "(latest)" is dropped from any name that stays unique in its provider
 without it, and kept where it is what tells two rows apart. It shows the full `provider/id` on hover, searches both the name and the `provider/id`, groups
 the models under their provider with the selected one first, and ends with the conversation's effort: a
-track of every level FastAgent accepts (Off to Max). FastAgent does not say which of them a model uses and clamps one it cannot, so
-the track is the same for every model. A new conversation exists in FastAgent from the moment it is started, so effort and
+track of the levels FastAgent reports the model supports (`info().models[].thinkingLevels`, lowest first). A model that does not reason
+has one level and the picker says it has no effort setting. duang refuses a level the conversation's model lacks, because FastAgent would
+clamp it when it calls the provider and the level shown would not be the level used. A new conversation exists in FastAgent from the moment it is started, so effort and
 model can be set before sending; it is listed as *New conversation* until its first message. A conversation with no model yet
 has no track, so the picker says effort can be set once a model is chosen. A conversation never given a level follows the agent's
 `thinkingLevel` and the track says `Agent default`; the chip names a level only once one is set on the conversation, and that level is the

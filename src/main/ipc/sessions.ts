@@ -1,15 +1,13 @@
 // Conversations: history, the live subscription each one has here, and the turns sent through it. This module
 // owns that table and the in-flight sends, because quitting and a window's release need them too.
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from "electron";
-import type { Entry, LocalAgent, Message, ThinkingLevel } from "@fastagent-sh/fastagent";
+import type { Entry, LocalAgent, Message } from "@fastagent-sh/fastagent";
 import { agentRow, createSession, openAgent, withAgentRun } from "../agents.ts";
 import { subscriptions, type Frame, type Listener } from "../follow.ts";
-import { offered } from "../models.ts";
+import { effortOf, offered } from "../models.ts";
 import { syncCommandProxy } from "../proxy.ts";
-import { refusal, send, sends } from "../send.ts";
+import { refusal, refuse, send, sends } from "../send.ts";
 import { readEntries } from "../session-list.ts";
-
-const LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /** These throw: a malformed session id is a bug in this app, not something a person can act on. */
 export function requireSession(session: string): void {
@@ -55,9 +53,13 @@ export function registerSessions(): void {
   });
   ipcMain.handle("session:setThinking", async (_e, id: string, session: string, level: string) => {
     requireSession(session);
-    if (!LEVELS.includes(level as ThinkingLevel)) throw new Error("Unknown thinking level");
+    if (typeof level !== "string") throw new Error("Thinking level must be a string");
     return refusal(async () => {
-      await (await agentOf(id)).sessions.update(session, { thinkingLevel: level as ThinkingLevel });
+      const agent = await agentOf(id);
+      const model = await effortOf(agent, session, (await agentRow(id)).model);
+      const supported = model?.thinkingLevels.find((candidate) => candidate === level);
+      if (!supported) return refuse("unsupported_level", `${model?.spec ?? "This conversation's model"} does not support the ${level} effort.`, false);
+      await agent.sessions.update(session, { thinkingLevel: supported });
       return { ok: true };
     });
   });

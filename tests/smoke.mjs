@@ -377,12 +377,10 @@ if (root) {
         !(await evaluate("document.querySelector('dialog').innerText")).includes("Credentials"),
         "the credential file's path is not the picker's business",
       );
-      assert.equal(
-        await evaluate("document.querySelectorAll('dialog [role=radiogroup][aria-label=Effort] [role=radio]').length"),
-        7,
-        "the effort track offers every level FastAgent accepts; which of them a model uses is its to clamp",
+      assert.ok(
+        (await evaluate("document.querySelector('dialog').innerText")).includes("This model has no effort setting"),
+        "a model that does not reason offers no track",
       );
-      assert.match(await evaluate("document.querySelector('dialog').innerText"), /Agent default/, "a conversation that was not given one follows the agent's");
       win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
       win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
       await until("document.querySelector('dialog') === null", "Escape dismisses the picker");
@@ -607,7 +605,12 @@ if (root) {
       await until("document.querySelectorAll('dialog button[data-model]').length > 0", "the models are listed");
       assert.match(await evaluate("document.querySelector('dialog').innerText"), /\d+ more: search to narrow the list/, "a cut-off list says so");
       const levels = await evaluate(`[...document.querySelectorAll('dialog [role=radio]')].map((stop) => stop.getAttribute('aria-label'))`);
-      assert.deepEqual(levels, ["Off", "Minimal", "Low", "Medium", "High", "Extra high", "Max"]);
+      const sonnet = (await evaluate("window.duang.listModels('configured')")).find((m) => m.spec === "anthropic/claude-sonnet-4-5");
+      assert.deepEqual(levels, sonnet.thinkingLevels.map((level) => ({ xhigh: "Extra high" })[level] ?? level[0].toUpperCase() + level.slice(1)), "the stops are the levels the model supports");
+      assert.ok(levels.length > 1 && levels.includes("High"), `a reasoning model offers a track: ${levels}`);
+      assert.match(await evaluate("document.querySelector('dialog').innerText"), /Agent default/, "a conversation that was not given a level follows the agent's");
+      const unsupported = await evaluate(`window.duang.setThinking('configured', ${JSON.stringify(historical)}, 'max')`);
+      assert.equal(unsupported.ok, sonnet.thinkingLevels.includes("max"), "a level the model lacks is refused, not clamped behind the person's back");
       const thinkingSession = historical;
       const levelOf = () => evaluate(`window.duang.readState('configured', ${JSON.stringify(thinkingSession)}).then((s) => s.thinkingLevel)`);
       await evaluate(`document.querySelector('dialog [role=radio][aria-label="High"]').click()`);
