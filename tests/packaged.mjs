@@ -170,6 +170,9 @@ async function run() {
   assert.match(second.output(), /already running/);
   for (let t = 0; t < 100 && (await pages()) === 0; t++) await sleep(100);
   assert.equal(await pages(), 1, "the first one shows a window again");
+  first.child.kill();
+  const exited = await Promise.race([new Promise((resolve) => first.child.on("exit", resolve)), sleep(10000).then(() => "still running")]);
+  assert.equal(exited, 0, `the running app quits on SIGTERM: ${first.output()}`);
   console.log(`Packaged app passed: ${checked} bundled packages complete, an agent answered with a bash call outside the repository, one duang per profile.`);
 }
 
@@ -185,7 +188,7 @@ run()
   .finally(async () => {
     clearTimeout(timeout);
     server.close();
-    for (const child of children) child.kill();
+    for (const child of children) child.kill("SIGKILL");
     await sleep(500);
     rmSync(root, { recursive: true, force: true });
   });

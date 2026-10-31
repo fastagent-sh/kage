@@ -202,15 +202,16 @@ app.on("before-quit", (event) => {
   event.preventDefault();
   if (phase === "asking") return;
   phase = "asking";
+  // Idle agents close in microtasks; calling app.quit() before Emit("before-quit") returns to C++ has its preventDefault clear is_quitting_.
   void readyToQuit().then(
     (go) => {
       phase = go ? "leaving" : "running";
-      if (go) app.quit();
+      if (go) setImmediate(() => app.quit());
     },
     (error) => {
       console.error(error);
       phase = "leaving";
-      app.quit();
+      setImmediate(() => app.quit());
     },
   );
 });
