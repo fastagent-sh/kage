@@ -5,7 +5,7 @@ import { rows } from "./sessions.ts";
 import { contextUsed } from "./conversation.ts";
 import { queueView } from "./transcript.ts";
 import { providerOf } from "./catalog.ts";
-import { BrokenAgent, MissingFolder, NeedsAgent, NewConversation, NoAgents, UnreadableRegistry } from "./panels.tsx";
+import { BrokenAgent, CreateAgent, MissingFolder, NewConversation, NoAgents, UnreadableRegistry } from "./panels.tsx";
 import { Problem } from "./problem.tsx";
 import { ArrowClockwise } from "@phosphor-icons/react";
 import { ConversationList, Sidebar } from "./rows.tsx";
@@ -30,7 +30,17 @@ export default function App() {
   // Presentation only. `fromPicker`: a connection made there returns to the picker. `reconnect`: a provider's
   // row opens, and a connection returns to the conversation. In one state so every way out drops them.
   const [settings, setSettings] = useState<false | { fromPicker?: true; reconnect?: string; network?: true }>(false);
-  const openSettings = () => setSettings((open) => open || {});
+  const [creating, setCreating] = useState(false);
+  const openSettings = () => {
+    setCreating(false);
+    setSettings((open) => open || {});
+  };
+  const nextColour = (() => {
+    const used = new Set(agents.map((row) => row.colour));
+    let colour = 0;
+    while (used.has(colour)) colour++;
+    return colour;
+  })();
   // Mirrors the popover, which owns the fact; it arrives a task later with the `toggle` event.
   const [listOpen, setListOpen] = useState(false);
   const rowsFor = (id: string) =>
@@ -71,11 +81,13 @@ export default function App() {
       if ((event.metaKey || event.ctrlKey) && event.key === "n" && agentState === "ready" && !held) {
         event.preventDefault();
         setSettings(false);
+        setCreating(false);
         newConversation();
       }
-      // Escape leaves Settings first: stopping work you cannot see is a surprise.
-      if (event.key === "Escape" && settings) {
+      // Escape leaves Settings or Create agent first: stopping work you cannot see is a surprise.
+      if (event.key === "Escape" && (settings || creating)) {
         setSettings(false);
+        setCreating(false);
         return;
       }
       // Asked of the popover, not `listOpen`: an Escape right after it opens arrives before that mirror and would stop the run.
@@ -84,7 +96,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [newConversation, store, agentState, busy, held, settings]);
+  }, [newConversation, store, agentState, busy, held, settings, creating]);
 
   // The floating composer grows with the draft and messages must end above it. A stable ref, or every streamed
   // delta would rebuild the observer.
@@ -103,7 +115,8 @@ export default function App() {
   }, [unseenCount]);
 
   const remove = () => {
-    if (confirm("Remove this agent from duang? Its conversations in duang are deleted. The directory is not touched.")) void store.removeAgent();
+    if (confirm("Remove this agent and move its directory to the Trash? The folders it works on are not touched."))
+      void store.removeAgent();
   };
   const composer = (
     <Composer
@@ -144,13 +157,15 @@ export default function App() {
           latest={latest}
           errors={view.sessionsError}
           settingsOpen={Boolean(settings)}
+          creatingOpen={creating}
           onSelect={(id) => {
             setSettings(false);
+            setCreating(false);
             if (id !== agentId) void store.selectAgent(id);
           }}
           onAdd={() => {
             setSettings(false);
-            void store.addAgent();
+            setCreating(true);
           }}
           onSettings={openSettings}
           onRename={(id, name) => void store.renameAgent(id, name)}
@@ -230,6 +245,17 @@ export default function App() {
               onMenu={duang.menu}
               onClose={() => setSettings(false)}
             />
+          ) : creating ? (
+            <CreateAgent
+              colour={nextColour}
+              onPickFolder={() => store.pickFolder()}
+              onCreate={async (name, folders) => {
+                const refusal = await store.createAgent(name, folders);
+                if (!refusal) setCreating(false);
+                return refusal;
+              }}
+              onCancel={() => setCreating(false)}
+            />
           ) : (
             <>
               {agent && (
@@ -244,6 +270,7 @@ export default function App() {
                     open: false,
                   })}
                   dir={agent.dir}
+                  content={view.content[agent.id]}
                   working={view.busy}
                   others={(() => {
                     const others = (view.running[agent.id] ?? []).filter((session) => session !== c?.session);
@@ -263,6 +290,7 @@ export default function App() {
                       : undefined
                   }
                   onReveal={() => void store.reveal()}
+                  onRevealPath={(path) => void store.reveal(agent.id, path)}
                   onUsagePage={(provider) => void store.openUsagePage(provider)}
                 />
               )}
@@ -278,10 +306,10 @@ export default function App() {
                 />
               )}
               {pane === "unreadable-registry" ? (
-                // Not an empty registry: "add your first agent" would deny the failure.
+                // Not an empty registry: "create your first agent" would deny the failure.
                 <UnreadableRegistry reason={view.registryError} onReveal={() => void store.reveal()} onRetry={() => void store.retry()} />
               ) : pane === "no-agents" ? (
-                <NoAgents onAdd={() => void store.addAgent()} />
+                <NoAgents onCreate={() => setCreating(true)} />
               ) : pane === "broken" ? (
                 <BrokenAgent
                   message={view.error ?? ""}
@@ -294,12 +322,9 @@ export default function App() {
               ) : pane === "missing-dir" ? (
                 <MissingFolder
                   dir={agent?.dir ?? ""}
-                  onLocate={() => void store.relocateAgent()}
                   onRemove={remove}
                   onRetry={() => void store.retry()}
                 />
-              ) : pane === "no-agent" ? (
-                <NeedsAgent dir={agent?.dir ?? ""} onCreate={() => void store.scaffold()} onRemove={remove} />
               ) : pane === "settling" ? (
                 <div className="flex-1 min-h-0" aria-busy="true" />
               ) : pane === "start" || !c /* never both "transcript" and no conversation */ ? (

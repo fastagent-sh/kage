@@ -52,7 +52,7 @@ test("a model change still running when the person goes to another agent does no
 });
 
 
-test("an unreadable agent list is its own pane; a failure adding an agent is said above the pane, not that pane", async () => {
+test("an unreadable agent list is its own pane; a refused create returns its reason and an unexpected failure is said above the pane", async () => {
   const { api, store } = harness();
   api.listAgents = async () => {
     throw new Error("agents.json: Unexpected token");
@@ -65,13 +65,20 @@ test("an unreadable agent list is its own pane; a failure adding an agent is sai
   api.listAgents = async () => [];
   await store.load();
   assert.equal(store.getSnapshot().pane, "no-agents");
-  api.addAgent = async () => {
-    throw new Error("ENOENT: no such file or directory, realpath '/gone'");
+  api.createAgent = async () => ({
+    ok: false,
+    error: { code: "invalid_agent", message: 'this agent already has content named "tally"', retryable: false },
+  });
+  assert.equal(await store.createAgent("Reviewer", ["/a/tally", "/b/tally"]), 'this agent already has content named "tally"');
+  assert.equal(store.getSnapshot().failure, undefined, "a validation refusal belongs to the create form");
+
+  api.createAgent = async () => {
+    throw new Error("EACCES: permission denied, mkdir '/Users/someone/Agents'");
   };
-  await store.addAgent();
-  assert.equal(store.getSnapshot().pane, "no-agents", "adding failed; the list itself was read fine");
-  assert.equal(store.getSnapshot().failure?.title, "The agent was not added");
-  assert.match(store.getSnapshot().failure?.reason ?? "", /realpath/);
+  await store.createAgent("Reviewer", []);
+  assert.equal(store.getSnapshot().pane, "no-agents", "creating failed; the list itself was read fine");
+  assert.equal(store.getSnapshot().failure?.title, "The agent was not created");
+  assert.match(store.getSnapshot().failure?.reason ?? "", /EACCES/);
   store.dismissFailure();
   assert.equal(store.getSnapshot().failure, undefined);
   store.dispose();
@@ -85,9 +92,9 @@ test("a setup problem is its own pane, and its prose is not repeated above it", 
   assert.equal(store.getSnapshot().pane, "broken");
   assert.equal(store.getSnapshot().error, "boom", "the panel says it");
   assert.equal(store.getSnapshot().alert, undefined);
-  api.openAgent = async () => ({ ok: false, code: "no_agent", message: "run fastagent init" });
+  api.openAgent = async () => ({ ok: false, code: "missing_dir", message: "ENOENT" });
   await store.selectAgent("b");
-  assert.equal(store.getSnapshot().pane, "no-agent");
+  assert.equal(store.getSnapshot().pane, "missing-dir");
   assert.equal(store.getSnapshot().alert, undefined);
   store.dispose();
 });

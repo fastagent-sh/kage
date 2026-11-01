@@ -319,15 +319,6 @@ details[open]::details-content {
 .avatar[data-face="failed"] { --look-t: translate(0, 3px); --body-a: avatar-shake 0.7s ease-out 1; }
 .avatar[data-face="broken"] { --eye-t: scaleY(0.14); }
 .avatar[data-face="broken"] .avatar-face { filter: grayscale(1) opacity(0.5); }
-.avatar[data-face="unborn"] .avatar-face { opacity: 0; }
-.avatar[data-face="unborn"]::after {
-  content: "";
-  position: absolute;
-  inset: 14%;
-  border-radius: 50%;
-  border: 1.5px dashed currentColor;
-  opacity: 0.35;
-}
 
 /* Every state is also said in words. */
 @media (prefers-reduced-motion: reduce) {

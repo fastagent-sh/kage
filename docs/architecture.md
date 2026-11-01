@@ -214,8 +214,8 @@ These are data-integrity constraints, not an enterprise audit UI.
 
 | State | Owner | Boundary |
 |---|---|---|
-| Agent | its own directory; today chosen by the person, with FastAgent's agent-directory release `~/Agents/<name>/` ([#133](https://github.com/fastagent-sh/duang/issues/133)) / a recipient's own copy | Only the reviewed harness and chosen contexts travel. |
-| Context (planned, [#133](https://github.com/fastagent-sh/duang/issues/133); today the project around a `fastagent/` agent) | its project or folder, outside every Agent directory; a host's copy or clone in that instance's state | Never moved or deleted by removing an Agent. |
+| Agent | its own directory in `~/Agents/<name>/` / a recipient's own copy | Only the reviewed harness and chosen contexts travel; moved to the Trash when the agent is removed from duang. |
+| Context | its project or folder, outside every Agent directory; a host's copy or clone in that instance's state | Never moved or deleted by removing an Agent. |
 | Local conversations | duang's instance of the Agent (`userData/instances/<agent id>/agent.sqlite`) | Already implemented; not uploaded on publish; deleted when the agent is removed from duang. |
 | Online and channel conversations | FastAgent on the owner-controlled host | Access-scoped per visitor or channel, no second client transcript. |
 | Invitation and endpoint access | host-side protection, with optional hosting metadata | Revocable; do not put secrets in a public URL without labeling its bearer semantics. |

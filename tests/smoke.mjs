@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,15 +62,7 @@ if (root) {
         `---\nname: demo-${suffix}\ndescription: Another skill for the list to scroll past.\n---\n\nSay ${suffix}.\n`,
       );
     }
-    await writeFile(
-      join(data, "agents.json"),
-      JSON.stringify([
-        { id: "smoke", name: "Smoke", dir: workspace, colour: 0 },
-        { id: "configured", name: "Configured", dir: configured, colour: 1 },
-        // A directory that was registered and then moved or deleted: one broken agent, nothing else.
-        { id: "gone", name: "Gone", dir: join(root, "moved-away"), colour: 2 },
-      ]),
-    );
+    await writeFile(join(workspace, "hello.txt"), "Hello from the workspace\n");
 
     let requests = 0;
     let hold = false;
@@ -226,11 +218,7 @@ if (root) {
       const motion = (value) =>
         win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value }] });
       await motion("no-preference");
-      await until("document.body.innerText.includes('Create agent here')", "plain project setup");
-      assert.ok(
-        !(await evaluate("document.body.innerText")).includes("is not a fastagent agent"),
-        "the scaffold offer must not be contradicted by the runtime's `run fastagent init` error",
-      );
+      await until("document.body.innerText.includes('Create your first agent')", "empty roster setup");
       // A stack leading with names Chromium does not resolve falls through to PingFang (hyphen 0.6em vs SF's 0.43).
       assert.ok(
         await evaluate(`(() => {
@@ -240,9 +228,49 @@ if (root) {
         })()`),
         "the chrome's Latin is drawn in the system font",
       );
-      await click("Create agent here");
-      await until("document.querySelector('dialog[open]') !== null", "first model picker opens automatically");
-      await writeFile(join(workspace, "hello.txt"), "Hello from the workspace\n");
+      await click("Create agent");
+      await until("document.querySelector('form[aria-label=\"Create agent\"]') !== null", "Create agent form opens");
+      await evaluate(`(() => {
+        const input = document.querySelector('form[aria-label="Create agent"] input[aria-label="Agent name"]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Smoke');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      const showOpenDialog = electron.dialog.showOpenDialog;
+      electron.dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [workspace] });
+      let smokeId;
+      try {
+        await click("Add folder…");
+        await until("document.querySelectorAll('form[aria-label=\"Create agent\"] button[aria-label=\"Remove project\"]').length === 1", "first folder added");
+        await click("Add folder…");
+        await until("document.querySelectorAll('form[aria-label=\"Create agent\"] button[aria-label=\"Remove project\"]').length === 2", "second folder added");
+        await evaluate(`[...document.querySelectorAll('form[aria-label="Create agent"] button')].find((b) => b.textContent.trim() === 'Create agent').click()`);
+        await until(
+          "document.querySelector('form[aria-label=\"Create agent\"]')?.innerText.includes('already has content named \"project\"')",
+          "FastAgent refuses duplicate folder names in its own words",
+        );
+        await evaluate(`document.querySelector('form[aria-label="Create agent"] button[aria-label="Remove project"]').click()`);
+        await until("document.querySelectorAll('form[aria-label=\"Create agent\"] button[aria-label=\"Remove project\"]').length === 1", "duplicate folder removed");
+        await evaluate(`[...document.querySelectorAll('form[aria-label="Create agent"] button')].find((b) => b.textContent.trim() === 'Create agent').click()`);
+        await until("document.querySelector('dialog[open]') !== null", "first model picker opens automatically");
+      } finally {
+        electron.dialog.showOpenDialog = showOpenDialog;
+      }
+      const smokeDir = join(root, "Agents", "Smoke");
+      for (const file of ["SYSTEM.md", "fastagent.config.ts", ".gitignore", "context.local.json"]) await stat(join(smokeDir, file));
+      await stat(join(smokeDir, ".git"));
+      assert.match(await evaluate("document.querySelector('main > header').innerText"), /works on\s+project/);
+      const createdRows = JSON.parse(await readFile(join(data, "agents.json"), "utf8"));
+      smokeId = createdRows[0].id;
+      await writeFile(
+        join(data, "agents.json"),
+        JSON.stringify([
+          createdRows[0],
+          { id: "configured", name: "Configured", dir: configured, colour: 1 },
+          // A directory that was registered and then moved or deleted: one broken agent, nothing else.
+          { id: "gone", name: "Gone", dir: join(root, "moved-away"), colour: 2 },
+        ]),
+      );
+      await evaluate("window.duang.listAgents()");
       await until(
         "document.querySelector('dialog').innerText.includes('Effort can be set once a model is chosen')",
         "an agent with no model has no levels to offer",
@@ -263,9 +291,6 @@ if (root) {
         "document.querySelector('textarea') && !document.querySelector('textarea').disabled",
         "first model unlocks composer",
       );
-      // FastAgent's own scaffold, made in the folder itself, with the folder a git repository.
-      for (const file of ["SYSTEM.md", "fastagent.config.ts", ".gitignore"]) await stat(join(workspace, file));
-      await stat(join(workspace, ".git"));
       await send("Read hello.txt and answer.");
       await until(
         "document.querySelector('main').innerText.includes('Smoke answer') && !document.querySelector('main .bounce')",
@@ -568,7 +593,7 @@ if (root) {
       assert.ok(models.some((model) => model.spec === otherModel));
       assert.ok(!models.some(({ spec }) => spec.startsWith("openai-codex/")), "the retired route's models are not offered");
       assert.ok(models.some((model) => model.spec === "local/m1"), "the agent's own provider is pickable");
-      assert.ok(!(await evaluate("window.duang.listModels('smoke')")).some((model) => model.spec === "local/m1"), "another agent's is not");
+      assert.ok(!(await evaluate(`window.duang.listModels(${JSON.stringify(smokeId)})`)).some((model) => model.spec === "local/m1"), "another agent's is not");
       const sessionSaying = (text) =>
         evaluate(`window.duang.openAgent('configured').then((r) => r.sessions.find((s) => s.preview?.includes(${quoted(text)}))?.session)`);
       const historical = await sessionSaying("Use the configured model");
@@ -833,8 +858,8 @@ if (root) {
         "a directory that no longer exists stays removable from the panel that explains it",
       );
       assert.ok(
-        await evaluate("document.querySelector('main').innerText.includes(\"This agent's folder is not there\") && ![...document.querySelectorAll('main button')].some((b) => b.textContent.trim() === 'Create agent here')"),
-        "a folder that is not there is said so, and is not offered a scaffold",
+        await evaluate("document.querySelector('main').innerText.includes(\"This agent's folder is not there\") && [...document.querySelectorAll('main [role=\"alert\"] button')].map((b) => b.textContent.trim()).join(',') === 'Retry,Remove from duang'"),
+        "a folder that is not there offers Retry and Remove from duang",
       );
       // An agent's name is duang's label, so even a broken agent can be renamed; the directory is not.
       await evaluate(`document.querySelector('button[aria-label="Gone"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
@@ -891,7 +916,7 @@ if (root) {
       );
 
       // A real Tab: the point of a roving tabindex is that Tab can enter the roster at all.
-      await evaluate("document.querySelector('aside button[aria-label=\"Add agent directory\"]').focus()");
+      await evaluate("document.querySelector('aside button[aria-label=\"Create agent\"]').focus()");
       win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Tab" });
       win.webContents.sendInputEvent({ type: "char", keyCode: "Tab" });
       win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Tab" });
@@ -1373,28 +1398,41 @@ if (root) {
       await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
       await until("document.body.innerText.includes('agents.json')", "registry failure is reported");
       const registryFailure = await evaluate("document.body.innerText");
-      assert.ok(!registryFailure.includes("Add an agent directory"), "a corrupt registry is not an empty one");
+      assert.ok(!registryFailure.includes("Create your first agent"), "a corrupt registry is not an empty one");
       assert.ok(registryFailure.includes("Reveal agents.json"), "the person is shown where to fix it");
       await writeFile(registry, savedRegistry);
       await click("Retry");
       await until("document.querySelector('main').innerText.includes('Smoke answer')", "Retry recovers the registry");
       assert.equal(await readFile(registry, "utf8"), savedRegistry, "a failed read never rewrites the registry");
       // A default on the retired ChatGPT route opens; a send on it is refused with the code that opens the picker.
+      const legacyDir = join(root, "Agents", "legacy");
+      writeMockAgent(legacyDir, 9, { provider: "local", modelId: "m1" });
       await writeFile(
         registry,
-        JSON.stringify([...JSON.parse(savedRegistry), { id: "legacy", name: "Legacy", dir: join(root, "configured"), model: "openai-codex/gpt-5.5", colour: 4 }]),
+        JSON.stringify([...JSON.parse(savedRegistry), { id: "legacy", name: "Legacy", dir: legacyDir, model: "openai-codex/gpt-5.5", colour: 4 }]),
       );
       const legacy = await evaluate("window.duang.openAgent('legacy')");
       assert.equal(legacy.ok, true, legacy.message);
       assert.equal(legacy.model, "openai-codex/gpt-5.5", "the default is the one the registry names");
       const legacySend = await evaluate("window.duang.createSession('legacy').then((session) => window.duang.send('legacy', session, 'hello'))");
       assert.equal(legacySend.ok === false && legacySend.error.code, "model_unavailable", "a send on it asks for another model");
-      // Removing an agent deletes duang's instance of it, once released: nothing could reach its conversations again.
+      // Removing an agent deletes duang's instance of it and trashes its agent directory while leaving bound folders untouched.
       const instance = (id) => stat(join(data, "instances", id)).then(() => true, () => false);
       assert.equal(await instance("legacy"), true, "the opened agent has an instance");
-      assert.deepEqual(await evaluate("window.duang.removeAgent('legacy')"), { ok: true });
+      const trashed = [];
+      const trashItem = electron.shell.trashItem;
+      electron.shell.trashItem = async (dir) => {
+        trashed.push(dir);
+        await rm(dir, { recursive: true, force: true });
+      };
+      try {
+        assert.deepEqual(await evaluate("window.duang.removeAgent('legacy')"), { ok: true });
+      } finally {
+        electron.shell.trashItem = trashItem;
+      }
       assert.equal(await instance("legacy"), false, "removing it deletes the instance, conversations included");
-      assert.equal(await instance("smoke"), true, "and no other agent's");
+      assert.deepEqual(trashed, [legacyDir], "and trashes the agent directory");
+      assert.equal(await instance(smokeId), true, "and no other agent's");
       // A default pi does not know: the agent opens on its own model and the picker says the default is gone.
       await writeFile(
         registry,
@@ -1460,13 +1498,14 @@ if (root) {
         this.items.find((item) => item.label === "Reveal in Finder").click();
       };
       try {
+        const realWorkspace = await realpath(workspace);
         await evaluate(`document.querySelector('main > header button[title^="/"]').click()`);
         await until("true", "the header's folder button is pressed");
         await new Promise((resolve) => setTimeout(resolve, 100));
-        assert.deepEqual(revealed, [workspace], "the header's folder is the open agent's");
+        assert.deepEqual(revealed, [realWorkspace], "the header's folder is the open agent's");
         await evaluate(`document.querySelector('button[aria-label="Configured"]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))`);
         await new Promise((resolve) => setTimeout(resolve, 100));
-        assert.deepEqual(revealed, [workspace, configured], "a row's menu reveals that row's agent, not the open one");
+        assert.deepEqual(revealed, [realWorkspace, configured], "a row's menu reveals that row's agent, not the open one");
       } finally {
         electron.shell.showItemInFolder = showItemInFolder;
         electron.Menu.prototype.popup = popup;

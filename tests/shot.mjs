@@ -236,6 +236,22 @@ if (root) {
     await evaluate(`document.querySelector('button[title="New conversation (⌘N)"]').click()`);
     await until(`document.body.innerText.includes('What should we work on?')`, "new conversation");
     await capture("new-conversation");
+    await evaluate(`document.querySelector('aside button[aria-label="Create agent"]').click()`);
+    await until(`!!document.querySelector('form[aria-label="Create agent"]')`, "create agent form");
+    await evaluate(`(() => {
+      const input = document.querySelector('form[aria-label="Create agent"] input[aria-label="Agent name"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Reviewer');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    const showOpenDialog = electron.dialog.showOpenDialog;
+    electron.dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [workspace] });
+    try {
+      await evaluate(`[...document.querySelectorAll('form[aria-label="Create agent"] button')].find((b) => b.textContent.trim() === 'Add folder…').click()`);
+      await until(`!!document.querySelector('form[aria-label="Create agent"] button[aria-label="Remove project"]')`, "context folder added");
+      await capture("create-agent", "keep");
+    } finally {
+      electron.dialog.showOpenDialog = showOpenDialog;
+    }
     await evaluate(`document.querySelector('button[title="Settings (⌘,)"]').click()`);
     await until(`document.querySelector('[role="radio"]')`, "network choices");
     // A direct, mocked connection is deterministic even on machines with a system proxy.

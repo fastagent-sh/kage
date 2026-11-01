@@ -374,7 +374,7 @@ export function Composer({
       {/* `/` on an agent with no skills would otherwise do nothing, which reads as broken. */}
       {query !== undefined && !view.commandsError && view.commands.length === 0 && agent && (
         <p className="text-muted text-[11px] mb-1.5 pl-4">
-          No commands — this agent has no skills in <span className="font-mono">{home(agent.dir)}/fastagent/skills</span>
+          No commands — this agent has no skills in <span className="font-mono">{home(agent.dir)}/skills</span>
         </p>
       )}
       <div className="flex items-end gap-2">

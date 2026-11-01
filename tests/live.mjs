@@ -20,11 +20,12 @@ const root = await isolated(import.meta.url, { name: "live", timeout: 300000, ho
 if (root) {
   const { app } = electron;
   const data = join(root, "user-data");
-  const dir = join(root, "agent");
+  const project = join(root, "project");
   app.setPath("userData", data);
 
   let win;
   let evaluate;
+  let liveId = "live";
   const call = (name, ...args) =>
     evaluate(`window.duang.${name}(${args.map((a) => JSON.stringify(a)).join(", ")})`);
   /**
@@ -34,7 +35,7 @@ if (root) {
   async function reply(session, asked) {
     const subscription = `live-${session}`;
     for (let t = 0; t < 600; t++) {
-      const opened = await call("openSession", "live", session, subscription);
+      const opened = await call("openSession", liveId, session, subscription);
       await call("closeSession", subscription);
       const sent = opened.entries.findLast((entry) => entry.kind === "user");
       const said = sent?.data.content?.map((part) => part.text ?? "").join("");
@@ -54,12 +55,12 @@ if (root) {
   }
 
   async function run() {
-    await mkdir(dir, { recursive: true });
+    await mkdir(project, { recursive: true });
     await mkdir(data, { recursive: true });
-    await writeFile(join(dir, "fastagent.config.ts"), "export default {};\n");
-    await writeFile(join(data, "agents.json"), JSON.stringify([{ id: "live", name: "Live", dir, colour: 0 }]));
+    await writeFile(join(project, "note.txt"), "before\n");
     // The app's own data directory, named explicitly: this process is "Electron", not "duang".
     const real = join(app.getPath("appData"), "duang", "auth.json");
+    process.env.HOME = root;
     assert.ok(
       existsSync(real),
       `${real} does not exist. Connect the providers to check in duang (Settings → Model providers), or ` +
@@ -71,7 +72,11 @@ if (root) {
     win = await open();
     ({ evaluate } = windowDriver(win));
 
-    const models = await call("listModels", "live");
+    const created = await call("createAgent", "Live", [project]);
+    assert.equal(created.ok, true, created.error?.message);
+    liveId = created.agent.id;
+
+    const models = await call("listModels", liveId);
     const before = await readFile(authFile, "utf8");
     const chatgpt = JSON.parse(before).openai?.type === "oauth";
     const [defaultModel, other] = selectLiveModels(models, {
@@ -83,9 +88,9 @@ if (root) {
 
     // 1. The agent's default runs with the credentials already on this machine. The first provider is the one
     // `openai/gpt-5.5` names where it exists, because a ChatGPT account may not run every listed model (#5).
-    assert.deepEqual(await call("setModel", "live", defaultModel), { ok: true });
-    const first = await call("createSession", "live");
-    const defaultRun = await call("send", "live", first, ASK);
+    assert.deepEqual(await call("setModel", liveId, defaultModel), { ok: true });
+    const first = await call("createSession", liveId);
+    const defaultRun = await call("send", liveId, first, ASK);
     assert.equal(defaultRun.ok, true, `${defaultModel} send was refused: ${defaultRun.error?.message}`);
     const answer = await reply(first, ASK);
     if (answer.status === "completed") {
@@ -103,18 +108,20 @@ if (root) {
       console.log(`${defaultModel} credentials accepted, provider refused the run: ${answer.error.message}`);
     }
 
-    // 2. A conversation moved to the other provider.
-    const second = await call("createSession", "live");
-    assert.deepEqual(await call("setModel", "live", other, second), { ok: true });
-    assert.equal((await call("send", "live", second, ASK)).ok, true, `${other} conversation send`);
-    const otherAnswer = await reply(second, ASK);
+    // 2. A conversation moved to the other provider, editing a file in the bound context folder.
+    const second = await call("createSession", liveId);
+    assert.deepEqual(await call("setModel", liveId, other, second), { ok: true });
+    const editAsk = "Run bash with `cd` into the project directory you work on to write the single word edited into note.txt (`echo edited > note.txt`), then reply with OK.";
+    assert.equal((await call("send", liveId, second, editAsk)).ok, true, `${other} conversation send`);
+    const otherAnswer = await reply(second, editAsk);
     assert.equal(otherAnswer.status, "completed", `${other} message ended ${otherAnswer.status}: ${otherAnswer.error?.message}`);
+    assert.equal((await readFile(join(project, "note.txt"), "utf8")).trim(), "edited", "the turn edited the bound context folder");
 
     // 3. Issue #5's reported case: the agent's default is the first provider again, and the conversation keeps
     // the model the other provider recorded, and still runs.
-    assert.deepEqual(await call("setModel", "live", defaultModel), { ok: true });
-    assert.equal((await call("openAgent", "live")).model, defaultModel, `agent default is ${defaultModel}`);
-    assert.equal((await call("send", "live", second, "Reply with exactly: STILL OK")).ok, true, "history send");
+    assert.deepEqual(await call("setModel", liveId, defaultModel), { ok: true });
+    assert.equal((await call("openAgent", liveId)).model, defaultModel, `agent default is ${defaultModel}`);
+    assert.equal((await call("send", liveId, second, "Reply with exactly: STILL OK")).ok, true, "history send");
     const history = await reply(second, "Reply with exactly: STILL OK");
     assert.equal(history.status, "completed", `history message ended ${history.status}: ${history.error?.message}`);
     assert.equal(history.model, other, `the historical conversation kept its own model (${other})`);

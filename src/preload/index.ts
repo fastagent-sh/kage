@@ -5,7 +5,7 @@ import type { Result, Sent } from "../shared/result.ts";
 
 export type { AgentRow } from "../main/agent-files.ts";
 import type { AgentRow } from "../main/agent-files.ts";
-export type { AgentSetup, OpenResult } from "../main/agents.ts";
+export type { AgentContent, AgentSetup, OpenResult } from "../main/agents.ts";
 import type { OpenResult } from "../main/agents.ts";
 export type { ModelChoice, Models } from "../main/models.ts";
 export type { SessionSummary } from "../main/session-list.ts";
@@ -26,7 +26,9 @@ export type SessionFrame = Frame;
 
 const api = {
   listAgents: (): Promise<AgentRow[]> => ipcRenderer.invoke("agents:list"),
-  addAgent: (): Promise<AgentRow | undefined> => ipcRenderer.invoke("agents:add"),
+  pickFolder: (): Promise<{ name: string; path: string } | undefined> => ipcRenderer.invoke("agents:pickFolder"),
+  createAgent: (name: string, folders: string[]): Promise<Result<{ agent: AgentRow }>> =>
+    ipcRenderer.invoke("agents:create", name, folders),
   openAgent: (agentId: string): Promise<OpenResult> => ipcRenderer.invoke("agent:open", agentId),
   setModel: (agentId: string, model: string, session?: string): Promise<Result> =>
     ipcRenderer.invoke("agent:setModel", agentId, model, session),
@@ -34,9 +36,7 @@ const api = {
     ipcRenderer.invoke("session:setThinking", agentId, session, level),
   renameAgent: (agentId: string, name: string): Promise<void> => ipcRenderer.invoke("agent:rename", agentId, name),
   removeAgent: (agentId: string): Promise<Result> => ipcRenderer.invoke("agent:remove", agentId),
-  relocateAgent: (agentId: string): Promise<Result | undefined> => ipcRenderer.invoke("agent:relocate", agentId),
   resetAgentConfig: (agentId: string): Promise<Result> => ipcRenderer.invoke("agent:resetConfig", agentId),
-  scaffoldAgent: (agentId: string): Promise<string> => ipcRenderer.invoke("agent:scaffold", agentId),
   listCommands: (agentId: string): Promise<AgentCommand[]> => ipcRenderer.invoke("agent:commands", agentId),
   revealAgent: (agentId: string, path?: string): Promise<void> => ipcRenderer.invoke("agent:reveal", agentId, path),
   revealRegistry: (): Promise<void> => ipcRenderer.invoke("registry:reveal"),

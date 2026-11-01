@@ -59,8 +59,8 @@ context is and, for a Claude subscription, the plan's usage windows.
 
 **Problems that say what to do.** A failure keeps the provider's original words and adds what they
 mean and the way on: **Sign in again** for a rejected login, **Use another model** for an overloaded
-provider, **Network settings** for a connection error, **Locate folder…** for an agent that moved,
-**Start a fresh config** for one whose config no longer loads (the old file is kept beside it).
+provider, **Network settings** for a connection error,
+**Start a fresh config** for an agent whose config no longer loads (the old file is kept beside it).
 
 **Works behind a proxy.** Every model and sign-in request follows the system proxy as it is at that
 moment, including PAC rules and a VPN switched on later; Settings → Network can fix a proxy or turn
@@ -88,9 +88,9 @@ download the new release and replace the app; there are no automatic updates unt
 
 ## Getting started
 
-1. **Add an agent.** Click **+** at the top of the sidebar and choose a FastAgent agent directory, or an
-   empty folder: duang offers to make it an agent (FastAgent's starter files and a git repository), after
-   asking. A folder that already holds files is refused and left as it is.
+1. **Create an agent.** Click **+** at the top of the sidebar, name the agent and attach any folders on
+   this computer it should work on. duang creates the agent in `~/Agents/<name>/` with FastAgent's starter
+   files and a git repository.
 2. **Connect a provider.** Settings (`⌘,`) → Model providers, or **Connect a provider** in the model
    picker.
 3. **Pick a model and send.** A new agent has no default model, so its first conversation asks for
@@ -126,14 +126,11 @@ More: [architecture](docs/architecture.md) (processes, state ownership, network 
 ## Known limitations
 
 - macOS on Apple silicon only; not signed or notarized, and no automatic updates.
-- An agent is its own directory. duang can make an empty folder one but cannot yet attach the folders it
-  works on, and an agent made inside a project no longer works on the project around it
-  ([#133](https://github.com/fastagent-sh/duang/issues/133)).
 - Conversations cannot be renamed or deleted: FastAgent's sessions have neither. A conversation is titled by
   the newest message you sent in it.
 - Messages queued from another window or a channel appear when they enter the conversation, not before.
 - Sessions of earlier versions are not read: this version keeps its own instance of each agent.
-- Removing an agent removes it from duang and deletes duang's conversations with it; its directory stays on disk.
+- Removing an agent moves its directory in `~/Agents/` and duang's conversations with it to the Trash; the folders it works on stay on disk.
 - Credentials are a plain JSON file (mode `0600`), as FastAgent writes it, not the macOS Keychain
   ([fastagent#652](https://github.com/fastagent-sh/fastagent/issues/652)).
 - A proxy that needs a user name and password is not supported.

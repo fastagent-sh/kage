@@ -11,14 +11,12 @@ import type { Activity } from "./transcript.ts";
 
 const tones: Record<AgentState, Tone> = {
   ready: "accent",
-  no_agent: "warning",
   missing_dir: "danger",
   broken: "danger",
 };
 
 const says: Record<AgentState, string> = {
   ready: "Ready",
-  no_agent: "No agent in this directory yet",
   missing_dir: "Folder not found",
   broken: "Broken",
 };
@@ -79,6 +77,7 @@ export function Sidebar({
   latest,
   errors,
   settingsOpen,
+  creatingOpen,
   onSelect,
   onAdd,
   onSettings,
@@ -96,6 +95,7 @@ export function Sidebar({
   latest: (agentId: string) => Row | undefined;
   errors: Record<string, string>;
   settingsOpen: boolean;
+  creatingOpen?: boolean;
   onSelect: (id: string) => void;
   onAdd: () => void;
   onSettings: () => void;
@@ -137,8 +137,8 @@ export function Sidebar({
           size={28}
           onClick={onAdd}
           className="no-drag sidebar-add"
-          title="Add agent directory"
-          aria-label="Add agent directory"
+          title="Create agent"
+          aria-label="Create agent"
           icon={<Plus size={16} />}
         />
       </div>
@@ -155,7 +155,7 @@ export function Sidebar({
           const last = latest(agent.id);
           const at = preview ? preview.at : last?.updatedAt;
           const error = errors[agent.id] ?? preview?.error;
-          const filled = selected && !settingsOpen;
+          const filled = selected && !settingsOpen && !creatingOpen;
           const status = `status-${agent.id}`;
           const rename = () => setRenaming(agent.id);
           // The same face while it is being renamed: the work it is doing has not stopped.

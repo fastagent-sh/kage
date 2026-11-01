@@ -37,7 +37,7 @@ export default function Gallery() {
           title="Buttons — kinds"
           note="primary at most once per screen; danger is quiet until the pointer is on it"
         >
-          <Button kind="primary">Create agent here</Button>
+          <Button kind="primary">Create agent</Button>
           <Button>Reveal in Finder</Button>
           <Button kind="ghost">Retry</Button>
           <Button kind="danger" icon={<X size={14} />}>
@@ -106,12 +106,11 @@ export default function Gallery() {
           <Badge tone="danger">failed</Badge>
           <Badge tone="muted">stopped</Badge>
           <Badge tone="warning">refused</Badge>
-          <Badge tone="warning">no agent yet</Badge>
           <Badge tone="danger">broken</Badge>
         </Section>
 
         <Section title="Avatars — one face per state" note="the drawing is who it is and never changes; the face is what it is doing; the words say it too">
-          {(["idle", "open", "thinking", "tool", "answering", "done", "failed", "unborn", "broken"] satisfies Face[]).map((face, colour) => (
+          {(["idle", "open", "thinking", "tool", "answering", "done", "failed", "broken"] satisfies Face[]).map((face, colour) => (
             <div key={face} className="flex flex-col items-center gap-1.5 text-[11px] text-muted">
               <Avatar id={`gallery-${face}`} name={face} colour={colour} size={48} face={face} />
               {face}
@@ -257,7 +256,7 @@ export default function Gallery() {
             />
             <div className="flex rounded-float ring-1 ring-stroke">
               <BrokenAgent
-                message={"~/research/fastagent/fastagent.config.ts: Unexpected token '}' (12:3)\n  10 |   model: \"anthropic/claude-sonnet-4-5\",\n  11 |   tools: [\"read\", \"bash\"\n> 12 | }\n     |   ^"}
+                message={"~/Agents/research/fastagent.config.ts: Unexpected token '}' (12:3)\n  10 |   model: \"anthropic/claude-sonnet-4-5\",\n  11 |   tools: [\"read\", \"bash\"\n> 12 | }\n     |   ^"}
                 inConfig
                 onFreshConfig={() => {}}
                 onRemove={() => {}}
@@ -266,7 +265,7 @@ export default function Gallery() {
               />
             </div>
             <div className="flex rounded-float ring-1 ring-stroke">
-              <MissingFolder dir="/Users/someone/research/video-research" onLocate={() => {}} onRemove={() => {}} onRetry={() => {}} />
+              <MissingFolder dir="/Users/someone/Agents/video-research" onRemove={() => {}} onRetry={() => {}} />
             </div>
           </div>
         </Section>
