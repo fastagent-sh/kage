@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "katex/dist/katex.min.css";
 @source "../../node_modules/streamdown/dist/*.js";
 
 /* Tokens for docs/ui.md §4. Every interactive role is a set: a component picks `bg-hover`, never computes one. */
@@ -475,8 +476,16 @@ summary:focus-visible,
 .md > div > [data-streamdown^="heading-"] + * {
   margin-top: 8px;
 }
-.md > div > :is(.code-block, [data-streamdown="table-wrapper"], [data-streamdown="blockquote"]) {
+.md > div > :is(.code-block, [data-streamdown="table-wrapper"], [data-streamdown="blockquote"], .katex-display) {
   margin-block: 16px;
+}
+.md .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: 2px;
+}
+.md .katex-display > .katex {
+  display: inline-block;
 }
 .md > div > [data-streamdown="horizontal-rule"] {
   margin-block: 24px;
@@ -540,6 +549,11 @@ summary:focus-visible,
 [data-streamdown="link"] {
   color: var(--color-accent);
   text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--color-accent) 45%, transparent);
+  text-underline-offset: 4px;
+}
+[data-streamdown="link"]:hover {
+  text-decoration-color: var(--color-accent);
 }
 
 [data-streamdown="table-wrapper"] {
@@ -640,7 +654,8 @@ summary:focus-visible,
     background: var(--color-surface-2);
     color: var(--color-muted);
   }
-  .code-block {
+  .code-block,
+  .tool-card[open] {
     background: oklch(0.966 0.007 270);
   }
   .popover {

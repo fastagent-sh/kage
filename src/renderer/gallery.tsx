@@ -135,9 +135,25 @@ export default function Gallery() {
             <Message
               item={{
                 kind: "assistant",
-                text: "The check fails in one place, and the cause is a missing key rather than the component.",
+                text: "The check fails in `src/i18n/zh.json:12` ($O(1)$ lookup), and the cause is a missing key rather than the component.",
                 open: false,
                 at: FIXED,
+              }}
+            />
+            <Tool
+              item={{
+                kind: "tool",
+                id: "edit-1",
+                name: "edit",
+                args: {
+                  path: "src/i18n/zh.json",
+                  edits: [{ oldText: '  "title": "标题"\n}', newText: '  "title": "标题",\n  "heading": "概览"\n}' }],
+                },
+                result: "Successfully replaced 1 block(s) in src/i18n/zh.json.",
+                status: "done",
+                at: FIXED,
+                started: FIXED,
+                ended: FIXED + 420,
               }}
             />
             <Tool

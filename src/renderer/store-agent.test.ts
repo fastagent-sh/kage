@@ -256,12 +256,28 @@ test("an unreadable settings file leaves the default style and does not stop the
 test("reveal opens the agent it is given, else the open one, and the registry when there is none", async () => {
   const { api, store } = harness();
   const revealed: string[] = [];
-  api.revealAgent = async (id) => void revealed.push(`agent:${id}`);
+  const links: string[] = [];
+  api.revealAgent = async (id, path) => void revealed.push(path ? `agent:${id}:${path}` : `agent:${id}`);
   api.revealRegistry = async () => void revealed.push("registry");
+  api.openExternal = async (url) => void links.push(url);
   await store.load();
   await store.reveal("b");
   await store.reveal();
-  assert.deepEqual(revealed, ["agent:b", "agent:a"], "a row's menu names its own agent; the header's default is the open one");
+  await store.reveal("a", "src/main/index.ts:61");
+  await store.openLink("https://fastagent.sh/docs");
+  assert.deepEqual(
+    revealed,
+    ["agent:b", "agent:a", "agent:a:src/main/index.ts:61"],
+    "a row's menu names its own agent; the header's default is the open one; a file path goes with its agent",
+  );
+  assert.deepEqual(links, ["https://fastagent.sh/docs"]);
+
+  api.openExternal = async () => {
+    throw new Error("Only http, https, and mailto links can be opened");
+  };
+  await store.openLink("javascript:alert(1)");
+  assert.equal(store.getSnapshot().failure?.title, "The link could not be opened");
+  store.dismissFailure();
   store.dispose();
 
   const empty = harness();

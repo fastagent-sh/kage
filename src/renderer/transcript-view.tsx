@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
   Plug,
@@ -22,7 +22,9 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { Streamdown } from "streamdown";
-import { MarkdownCode } from "./code.tsx";
+import { stripPathSuffix } from "../shared/links.ts";
+import { MarkdownCode, MarkdownLink, TranscriptActionsContext } from "./code.tsx";
+import { markdownPlugins, markdownRehypePlugins, normalizeMath } from "./markdown.ts";
 import {
   dayLabel,
   duration,
@@ -37,7 +39,10 @@ import {
   stringify,
   summarize,
   thinkingLine,
+  toolDetail,
   toolText,
+  visibleArgs,
+  type DiffLine,
   type Item,
   type Line,
   type Place,
@@ -151,6 +156,8 @@ export function Transcript({
   onUsage,
   onSettings,
   onPickModel,
+  onOpenLink,
+  onOpenPath,
   provider,
 }: {
   items: Item[];
@@ -168,8 +175,21 @@ export function Transcript({
   onUsage: (provider: string) => void;
   onSettings: (where: "providers" | "network") => void;
   onPickModel: () => void;
+  onOpenLink?: (url: string) => void;
+  onOpenPath?: (path: string) => void;
   provider?: string;
 }) {
+  const actionsRef = useRef({ onOpenLink, onOpenPath });
+  actionsRef.current = { onOpenLink, onOpenPath };
+  const hasOpenLink = Boolean(onOpenLink);
+  const hasOpenPath = Boolean(onOpenPath);
+  const transcriptActions = useMemo(
+    () => ({
+      ...(hasOpenLink && { onOpenLink: (url: string) => actionsRef.current.onOpenLink?.(url) }),
+      ...(hasOpenPath && { onOpenPath: (path: string) => actionsRef.current.onOpenPath?.(path) }),
+    }),
+    [hasOpenLink, hasOpenPath],
+  );
   // The ways on belong to the latest problem only, and only while nothing runs: an earlier one is history.
   const last = items.at(-1);
   const problem = !busy && last?.kind === "note" && last.title ? last : undefined;
@@ -313,6 +333,7 @@ export function Transcript({
   }, []);
 
   return (
+    <TranscriptActionsContext.Provider value={transcriptActions}>
     <div className="relative flex-1 min-h-0 flex flex-col">
       {away && (
         <Button
@@ -374,6 +395,7 @@ export function Transcript({
       </div>
     </div>
     </div>
+    </TranscriptActionsContext.Provider>
   );
 }
 
@@ -388,10 +410,11 @@ const SettledWork = memo(
     before.work.items.every((item, index) => item === after.work.items[index]),
 );
 
-// Only `code`: Streamdown's own `pre` marks fenced blocks, and replacing it makes every block inline.
-const markdownComponents = { code: MarkdownCode };
+// Only `a` and `code`: Streamdown's own `pre` marks fenced blocks, and replacing it makes every block inline.
+const markdownComponents = { a: MarkdownLink, code: MarkdownCode };
 
 const markdownControls = { table: { download: false } };
+const markdownLinkSafety = { enabled: false };
 
 // Streamdown's table controls are Lucide; match the code block's Phosphor icons.
 const markdownIcons = { CopyIcon: Copy, CheckIcon: Check, Maximize2Icon: ArrowsOut, XIcon: X };
@@ -437,9 +460,19 @@ export function Message({
       return (
         <div className="group/msg">
           <div className="md">
-            {/* Appended to the text: Streamdown emits blocks, so a sibling span would start its own line. */}
-            <Streamdown components={markdownComponents} controls={markdownControls} icons={markdownIcons} tableMaxHeight={TABLE_FULL_HEIGHT}>
-              {item.open ? `${item.text}▍` : item.text}
+            <Streamdown
+              caret="block"
+              components={markdownComponents}
+              controls={markdownControls}
+              icons={markdownIcons}
+              isAnimating={item.open}
+              linkSafety={markdownLinkSafety}
+              parseIncompleteMarkdown={item.open}
+              plugins={markdownPlugins}
+              rehypePlugins={markdownRehypePlugins}
+              tableMaxHeight={TABLE_FULL_HEIGHT}
+            >
+              {normalizeMath(item.text)}
             </Streamdown>
           </div>
           {!item.open && ends && <Footer text={item.text} at={item.at} />}
@@ -529,7 +562,7 @@ export function WorkBlock({ work, live }: { work: Work; live?: ReactNode }) {
         <CaretRight size={11} className="shrink-0 transition-transform group-open/work:rotate-90" />
         {live ?? <span className="truncate">{summarize(work.items)}</span>}
       </summary>
-      <div className={lone ? "" : "mt-1 ml-[5px] space-y-0.5 border-l border-stroke pl-3.5"}>
+      <div className={lone ? "" : "mt-1 ml-[5px] flex flex-col gap-0.5 border-l border-stroke pl-3.5"}>
         {work.items.map((item, index) => (
           <Message key={index} item={item} />
         ))}
@@ -558,45 +591,160 @@ function toolState(item: Extract<Item, { kind: "tool" }>): { word: string; tone:
 }
 
 export function Tool({ item }: { item: Extract<Item, { kind: "tool" }> }) {
+  const { onOpenPath } = useContext(TranscriptActionsContext);
   const summary = firstArg(item.args);
+  const detail = useMemo(() => toolDetail(item.name, item.args), [item.name, item.args]);
+  const path = detail.path;
   const state = toolState(item);
   const elapsed = useElapsed(item.started, item.ended);
   const Icon = toolIcons[item.name] ?? Terminal;
   const mark = item.isError ? "text-danger" : item.status === "running" ? "text-accent" : "text-muted";
+  const output = item.result !== undefined ? toolText(item.result) : undefined;
+  const showOutput =
+    output !== undefined &&
+    (item.isError ||
+      (detail.kind === "edit"
+        ? !/^Successfully replaced \d+ block\(s\) in /.test(output)
+        : detail.kind === "write"
+          ? !/^Successfully wrote (?:to |\d+ bytes to )/.test(output)
+          : true));
   return (
     // The negative margin lets the hover highlight extend past the text while the command keeps the left edge.
-    <details className="group -mx-2.5 rounded-card open:bg-surface open:ring-1 open:ring-stroke">
-      <summary className="cursor-default select-none flex items-center gap-2 rounded-card px-2.5 h-7 text-[12px] hover:bg-hover group-open:rounded-b-none">
+    <details className="tool-card group -mx-2.5 rounded-card open:my-1.5 first:open:mt-0.5 last:open:mb-0 open:bg-surface">
+      <summary className="cursor-default select-none flex items-center gap-2 rounded-card px-2.5 h-7 text-[12px] hover:bg-hover group-open:hover:bg-transparent">
         <CaretRight size={11} className="shrink-0 text-muted transition-transform group-open:rotate-90" />
         <Icon size={14} className={`shrink-0 ${mark}`} />
         <span className="shrink-0 text-muted">{item.name}</span>
-        <span className="font-mono truncate">{summary}</span>
+        <span className="font-mono truncate" title={path && firstArg({ path }) === summary ? path : summary}>
+          {summary}
+        </span>
         {state && (
           <Badge tone={state.tone} pulse={item.status === "running"} className="shrink-0">
             {state.word}
           </Badge>
         )}
         {elapsed && <span className="shrink-0 text-muted tabular-nums">{elapsed}</span>}
+        {path && onOpenPath && (
+          <button
+            type="button"
+            aria-label={`Show ${stripPathSuffix(path)} in Finder`}
+            title={`Show ${stripPathSuffix(path)} in Finder`}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onOpenPath(path);
+            }}
+            className="ml-auto shrink-0 rounded-[4px] p-1 text-muted opacity-0 transition-opacity group-hover:opacity-100 group-open:opacity-70 hover:!opacity-100 hover:bg-surface-2 hover:text-text focus-visible:opacity-100"
+          >
+            <FolderOpen size={13} />
+          </button>
+        )}
       </summary>
-      <div className="border-t border-stroke px-2.5 py-2.5 space-y-2.5 text-[12px]">
-        <Args args={item.args} summary={summary} />
-        {item.result !== undefined && <Output text={toolText(item.result)} isError={item.isError} />}
+      <div className="px-2.5 pt-1 pb-2.5 space-y-2 text-[12px]">
+        {detail.kind === "edit" ? (
+          <DiffHunks hunks={detail.hunks} />
+        ) : detail.kind === "write" ? (
+          <Output text={detail.content} />
+        ) : (
+          <Args args={item.args} summary={summary} onOpenPath={onOpenPath} />
+        )}
+        {showOutput && <Output text={output} isError={item.isError} />}
       </div>
     </details>
   );
 }
 
-function Args({ args, summary }: { args: unknown; summary: string }) {
+const DIFF_FOLD_LINES = 12;
+
+function DiffHunks({ hunks }: { hunks: DiffLine[][] }) {
+  const [open, setOpen] = useState(false);
+  const flat: (DiffLine | { kind: "gap" })[] = [];
+  for (let index = 0; index < hunks.length; index++) {
+    if (index > 0) flat.push({ kind: "gap" });
+    flat.push(...hunks[index]!);
+  }
+  const hidden = flat.length > DIFF_FOLD_LINES ? flat.length - DIFF_FOLD_LINES : 0;
+  const shown = hidden > 0 && !open ? flat.slice(0, DIFF_FOLD_LINES) : flat;
+  return (
+    <div>
+      <div className="-mx-2.5 overflow-x-auto font-mono leading-relaxed">
+        {shown.map((line, index) =>
+          line.kind === "gap" ? (
+            <div key={index} className="px-2.5 py-0.5 text-muted/60 select-none">
+              ···
+            </div>
+          ) : (
+            <div
+              key={index}
+              className={`flex px-2.5 whitespace-pre ${
+                line.kind === "remove"
+                  ? "bg-danger/10 text-danger"
+                  : line.kind === "add"
+                    ? "bg-success/10 text-success"
+                    : "text-muted"
+              }`}
+            >
+              <span className="w-4 shrink-0 select-none opacity-70">
+                {line.kind === "remove" ? "−" : line.kind === "add" ? "+" : " "}
+              </span>
+              <span className="min-w-0">{line.text || " "}</span>
+            </div>
+          ),
+        )}
+      </div>
+      {hidden > 0 && (
+        <button
+          type="button"
+          className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-muted transition-colors hover:text-text"
+          onClick={() => setOpen(!open)}
+        >
+          <CaretDown size={10} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+          {open ? "show less" : `${hidden} more lines`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Args({ args, summary, onOpenPath }: { args: unknown; summary: string; onOpenPath?: (path: string) => void }) {
   if (args === undefined || args === null) return null;
-  if (typeof args !== "object") return <pre className="font-mono whitespace-pre-wrap break-all">{stringify(args)}</pre>;
-  const entries = Object.entries(args).filter(([, value]) => value !== undefined && value !== null && value !== "");
-  if (entries.length === 0 || (entries.length === 1 && entries[0]![1] === summary)) return null;
+  if (typeof args !== "object" || Array.isArray(args))
+    return <pre className="font-mono whitespace-pre-wrap break-all">{stringify(args)}</pre>;
+  const entries = visibleArgs(args, summary);
+  if (entries.length === 0) return null;
+  const compact = entries.every(
+    ([key, value]) => key !== "path" && (typeof value === "number" || typeof value === "boolean" || (typeof value === "string" && value.length <= 24 && !value.includes("\n"))),
+  );
+  if (compact) {
+    return (
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
+        {entries.map(([key, value]) => (
+          <span key={key}>
+            {key} <span className="font-mono text-text/80">{String(value)}</span>
+          </span>
+        ))}
+      </div>
+    );
+  }
   return (
     <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
       {entries.map(([key, value]) => (
         <Fragment key={key}>
           <dt className="text-muted">{key}</dt>
-          <Value text={stringify(value)} />
+          {key === "path" && typeof value === "string" && onOpenPath ? (
+            <dd className="font-mono whitespace-pre-wrap break-all">
+              <button
+                type="button"
+                title={`Show ${stripPathSuffix(value)} in Finder`}
+                onClick={() => onOpenPath(value)}
+                className="text-left transition-colors hover:text-accent"
+              >
+                {value}
+              </button>
+            </dd>
+          ) : (
+            <Value text={stringify(value)} />
+          )}
         </Fragment>
       ))}
     </dl>
@@ -638,10 +786,9 @@ function Output({ text, isError }: { text: string; isError?: boolean }) {
         {head !== undefined && !open ? head : text}
       </pre>
       {head !== undefined && (
-        // Negative margins reach out of the padded body; a button's auto width would shrink to its label.
         <button
           type="button"
-          className="focus-inset -mx-2.5 -mb-2.5 mt-2 flex h-7 w-[calc(100%+1.25rem)] items-center justify-center gap-1.5 rounded-b-card border-t border-stroke text-[11px] text-muted transition-colors hover:bg-hover hover:text-text"
+          className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-muted transition-colors hover:text-text"
           onClick={() => setOpen(!open)}
         >
           <CaretDown size={10} className={`transition-transform ${open ? "rotate-180" : ""}`} />

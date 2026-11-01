@@ -18,7 +18,7 @@ import {
   type AgentRow,
 } from "./agent-files.ts";
 
-export { createAgentIn } from "./agent-files.ts";
+export { createAgentIn, resolveAgentPath } from "./agent-files.ts";
 export const registryFile = join(app.getPath("userData"), "agents.json");
 const registry = new AgentRegistry(registryFile);
 export const listAgents = () => registry.list();

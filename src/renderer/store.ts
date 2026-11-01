@@ -774,12 +774,19 @@ export function createStore(api: DuangApi) {
         if (request === navigation) fail("The agent could not be created here", error);
       }
     },
-    async reveal(agentId = view.agentId) {
+    async reveal(agentId = view.agentId, path?: string) {
       try {
         // No agent to name means the list itself is what failed; show that file instead.
-        await (agentId ? api.revealAgent(agentId) : api.revealRegistry());
+        await (agentId ? (path === undefined ? api.revealAgent(agentId) : api.revealAgent(agentId, path)) : api.revealRegistry());
       } catch (error) {
         fail("It could not be shown in Finder", error);
+      }
+    },
+    async openLink(url: string) {
+      try {
+        await api.openExternal(url);
+      } catch (error) {
+        fail("The link could not be opened", error);
       }
     },
     async removeAgent() {

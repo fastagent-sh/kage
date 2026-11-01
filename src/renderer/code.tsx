@@ -1,8 +1,16 @@
-// Only `code` is overridden: Streamdown's `pre` marks a fenced block, and replacing it made every block inline.
-import { Suspense, use } from "react";
+// Only `code` and `a` are overridden: Streamdown's `pre` marks a fenced block, and replacing it made every block inline.
+import { createContext, Suspense, use, useContext, type ReactNode } from "react";
 import { Check, Copy } from "@phosphor-icons/react";
 import { ShikiHighlighter, createHighlighterCore, createJavaScriptRegexEngine } from "react-shiki/core";
+import { classifyLink, isFilePath, stripPathSuffix } from "../shared/links.ts";
 import { useCopy } from "./ui.tsx";
+
+export interface TranscriptActions {
+  onOpenLink?: (url: string) => void;
+  onOpenPath?: (path: string) => void;
+}
+
+export const TranscriptActionsContext = createContext<TranscriptActions>({});
 
 const highlighterReady = createHighlighterCore({
   themes: [import("@shikijs/themes/catppuccin-latte"), import("@shikijs/themes/catppuccin-mocha")],
@@ -96,6 +104,55 @@ function CopyButton({ code }: { code: string }) {
   );
 }
 
+export function MarkdownLink({
+  href,
+  children,
+}: {
+  href?: string;
+  children?: ReactNode;
+  node?: unknown;
+}) {
+  const { onOpenLink, onOpenPath } = useContext(TranscriptActionsContext);
+  const target = classifyLink(href);
+  if (target.kind === "incomplete") {
+    return (
+      <span data-streamdown="link" className="text-accent underline">
+        {children}
+      </span>
+    );
+  }
+  if (target.kind === "external") {
+    return (
+      <a
+        href={target.url}
+        title={target.url}
+        data-streamdown="link"
+        className="cursor-pointer text-accent underline"
+        onClick={(event) => {
+          event.preventDefault();
+          onOpenLink?.(target.url);
+        }}
+      >
+        {children}
+      </a>
+    );
+  }
+  return (
+    <a
+      href={target.path}
+      title={`Show ${target.displayPath} in Finder`}
+      data-streamdown="link"
+      className="cursor-pointer text-accent underline"
+      onClick={(event) => {
+        event.preventDefault();
+        onOpenPath?.(target.path);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 export function MarkdownCode({
   className,
   children,
@@ -105,8 +162,21 @@ export function MarkdownCode({
   children?: unknown;
   node?: unknown;
 }) {
+  const { onOpenPath } = useContext(TranscriptActionsContext);
   const text = typeof children === "string" ? children : String(children ?? "");
   if (!("data-block" in props)) {
+    if (isFilePath(text)) {
+      return (
+        <button
+          type="button"
+          title={`Show ${stripPathSuffix(text)} in Finder`}
+          onClick={() => onOpenPath?.(text)}
+          className="inline-code cursor-pointer rounded-[4px] px-[0.3em] py-px font-mono transition-colors hover:bg-surface-2 hover:text-accent"
+        >
+          {text}
+        </button>
+      );
+    }
     return <code className="inline-code rounded-[4px] px-[0.3em] py-px font-mono">{text}</code>;
   }
   return <CodeBlock code={text.replace(/\n$/, "")} language={/language-(\S+)/.exec(className ?? "")?.[1] ?? "text"} />;

@@ -1,5 +1,6 @@
-import { app, BrowserWindow, dialog, Menu, nativeTheme } from "electron";
+import { app, BrowserWindow, dialog, Menu, nativeTheme, shell } from "electron";
 import { join } from "node:path";
+import { externalUrl } from "../shared/links.ts";
 import {
   readAppSettings,
   registerIpc,
@@ -60,7 +61,11 @@ function createWindow(): BrowserWindow {
   });
   rememberBounds(win);
   // Model-generated links must never navigate a privileged renderer to another origin.
-  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    const safe = externalUrl(url);
+    if (safe) void shell.openExternal(safe);
+    return { action: "deny" };
+  });
   win.webContents.on("will-navigate", (event) => event.preventDefault());
   const senderId = win.webContents.id;
   // Closing or reloading the window (⌘R, a renderer crash) leaves nobody to answer its subscriptions or its

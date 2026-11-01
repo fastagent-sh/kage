@@ -13,6 +13,7 @@ import {
   resetAgentConfig,
   removeAgent,
   renameAgent,
+  resolveAgentPath,
   setAgentModel,
 } from "../agents.ts";
 import { modelsOf, offered } from "../models.ts";
@@ -62,7 +63,12 @@ export function registerAgents(): void {
   ipcMain.handle("agent:commands", async (_e, id: string) =>
     (await (await openAgent(await agentRow(id))).info()).commands,
   );
-  ipcMain.handle("agent:reveal", async (_e, id: string) => shell.showItemInFolder((await agentRow(id)).dir));
+  ipcMain.handle("agent:reveal", async (_e, id: string, path?: string) => {
+    if (path !== undefined && typeof path !== "string") throw new Error("Path must be a string");
+    const row = await agentRow(id);
+    const target = path ? await resolveAgentPath(row.dir, path) : row.dir;
+    shell.showItemInFolder(target);
+  });
   ipcMain.handle("registry:reveal", () => shell.showItemInFolder(registryFile));
   ipcMain.handle("models:list", async (_e, id: string) => modelsOf(await openAgent(await agentRow(id))));
 }

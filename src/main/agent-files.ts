@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { copyFile, realpath, stat, writeFile } from "node:fs/promises";
-import { basename, join, sep } from "node:path";
+import { homedir } from "node:os";
+import { basename, join, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createAgent } from "@fastagent-sh/fastagent";
+import { stripPathSuffix } from "../shared/links.ts";
 import { readJson, serially, writeJsonAtomic } from "./json-file.ts";
 
 export interface AgentRow {
@@ -157,3 +160,15 @@ export async function freshConfig(dir: string, config: string, now = new Date())
 
 // The folder is the agent. FastAgent refuses one that holds anything, so the person's own files are never touched.
 export const createAgentIn = (dir: string) => createAgent(dir);
+
+export async function resolveAgentPath(agentDir: string, rawPath: string, homeDir = homedir()): Promise<string> {
+  const trimmed = rawPath.trim();
+  if (!trimmed) throw new Error("Path cannot be empty");
+  const fromUrl = /^file:\/\//i.test(trimmed) ? fileURLToPath(new URL(trimmed)) : trimmed;
+  const clean = stripPathSuffix(fromUrl);
+  if (!clean) throw new Error(`Invalid path: ${rawPath}`);
+  const expanded =
+    clean === "~" ? homeDir : clean.startsWith("~/") ? join(homeDir, clean.slice(2)) : resolve(agentDir, clean);
+  return realpath(expanded);
+}
+

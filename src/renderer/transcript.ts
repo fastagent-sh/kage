@@ -282,6 +282,123 @@ export function firstArg(args: unknown): string {
   return text.length <= 72 ? text : `${text.slice(0, 71)}…`;
 }
 
+export type DiffLine = { kind: "same" | "remove" | "add"; text: string };
+
+export type ToolDetail =
+  | { kind: "edit"; path?: string; hunks: DiffLine[][] }
+  | { kind: "write"; path?: string; content: string }
+  | { kind: "args"; path?: string };
+
+const splitLines = (text: string): string[] => {
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return normalized === "" ? [] : normalized.split("\n");
+};
+
+export function diffLines(oldText: string, newText: string): DiffLine[] {
+  const oldLines = splitLines(oldText);
+  const newLines = splitLines(newText);
+  let start = 0;
+  while (start < oldLines.length && start < newLines.length && oldLines[start] === newLines[start]) start++;
+  let oldEnd = oldLines.length;
+  let newEnd = newLines.length;
+  while (oldEnd > start && newEnd > start && oldLines[oldEnd - 1] === newLines[newEnd - 1]) {
+    oldEnd--;
+    newEnd--;
+  }
+  const prefix: DiffLine[] = oldLines.slice(0, start).map((text) => ({ kind: "same", text }));
+  const suffix: DiffLine[] = oldLines.slice(oldEnd).map((text) => ({ kind: "same", text }));
+  const oldMid = oldLines.slice(start, oldEnd);
+  const newMid = newLines.slice(start, newEnd);
+  if (oldMid.length * newMid.length > 10_000) {
+    return [
+      ...prefix,
+      ...oldMid.map((text): DiffLine => ({ kind: "remove", text })),
+      ...newMid.map((text): DiffLine => ({ kind: "add", text })),
+      ...suffix,
+    ];
+  }
+  const rows = oldMid.length;
+  const cols = newMid.length;
+  const dp = Array.from({ length: rows + 1 }, () => new Uint16Array(cols + 1));
+  for (let i = rows - 1; i >= 0; i--) {
+    for (let j = cols - 1; j >= 0; j--) {
+      dp[i]![j] =
+        oldMid[i] === newMid[j] ? dp[i + 1]![j + 1]! + 1 : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
+    }
+  }
+  const middle: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < rows && j < cols) {
+    if (oldMid[i] === newMid[j]) {
+      middle.push({ kind: "same", text: oldMid[i]! });
+      i++;
+      j++;
+    } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) {
+      middle.push({ kind: "remove", text: oldMid[i]! });
+      i++;
+    } else {
+      middle.push({ kind: "add", text: newMid[j]! });
+      j++;
+    }
+  }
+  while (i < rows) middle.push({ kind: "remove", text: oldMid[i++]! });
+  while (j < cols) middle.push({ kind: "add", text: newMid[j++]! });
+  return [...prefix, ...middle, ...suffix];
+}
+
+function isEditPair(value: unknown): value is { oldText: string; newText: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as { oldText?: unknown; newText?: unknown };
+  return typeof candidate.oldText === "string" && typeof candidate.newText === "string";
+}
+
+function parseEdits(args: Record<string, unknown>): { oldText: string; newText: string }[] {
+  const raw = args.edits;
+  const list: { oldText: string; newText: string }[] = [];
+  if (Array.isArray(raw)) {
+    for (const item of raw) if (isEditPair(item)) list.push(item);
+  } else if (typeof raw === "string") {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) if (isEditPair(item)) list.push(item);
+      } else if (isEditPair(parsed)) list.push(parsed);
+    } catch {
+      // Malformed JSON in a tool call's raw `edits` string falls back to showing the raw arguments table.
+    }
+  } else if (isEditPair(raw)) {
+    list.push(raw);
+  }
+  if (isEditPair(args)) list.push({ oldText: args.oldText, newText: args.newText });
+  return list;
+}
+
+export function toolDetail(name: string, args: unknown): ToolDetail {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return { kind: "args" };
+  const record = args as Record<string, unknown>;
+  const path = typeof record.path === "string" && record.path.trim() ? record.path.trim() : undefined;
+  if (name === "edit") {
+    const edits = parseEdits(record);
+    if (edits.length > 0) return { kind: "edit", ...(path && { path }), hunks: edits.map((e) => diffLines(e.oldText, e.newText)) };
+  }
+  if (name === "write" && typeof record.content === "string") {
+    return { kind: "write", ...(path && { path }), content: record.content };
+  }
+  return { kind: "args", ...(path && { path }) };
+}
+
+export function visibleArgs(args: unknown, summary: string): [string, unknown][] {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return [];
+  return Object.entries(args).filter(
+    ([key, value]) =>
+      value !== undefined &&
+      value !== null &&
+      value !== "" &&
+      !(key === "path" ? firstArg({ path: value }) === summary : value === summary && !value.includes("\n")),
+  );
+}
+
 // Settled thinking is not output and is passed over. While calls run, the newest still running is quoted,
 // not a later one already finished (`ls` beside a running `sleep`).
 export function previewOf(items: Item[]): { text: string; at: number } | undefined {
@@ -304,7 +421,8 @@ export function previewOf(items: Item[]): { text: string; at: number } | undefin
               : "";
     const plain = text
       .replace(/^(#{1,6}|>)\s*/gm, "")
-      .replace(/```\w*|`|\*\*/g, "")
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      .replace(/```\w*|`|\*\*|\$\$/g, "")
       .replace(/\s+/g, " ")
       .trim();
     if (plain) return { text: plain, at: item.at };

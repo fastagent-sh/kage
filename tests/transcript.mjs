@@ -343,6 +343,25 @@ if (root) {
       return el.querySelector('[data-line="${card.line}"]').getBoundingClientRect().top - el.getBoundingClientRect().top;
     })()`);
     assert.ok(Math.abs(cardTop) < 2, `a place inside a card that comes back folded returns to its top (card at ${cardTop})`);
+
+    // Math, links, and inline file paths render in the real window, and a missing file path surfaces its error.
+    await evaluate(`document.querySelector('aside button[aria-label="Live"]').click()`);
+    await until(shown("Answered after a retry."), "back on Live");
+    script.push({
+      text: "Formula $E = mc^2$, file `src/missing.ts:10`, and [Docs](https://fastagent.sh/docs).\n\n$$\\sum_{i=1}^n i = \\frac{n(n+1)}{2}$$",
+    });
+    await send("render math and links");
+    await until(`document.querySelector('[aria-label="Transcript"] .katex-display') !== null`, "display math rendered");
+    await idle();
+    assert.equal(await evaluate(`document.querySelectorAll('[aria-label="Transcript"] .katex').length >= 2`), true, "inline and display math rendered");
+    assert.equal(
+      await evaluate(`document.querySelector('[aria-label="Transcript"] a[data-streamdown="link"]')?.getAttribute('href')`),
+      "https://fastagent.sh/docs",
+      "external link rendered as an anchor without Streamdown's modal button",
+    );
+    await evaluate(`document.querySelector('[aria-label="Transcript"] button[title="Show src/missing.ts in Finder"]').click()`);
+    await until(`document.body.innerText.includes('It could not be shown in Finder')`, "missing file path surfaces in the problem strip");
+
     assert.equal(script.length, 0, "every scripted answer was asked for");
     console.log("Transcript live end passed: calls, a lone call, a thought, an answer and a retry each one line; a long conversation opens at its end and fills in above it.");
   }
