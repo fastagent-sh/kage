@@ -7,9 +7,10 @@ with Week 1 and subsequent UI work; later stages are **planned**, not implemente
 
 ## Shipped local workbench
 
-The window has a 240–320px sidebar of agent rows, and a transcript with its own floating header
-and composer. There is no separate agent rail. Each agent row shows its name, two lines quoting the
-newest output of the conversation a click on it would show, that output's time, and a count of
+The window has a sidebar of agent rows, and a transcript with its own floating header and composer.
+When zoom leaves too little layout width, the roster opens from **Agents** and the header and composer
+take their own rows. Their controls and the scrolling transcript remain available with a long draft.
+There is no separate agent rail. Each agent row shows its name, two lines quoting the newest output of the conversation a click on it would show, that output's time, and a count of
 outcomes nobody has looked at yet. The quote streams while duang holds that conversation (on
 screen, or running in the background); otherwise it is read once from the conversation's history
 and again when the session list says it moved on, so a run driven from outside duang appears when
@@ -39,7 +40,7 @@ never written over an earlier copy), a new `export default {};` takes its place,
 for a model. Main replaces only the config FastAgent said failed, inside the agent's folder; the window does
 not name the file. Any other failure offers Retry and Reveal in Finder. A
 broken agent shows its original failure with a way to retry, reveal or remove it; any agent's row menu
-has Reveal in Finder, and the header shows the folders the agent works on (`works on app · handbook`, or its own folder with `Add folder…` when none are attached), a click on which reveals that folder. The header's Agent details button opens a right-hand inspector column showing the agent's own folder in `~/Agents/`, the folders it works on (with Add folder and per-folder Remove, which writes through FastAgent's `addContent` / `removeContent` and reopens the instance while no conversation is running), and the skills and tools the runtime loaded. Removal moves the agent's directory in `~/Agents/` and duang's conversations with the agent (its instance) to the Trash, after asking, and leaves the folders it works on untouched. Removing an agent, changing its folders, or replacing its config
+has Reveal in Finder, and the header shows the folders the agent works on (`works on app · handbook`, or its own folder with `Add folder…` when none are attached), a click on which reveals that folder. The header's Agent details button opens a right-hand inspector column when it fits, otherwise a native popover that does not squeeze the conversation. Both show the agent's own folder in `~/Agents/`, the folders it works on (with Add folder and per-folder Remove, which writes through FastAgent's `addContent` / `removeContent` and reopens the instance while no conversation is running), and the skills and tools the runtime loaded. Removal moves the agent's directory in `~/Agents/` and duang's conversations with the agent (its instance) to the Trash, after asking, and leaves the folders it works on untouched. Removing an agent, changing its folders, or replacing its config
 is refused while one of its conversations is at work, including a send still being recorded; changing its model is not, since nothing is rebuilt.
 A default model duang keeps for an agent that this computer's providers no longer offer (its provider was
 disconnected, or its config no longer declares the model) does not stop the agent opening: the chip names it, the picker
@@ -126,8 +127,11 @@ it is selectable at once and listed as *New conversation* until something is sai
 history; the client does not save a second transcript. A conversation's row is quoted from the newest message the person sent in
 it, read when the list is, so it follows the conversation as it goes; one with nothing the person said in view is `Conversation`. FastAgent cannot rename or delete a session,
 and duang does not offer either. The current local view keeps unsent text with its conversation
-across navigation and application restart. A failed draft save shows a warning with its original error
-while editing remains available; the next state publication retries the unsaved value. An invalid stored
+across navigation and application restart. Resizing or changing zoom preserves an inspector's unsaved
+form. A panel overlay closes with its close control, an outside click, Escape, or keyboard focus
+leaving it; this does not stop a run or leave Settings. Escape in an active rename or variable edit
+cancels that edit first. Closing an overlay restores focus when it was still inside the panel.
+A failed draft save shows a warning with its original error while editing remains available; the next state publication retries the unsaved value. An invalid stored
 value is preserved in `duang.drafts.unreadable` before new drafts may replace it. If reading or preserving
 that value fails, its original key stays untouched until a reload with working storage. Copy unsent text
 before closing or reloading a window that reports a storage problem. A send rejected before admission remains a draft, and a refusal is said each time, even when an

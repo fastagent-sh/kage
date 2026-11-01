@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { GearSix, Plus, WarningCircle } from "@phosphor-icons/react";
+import { GearSix, Plus, WarningCircle, X } from "@phosphor-icons/react";
 import type { AgentRow, DuangApi } from "../preload/index.ts";
 import { stamp } from "./time.ts";
 import type { Row } from "./sessions.ts";
@@ -8,6 +8,7 @@ import { faceOf } from "./face.ts";
 import { Badge, Button, Pill, type Tone } from "./ui.tsx";
 import type { AgentState, Preview } from "./store.ts";
 import type { Activity } from "./transcript.ts";
+import { ResponsivePanel } from "./responsive-panel.tsx";
 
 const tones: Record<AgentState, Tone> = {
   ready: "accent",
@@ -46,7 +47,10 @@ function RenameField({
         // The list's arrows and Delete belong to rows, not to a text field.
         event.stopPropagation();
         if (event.key === "Enter") onCommit(value);
-        if (event.key === "Escape") onCancel();
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onCancel();
+        }
       }}
       className={`rounded-card bg-bg px-2 py-1 outline-none ring-1 ring-accent/60 ${className}`}
     />
@@ -67,6 +71,9 @@ function useRestoreFocus(find: (key: string) => HTMLElement | null | undefined) 
 
 // Conversations live in the header's list: listed here they turned contacts into folders.
 export function Sidebar({
+  overlay,
+  open,
+  onClose,
   agents,
   agentId,
   states,
@@ -85,6 +92,9 @@ export function Sidebar({
   onReveal,
   onMenu,
 }: {
+  overlay: boolean;
+  open: boolean;
+  onClose: () => void;
   agents: AgentRow[];
   agentId?: string;
   states: Record<string, AgentState>;
@@ -125,7 +135,14 @@ export function Sidebar({
     setRenaming(undefined);
   };
   return (
-    <aside className="sidebar-panel w-[clamp(13.5rem,20vw,16.5rem)] shrink-0 flex flex-col min-h-0 rounded-float bg-sidebar ring-1 ring-stroke overflow-hidden">
+    <ResponsivePanel
+      id="agent-roster"
+      overlay={overlay}
+      open={open}
+      onClose={onClose}
+      aria-label="Agents"
+      className="sidebar-panel w-[clamp(13.5rem,20vw,16.5rem)] shrink-0 flex flex-col min-h-0 rounded-float bg-sidebar ring-1 ring-stroke overflow-hidden"
+    >
       {/* The wordmark is centred in the column, not pushed along by the window controls overhanging it. */}
       <div className="relative h-12 shrink-0 flex items-center px-2 drag">
         <span className="sidebar-wordmark absolute left-1/2 -translate-x-1/2 font-medium tracking-[-0.01em]">
@@ -141,6 +158,17 @@ export function Sidebar({
           aria-label="Create agent"
           icon={<Plus size={16} />}
         />
+        {overlay && (
+          <Button
+            kind="ghost"
+            size={28}
+            onClick={onClose}
+            className="no-drag"
+            aria-label="Close agents"
+            title="Close"
+            icon={<X size={15} />}
+          />
+        )}
       </div>
 
       {/* The 4px padding is the focus ring's reach: the list clips, and the first ring would lose its top edge. */}
@@ -272,7 +300,7 @@ export function Sidebar({
           Settings
         </button>
       </div>
-    </aside>
+    </ResponsivePanel>
   );
 }
 

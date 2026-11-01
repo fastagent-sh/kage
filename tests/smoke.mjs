@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import electron from "electron";
 import { isolated, withoutCredentials, writeMockAgent } from "./harness.mjs";
 import { open, windowDriver } from "./window.mjs";
+import { checkCompactSettings, checkPanelEscapeDuringRun, checkPanelLayout } from "./layout.mjs";
 
 const root = await isolated(import.meta.url, { name: "smoke", timeout: 150000 });
 if (root) {
@@ -314,6 +315,7 @@ if (root) {
         "document.querySelector('main').innerText.includes('Smoke answer') && !document.querySelector('main .bounce')",
         "stream settles",
       );
+      await checkPanelLayout(win, { evaluate, until, type });
       // Chromium once skipped the Latin face when the Latin and Chinese faces declared different weights.
       await until(
         "[...document.fonts].some((f) => f.family === 'Prose' && f.unicodeRange.startsWith('U+0-FF') && f.style === 'normal' && f.status === 'loaded')",
@@ -536,6 +538,7 @@ if (root) {
       await until(`!${listOpen}`, "Escape closes the list over a running turn");
       await new Promise((resolve) => setTimeout(resolve, 200));
       assert.ok(await evaluate("!!document.querySelector('button[aria-label=\"Stop the run\"]')"), "and the run keeps going");
+      await checkPanelEscapeDuringRun(win, { evaluate, until });
       await evaluate("document.querySelector('button[title^=\"New conversation\"]').click()");
       await until("document.body.innerText.includes('What should we work on')", "background run keeps going");
       await clickListed("Hold this turn so I can stop it.");
@@ -1140,6 +1143,7 @@ if (root) {
       // The chosen row checks its own connection on arrival; there is no button to find first.
       await until("document.querySelector('#network-heading') && /connected · \\d+ ms/.test(document.body.innerText)", "Settings… opens Settings and checks the route");
       assert.ok(await evaluate(`!!document.querySelector('button[aria-label="Configured"]')`), "the sidebar stays in view");
+      await checkCompactSettings(win, { evaluate, until });
       assert.deepEqual(
         await evaluate(`[...document.querySelectorAll('aside [aria-current]')].map((el) => el.textContent.trim())`),
         ["Settings"],

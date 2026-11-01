@@ -367,7 +367,7 @@ export function Transcript({
       onPointerDown={scrolled}
       onTouchStart={scrolled}
       // The scrollbar gutter is reserved on both sides so the column centres where the composer does.
-      className="flex-1 min-h-0 overflow-y-auto px-6 pt-16 [scrollbar-gutter:stable_both-edges]"
+      className="transcript-scroll flex-1 min-h-0 overflow-y-auto px-6 pt-16 [scrollbar-gutter:stable_both-edges]"
       style={{ paddingBottom: bottomGap }}
     >
       <div className="column">

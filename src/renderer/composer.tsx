@@ -324,7 +324,7 @@ export function Composer({
     // 12px margin so a line that only just fits does not wrap.
     const room = box.clientWidth - parseFloat(padding.paddingLeft) - parseFloat(padding.paddingRight) - side.offsetWidth - 8 - 12;
     ruler.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    setStacked(value.includes("\n") || ruler.measureText(value).width > room);
+    setStacked(room < 160 || value.includes("\n") || ruler.measureText(value).width > room);
   }, [value, fieldWidth, model, thinking?.level]);
   useEffect(() => {
     const el = input.current;
