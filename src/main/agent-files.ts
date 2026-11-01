@@ -258,24 +258,27 @@ export async function inspectAgentDir(agentDir: string, description?: string): P
   const files = fileChecks.filter((file): file is string => file !== undefined);
   const packages: { name: string; version: string }[] = [];
   const contextVariables = new Map<string, string | undefined>();
+  const isRecord = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
   if (contextRaw) {
     try {
-      const parsed = JSON.parse(contextRaw) as {
-        environment?: {
-          packages?: Record<string, unknown>;
-          aptPackages?: unknown[];
-          variables?: Record<string, { description?: unknown }>;
-        };
-      };
-      for (const [name, version] of Object.entries(parsed.environment?.packages ?? {})) {
-        if (typeof version === "string") packages.push({ name, version });
+      const parsed = JSON.parse(contextRaw) as unknown;
+      const env = isRecord(parsed) && isRecord(parsed.environment) ? parsed.environment : undefined;
+      if (env && isRecord(env.packages)) {
+        for (const [name, version] of Object.entries(env.packages)) {
+          if (typeof version === "string") packages.push({ name, version });
+        }
       }
-      for (const apt of parsed.environment?.aptPackages ?? []) {
-        if (typeof apt === "string") packages.push({ name: `apt:${apt}`, version: "system" });
+      if (env && Array.isArray(env.aptPackages)) {
+        for (const apt of env.aptPackages) {
+          if (typeof apt === "string") packages.push({ name: `apt:${apt}`, version: "system" });
+        }
       }
-      for (const [name, variable] of Object.entries(parsed.environment?.variables ?? {})) {
-        const desc = variable && typeof variable === "object" && typeof variable.description === "string" ? variable.description : undefined;
-        contextVariables.set(name, desc);
+      if (env && isRecord(env.variables)) {
+        for (const [name, variable] of Object.entries(env.variables)) {
+          const desc = isRecord(variable) && typeof variable.description === "string" ? variable.description : undefined;
+          contextVariables.set(name, desc);
+        }
       }
     } catch {
       // Malformed context.json is reported by openAgentResult's listContent check.
@@ -358,6 +361,7 @@ export async function inspectAgentDir(agentDir: string, description?: string): P
 }
 
 export async function setAgentSecret(agentDir: string, rawName: string, rawValue: string): Promise<AgentInspection> {
+  await requireFolder(agentDir);
   const name = rawName.trim();
   const value = rawValue.trim();
   if (!ENV_NAME_PATTERN.test(name)) {
@@ -393,6 +397,7 @@ export async function setAgentSecret(agentDir: string, rawName: string, rawValue
 }
 
 export async function removeAgentSecret(agentDir: string, rawName: string): Promise<AgentInspection> {
+  await requireFolder(agentDir);
   const name = rawName.trim();
   const envFile = join(agentDir, ".secrets", ".env");
   const existing = await readTextIfPresent(envFile);

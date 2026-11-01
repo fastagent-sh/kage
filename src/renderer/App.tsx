@@ -286,7 +286,7 @@ export default function App() {
                   plan={provider ? view.usage[provider] : undefined}
                   queued={c ? waiting.filter(({ listed }) => listed).length : undefined}
                   details={
-                    agentState !== "missing_dir"
+                    agentState === "ready" || agentState === "broken"
                       ? { open: detailsOpen, onToggle: () => setDetailsOpen((open) => !open) }
                       : undefined
                   }
@@ -403,28 +403,22 @@ export default function App() {
             </>
           )}
         </main>
-        {!settings && !creating && detailsOpen && agent && agentState !== "missing_dir" && (
+        {!settings && !creating && detailsOpen && agent && (agentState === "ready" || agentState === "broken") && (
           <AgentInspector
             key={agent.id}
             id={agent.id}
             name={agent.name}
             colour={agent.colour}
             face={faceOf({
-              state: agentState ?? "ready",
+              state: agentState,
               doing: view.doing[agent.id],
               outcomes: Object.values(view.unseen[agent.id] ?? {}),
               open: false,
             })}
             dir={agent.dir}
             model={view.model}
-            modelBlocked={
-              view.modelBlocked ??
-              (!c
-                ? "Open a conversation to choose a model"
-                : c.state?.model && c.state.model !== view.model
-                  ? `This conversation uses ${c.state.model}; start a new conversation to change the default model`
-                  : undefined)
-            }
+            showModel={agentState === "ready"}
+            skillBlocked={view.blocked}
             content={view.content[agent.id]}
             commands={view.agentCommands[agent.id]}
             tools={view.tools[agent.id]}
@@ -432,7 +426,6 @@ export default function App() {
             busy={busy || (view.running[agent.id]?.length ?? 0) > 0}
             loading={view.loading}
             onClose={() => setDetailsOpen(false)}
-            onPickModel={agentState === "ready" ? store.openPicker : undefined}
             onPickFolder={() => store.pickFolder()}
             onAddFolder={(folder) => store.addAgentFolder(folder, agent.id)}
             onRemoveFolder={(name) => store.removeAgentFolder(name, agent.id)}

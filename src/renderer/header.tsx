@@ -2,7 +2,6 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import {
   ArrowSquareOut,
   CaretDown,
-  CaretRight,
   Check,
   Cpu,
   FileText,
@@ -187,7 +186,8 @@ export function AgentInspector({
   face,
   dir,
   model,
-  modelBlocked,
+  showModel,
+  skillBlocked,
   content = [],
   commands = [],
   tools = [],
@@ -195,7 +195,6 @@ export function AgentInspector({
   busy,
   loading,
   onClose,
-  onPickModel,
   onPickFolder,
   onAddFolder,
   onRemoveFolder,
@@ -212,7 +211,8 @@ export function AgentInspector({
   face: Face;
   dir: string;
   model?: string;
-  modelBlocked?: string;
+  showModel?: boolean;
+  skillBlocked?: string;
   content?: AgentContent[];
   commands?: AgentCapability[];
   tools?: AgentCapability[];
@@ -220,7 +220,6 @@ export function AgentInspector({
   busy: boolean;
   loading?: boolean;
   onClose: () => void;
-  onPickModel?: () => void;
   onPickFolder: () => Promise<{ name: string; path: string } | undefined>;
   onAddFolder: (folder: string) => Promise<string | undefined>;
   onRemoveFolder: (name: string) => Promise<string | undefined>;
@@ -383,7 +382,7 @@ export function AgentInspector({
           )}
         </div>
 
-        {onPickModel && (
+        {showModel && (
           <section className="space-y-1.5">
             <div className="flex items-center justify-between px-1">
               <h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
@@ -391,22 +390,14 @@ export function AgentInspector({
                 <span>Default model</span>
               </h3>
             </div>
-            <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
-              <button
-                type="button"
-                aria-disabled={Boolean(modelBlocked || disabledReason) || undefined}
-                title={modelBlocked || disabledReason || undefined}
-                onClick={() => {
-                  if (modelBlocked || disabledReason) return;
-                  onPickModel();
-                }}
-                className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-hover aria-disabled:opacity-50"
+            <div className="rounded-card bg-surface px-3 py-2.5 ring-1 ring-stroke">
+              <span
+                className={`block break-all font-mono text-[12.5px] ${
+                  model ? "font-medium text-text" : "text-muted"
+                }`}
               >
-                <span className="min-w-0 flex-1 break-all font-mono text-[12.5px] font-medium text-text">
-                  {model ?? "Choose model…"}
-                </span>
-                <CaretRight size={13} className="shrink-0 text-muted" />
-              </button>
+                {model ?? "None set"}
+              </span>
             </div>
           </section>
         )}
@@ -505,7 +496,10 @@ export function AgentInspector({
                     onChange={(e) => setEditingSecret({ ...editingSecret, value: e.target.value })}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") void saveSecret();
-                      if (e.key === "Escape") setEditingSecret(undefined);
+                      if (e.key === "Escape") {
+                        setSecretError(undefined);
+                        setEditingSecret(undefined);
+                      }
                     }}
                     className="min-w-0 flex-1 rounded-[4px] bg-surface-2 px-2 py-1 font-mono text-[12px] text-text placeholder:text-muted/50 outline-none focus:ring-1 focus:ring-accent"
                     autoFocus
@@ -524,7 +518,10 @@ export function AgentInspector({
                     size={28}
                     aria-label="Cancel"
                     title="Cancel (Esc)"
-                    onClick={() => setEditingSecret(undefined)}
+                    onClick={() => {
+                      setSecretError(undefined);
+                      setEditingSecret(undefined);
+                    }}
                     icon={<X size={13} />}
                   />
                 </div>
@@ -543,6 +540,7 @@ export function AgentInspector({
                     disabled={!!disabledReason || secret.fromEnv}
                     onClick={() => {
                       if (secret.fromEnv) return;
+                      setSecretError(undefined);
                       setEditingSecret({ name: secret.name, value: "", fixedName: true });
                     }}
                     className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left disabled:cursor-default"
@@ -602,9 +600,12 @@ export function AgentInspector({
                     const raw = e.target.value;
                     const eq = raw.indexOf("=");
                     if (eq > 0 && !editingSecret.value) {
+                      let val = raw.slice(eq + 1).trim();
+                      const quote = val[0];
+                      if ((quote === '"' || quote === "'") && val.at(-1) === quote) val = val.slice(1, -1);
                       setEditingSecret({
                         name: raw.slice(0, eq).trim(),
-                        value: raw.slice(eq + 1).trim(),
+                        value: val,
                       });
                     } else {
                       setEditingSecret({ ...editingSecret, name: raw });
@@ -612,7 +613,10 @@ export function AgentInspector({
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && editingSecret.name.trim() && editingSecret.value.trim()) void saveSecret();
-                    if (e.key === "Escape") setEditingSecret(undefined);
+                    if (e.key === "Escape") {
+                      setSecretError(undefined);
+                      setEditingSecret(undefined);
+                    }
                   }}
                   className="w-[42%] shrink-0 rounded-[4px] bg-surface-2 px-2 py-1 font-mono text-[12px] text-text placeholder:text-muted/50 outline-none focus:ring-1 focus:ring-accent"
                   autoFocus
@@ -626,7 +630,10 @@ export function AgentInspector({
                   onChange={(e) => setEditingSecret({ ...editingSecret, value: e.target.value })}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && editingSecret.name.trim() && editingSecret.value.trim()) void saveSecret();
-                    if (e.key === "Escape") setEditingSecret(undefined);
+                    if (e.key === "Escape") {
+                      setSecretError(undefined);
+                      setEditingSecret(undefined);
+                    }
                   }}
                   className="min-w-0 flex-1 rounded-[4px] bg-surface-2 px-2 py-1 font-mono text-[12px] text-text placeholder:text-muted/50 outline-none focus:ring-1 focus:ring-accent"
                 />
@@ -648,7 +655,10 @@ export function AgentInspector({
                   size={28}
                   aria-label="Cancel"
                   title="Cancel (Esc)"
-                  onClick={() => setEditingSecret(undefined)}
+                  onClick={() => {
+                    setSecretError(undefined);
+                    setEditingSecret(undefined);
+                  }}
                   icon={<X size={13} />}
                 />
               </div>
@@ -656,7 +666,10 @@ export function AgentInspector({
               onSetSecret && (
                 <button
                   type="button"
-                  onClick={() => setEditingSecret({ name: "", value: "" })}
+                  onClick={() => {
+                    setSecretError(undefined);
+                    setEditingSecret({ name: "", value: "" });
+                  }}
                   disabled={!!disabledReason}
                   title={disabledReason || undefined}
                   className={`${rowDivider} flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium text-accent transition-colors hover:bg-hover disabled:opacity-50`}
@@ -683,15 +696,20 @@ export function AgentInspector({
             <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
               {visibleSkills.map((skill) => {
                 const skillName = skill.name.slice("skill:".length);
+                const blocked = skillBlocked || disabledReason;
                 return (
                   <button
                     key={skill.name}
                     type="button"
-                    onClick={() => onSelectSkill?.(skillName)}
-                    title={`Click to use /skill:${skillName}`}
-                    className={`${rowDivider} block w-full px-3 py-2 text-left transition-colors hover:bg-hover`}
+                    aria-disabled={Boolean(blocked) || undefined}
+                    onClick={() => {
+                      if (blocked) return;
+                      onSelectSkill?.(skillName);
+                    }}
+                    title={typeof blocked === "string" ? blocked : `Click to use /skill:${skillName}`}
+                    className={`${rowDivider} block w-full px-3 py-2 text-left transition-colors hover:bg-hover aria-disabled:opacity-50`}
                   >
-                    <div className="font-mono text-[12.5px] font-medium text-accent">/{skillName}</div>
+                    <div className="font-mono text-[12.5px] font-medium text-accent">/skill:{skillName}</div>
                     {skill.description && (
                       <div className="mt-0.5 text-[12px] leading-snug text-muted">{skill.description}</div>
                     )}
@@ -750,7 +768,7 @@ export function AgentInspector({
             <Button
               kind="danger"
               size={28}
-              disabled={busy && "Stop the running conversation before removing the agent"}
+              disabled={disabledReason}
               icon={<Trash size={13} />}
               onClick={onRemove}
             >

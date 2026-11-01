@@ -218,7 +218,11 @@ export async function withAgentRun<T>(row: AgentRow, run: (agent: LocalAgent) =>
   }
 }
 
-function change<T = {}>(id: string, apply: () => Promise<Result<T>>, afterClose?: () => Promise<void>): Promise<Result<T>> {
+function change<T = {}>(
+  id: string,
+  apply: () => Promise<Result<T>>,
+  options: { afterClose?: () => Promise<void>; closeFirst?: boolean } = {},
+): Promise<Result<T>> {
   if (changing.has(id)) return Promise.resolve(refuse("agent_changing", "Agent settings are changing; try again."));
   if (sending.has(id))
     return Promise.resolve(
@@ -230,14 +234,18 @@ function change<T = {}>(id: string, apply: () => Promise<Result<T>>, afterClose?
     const agent = await opened.get(id)?.catch(() => undefined);
     if (agent && (await runningSessions([{ id, agent }])).length > 0)
       return refuse("agent_busy", "An agent conversation is running — stop it before changing or removing the agent.");
+    if (options.closeFirst && agent) {
+      opened.delete(id);
+      await agent.close();
+    }
     const result = await apply();
     if (result.ok) {
-      if (agent) {
+      if (!options.closeFirst && agent) {
         // The instance's storage is held by one opener: release it so the next open reads the new definition.
         opened.delete(id);
         await agent.close();
       }
-      await afterClose?.();
+      await options.afterClose?.();
     }
     return result;
   })();
@@ -360,7 +368,7 @@ export function removeAgent(
       failedConfigs.delete(id);
       return { ok: true };
     },
-    () => rm(instanceDir(id), { recursive: true, force: true }),
+    { closeFirst: true, afterClose: () => rm(instanceDir(id), { recursive: true, force: true }) },
   );
 }
 

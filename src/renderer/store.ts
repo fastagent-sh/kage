@@ -324,18 +324,12 @@ export function createStore(api: DuangApi) {
     view = derive(view, [...conversations.values()], unsent, unseen, refusal, staleDefault);
     // A picker the person closed stays closed: it opens when the ask becomes a different one, and closes when
     // there is nothing to ask. A refusal opened it where it happened, so a return does not open it again.
-    const settlingConversation =
-      view.loading ||
-      Boolean(view.conversation?.loading) ||
-      Boolean(view.agentId && view.states[view.agentId] === "ready" && !view.conversation);
-    if (!settlingConversation) {
-      const question = view.modelAsk
-        ? `${view.conversation?.agentId}/${view.conversation?.session}/${view.modelAsk.reason}/${view.modelAsk.reason === "needs" ? "" : view.modelAsk.model}`
-        : "";
-      if (question !== asked) {
-        asked = question;
-        if (view.modelAsk?.reason !== "refused") view.picker = !!view.modelAsk;
-      }
+    const question = view.modelAsk
+      ? `${view.conversation?.agentId}/${view.conversation?.session}/${view.modelAsk.reason}/${view.modelAsk.reason === "needs" ? "" : view.modelAsk.model}`
+      : "";
+    if (question !== asked) {
+      asked = question;
+      if (view.modelAsk?.reason !== "refused") view.picker = !!view.modelAsk;
     }
     for (const listener of listeners) listener();
   };
@@ -508,34 +502,23 @@ export function createStore(api: DuangApi) {
     return known.find((s) => s.updatedAt === undefined)?.session ?? api.createSession(id);
   }
 
-  async function selectAgent(
-    id: string,
-    session?: string,
-    fallback: { content?: AgentContent[]; inspection?: AgentInspection } = {},
-  ) {
+  async function selectAgent(id: string, session?: string) {
     const request = ++navigation;
     const listCurrent = listTicket(id);
     const left = view.agentId;
-    const prevDescription = view.inspection[id]?.description;
-    const withDesc = (insp?: AgentInspection) =>
-      insp && prevDescription && !insp.description ? { ...insp, description: prevDescription } : insp;
     leave();
     if (left && left !== id) void readPreview(left);
     selectResources(id);
-    const { [id]: _reopening, ...restStates } = view.states;
     publish({
       agentId: id,
       model: undefined,
       error: undefined,
       errorInConfig: undefined,
       loading: true,
-      states: restStates,
     });
     try {
       const result = await api.openAgent(id);
       if (request !== navigation) return;
-      const nextContent = result.content ?? fallback.content;
-      const nextInspection = withDesc(result.inspection ?? fallback.inspection);
       if (!result.ok) {
         const { [id]: _staleTools, ...restTools } = view.tools;
         const { [id]: _staleCommands, ...restCommands } = view.agentCommands;
@@ -547,8 +530,8 @@ export function createStore(api: DuangApi) {
           states: { ...view.states, [id]: result.code },
           error: result.message,
           errorInConfig: result.inConfig,
-          ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
-          ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
+          ...(result.content && { content: { ...view.content, [id]: result.content } }),
+          ...(result.inspection && { inspection: { ...view.inspection, [id]: result.inspection } }),
         });
         return;
       }
@@ -557,8 +540,10 @@ export function createStore(api: DuangApi) {
         loading: false,
         model: result.model,
         contextWindows: result.windows,
+        ...(result.content && { content: { ...view.content, [id]: result.content } }),
         ...(result.tools && { tools: { ...view.tools, [id]: result.tools } }),
         ...(result.commands && { agentCommands: { ...view.agentCommands, [id]: result.commands } }),
+        ...(result.inspection && { inspection: { ...view.inspection, [id]: result.inspection } }),
         ...(listCurrent() ? { sessions: { ...view.sessions, [id]: result.sessions }, sessionsError } : {}),
         states: { ...view.states, [id]: "ready" },
       });
@@ -568,10 +553,7 @@ export function createStore(api: DuangApi) {
       await open(session ?? openable(id, result.sessions) ?? (await begin(id, result.sessions)));
       if (request !== navigation) return;
       // After the conversation opened: opening one is what sets the ask, by what it can run.
-      publish({
-        ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
-        ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
-      });
+      if (request === navigation) publish();
     } catch (error) {
       if (request === navigation) {
         const { [id]: _staleTools, ...restTools } = view.tools;
@@ -603,9 +585,81 @@ export function createStore(api: DuangApi) {
       void listSessions(id);
       return;
     }
-    const currentSession = view.conversation?.agentId === id ? view.conversation.session : undefined;
-    if (view.conversation?.agentId === id) close(view.conversation);
-    await selectAgent(id, currentSession, fallback);
+    const request = ++navigation;
+    const listCurrent = listTicket(id);
+    selectResources(id);
+    publish({ loading: true });
+    try {
+      const result = await api.openAgent(id);
+      if (request !== navigation || view.agentId !== id) return;
+      const nextContent = result.content ?? fallback.content;
+      if (!result.ok) {
+        if (view.conversation?.agentId === id) close(view.conversation);
+        leave();
+        const nextInspection = withDesc(result.inspection ?? fallback.inspection);
+        const { [id]: _staleTools, ...restTools } = view.tools;
+        const { [id]: _staleCommands, ...restCommands } = view.agentCommands;
+        publish({
+          loading: false,
+          model: undefined,
+          tools: restTools,
+          agentCommands: restCommands,
+          states: { ...view.states, [id]: result.code },
+          error: result.message,
+          errorInConfig: result.inConfig,
+          ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
+          ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
+        });
+        return;
+      }
+      const nextInspection = result.inspection ?? withDesc(fallback.inspection);
+      const { [id]: _cleared, ...sessionsError } = view.sessionsError;
+      const currentSession = view.conversation?.agentId === id ? view.conversation.session : undefined;
+      const savedAsked = asked;
+      const savedPicker = view.picker;
+      if (view.conversation?.agentId === id) close(view.conversation);
+      publish({
+        loading: false,
+        error: undefined,
+        errorInConfig: undefined,
+        model: result.model,
+        contextWindows: result.windows,
+        ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
+        ...(result.tools && { tools: { ...view.tools, [id]: result.tools } }),
+        ...(result.commands && { agentCommands: { ...view.agentCommands, [id]: result.commands } }),
+        ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
+        ...(listCurrent() ? { sessions: { ...view.sessions, [id]: result.sessions }, sessionsError } : {}),
+        states: { ...view.states, [id]: "ready" },
+      });
+      staleDefault = result.staleDefault ? { agentId: id, model: result.staleDefault } : undefined;
+      const nextSession = currentSession ?? openable(id, result.sessions) ?? (await begin(id, result.sessions));
+      if (request !== navigation || view.agentId !== id) return;
+      if (currentSession && nextSession === currentSession) asked = savedAsked;
+      await open(nextSession);
+      if (request === navigation && view.agentId === id) {
+        if (currentSession && nextSession === currentSession) {
+          asked = savedAsked;
+          publish({ picker: savedPicker });
+        } else {
+          publish();
+        }
+      }
+    } catch (error) {
+      if (request === navigation && view.agentId === id) {
+        if (view.conversation?.agentId === id) close(view.conversation);
+        leave();
+        const { [id]: _staleTools, ...restTools } = view.tools;
+        const { [id]: _staleCommands, ...restCommands } = view.agentCommands;
+        publish({
+          loading: false,
+          model: undefined,
+          tools: restTools,
+          agentCommands: restCommands,
+          error: message(error),
+          states: { ...view.states, [id]: "broken" },
+        });
+      }
+    }
   }
 
   // Read again after a model change, which the session's own events may not have reported before it was subscribed.
