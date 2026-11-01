@@ -112,8 +112,10 @@ test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers
     const registry = new AgentRegistry(join(root, "agents.json"));
     const tally = join(root, "tally");
     const handbook = join(root, "handbook");
-    await Promise.all([mkdir(tally), mkdir(handbook)]);
+    await Promise.all([mkdir(join(tally, "handbook"), { recursive: true }), mkdir(handbook)]);
     await writeFile(join(tally, "index.ts"), "export const n = 1;\n");
+    await writeFile(join(tally, "handbook", "guide.md"), "shadow\n");
+    await writeFile(join(handbook, "guide.md"), "real handbook\n");
 
     const first = await createNewAgent({ name: "Reviewer", folders: [tally, handbook], root: agentsDir, registry });
     assert.equal(first.name, "Reviewer");
@@ -128,9 +130,10 @@ test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers
         ["handbook", await realpath(handbook)],
       ],
     );
-    // Relative paths inside bound folders resolve through resolveAgentPath.
+    // Relative paths inside bound folders resolve through resolveAgentPath, preferring explicit <name>/ prefixes.
     assert.equal(await resolveAgentPath(first.dir, "index.ts", root), await realpath(join(tally, "index.ts")));
     assert.equal(await resolveAgentPath(first.dir, "tally/index.ts", root), await realpath(join(tally, "index.ts")));
+    assert.equal(await resolveAgentPath(first.dir, "handbook/guide.md", root), await realpath(join(handbook, "guide.md")));
 
     // Same name gets -2, and a name with / or .. never escapes ~/Agents/.
     const second = await createNewAgent({ name: "Reviewer", folders: [], root: agentsDir, registry });

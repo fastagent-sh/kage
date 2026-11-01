@@ -174,7 +174,7 @@ export default function App() {
         />
         <main className="relative flex-1 flex flex-col min-w-0 min-h-0">
           {/* Floating over the pane, so nothing below moves when one comes or goes (docs/ui.md §9b). */}
-          {(view.draftsError || (!settings && (view.failure || alert || c?.ended))) && (
+          {(view.draftsError || (!settings && !creating && (view.failure || alert || c?.ended))) && (
             <div className="pointer-events-none absolute inset-x-0 top-20 z-[7] px-6">
               <div className="column space-y-2">
                 {view.draftsError && (
@@ -186,7 +186,7 @@ export default function App() {
                     reason={view.draftsError}
                   />
                 )}
-                {!settings && view.failure && (
+                {!settings && !creating && view.failure && (
                   <Problem
                     layout="strip"
                     tone="error"
@@ -195,7 +195,7 @@ export default function App() {
                     onDismiss={store.dismissFailure}
                   />
                 )}
-                {!settings && (alert ? (
+                {!settings && !creating && (alert ? (
                   <Problem
                     layout="strip"
                     tone="error"

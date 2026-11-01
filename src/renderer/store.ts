@@ -699,7 +699,6 @@ export function createStore(api: DuangApi) {
         await selectAgent(result.agent.id);
         return undefined;
       } catch (error) {
-        fail("The agent was not created", error);
         return message(error);
       }
     },

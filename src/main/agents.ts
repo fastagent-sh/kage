@@ -67,10 +67,19 @@ const changing = new Map<string, Promise<void>>();
 // Main keeps the failing path rather than taking one from the window.
 const failedConfigs = new Map<string, string>();
 
+async function evictAgent(id: string): Promise<void> {
+  const existing = opened.get(id);
+  if (!existing) return;
+  opened.delete(id);
+  const agent = await existing.catch(() => undefined);
+  await agent?.close().catch(() => undefined);
+}
+
 async function build(row: AgentRow): Promise<LocalAgent> {
   // Before anything can fail: a failure that is not the config's must not offer to replace it.
   failedConfigs.delete(row.id);
   await requireFolder(row.dir);
+  await listContent(row.dir);
   try {
     return await openFastAgent(row.dir, { credentials, stateDir: instanceDir(row.id) });
   } catch (error) {
@@ -94,7 +103,16 @@ export async function openAgent(row: AgentRow): Promise<LocalAgent> {
     if (!(await registry.list()).some((a) => a.id === row.id)) throw new Error(`unknown agent ${row.id}`);
   }
   const cached = opened.get(row.id);
-  if (cached) return cached;
+  if (cached) {
+    try {
+      await requireFolder(row.dir);
+      await listContent(row.dir);
+    } catch (error) {
+      await evictAgent(row.id);
+      throw error;
+    }
+    return cached;
+  }
   const promise = build(row);
   opened.set(row.id, promise);
   void promise.catch(() => {
@@ -213,33 +231,29 @@ export function resetAgentConfig(row: AgentRow): Promise<Result> {
   });
 }
 
-// Removing an agent deletes its instance and moves the agent directory duang created to the Trash; bound folders stay untouched.
+// Removing an agent moves the agent directory duang created to the Trash first, then deletes its registry row and instance; bound folders stay untouched.
 export function removeAgent(
   id: string,
   trash: (dir: string) => Promise<void> = (dir) => rm(dir, { recursive: true, force: true }),
 ): Promise<Result> {
-  let dir: string | undefined;
   return change(
     id,
     async () => {
-      dir = (await agentRow(id)).dir;
+      const { dir } = await agentRow(id);
+      await evictAgent(id);
+      const exists = await stat(dir).then(
+        () => true,
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT" || error.code === "ENOTDIR") return false;
+          throw error;
+        },
+      );
+      if (exists) await trash(dir);
       await registry.remove(id);
       failedConfigs.delete(id);
       return { ok: true };
     },
-    async () => {
-      await rm(instanceDir(id), { recursive: true, force: true });
-      if (dir) {
-        const exists = await stat(dir).then(
-          () => true,
-          (error: NodeJS.ErrnoException) => {
-            if (error.code === "ENOENT" || error.code === "ENOTDIR") return false;
-            throw error;
-          },
-        );
-        if (exists) await trash(dir);
-      }
-    },
+    () => rm(instanceDir(id), { recursive: true, force: true }),
   );
 }
 

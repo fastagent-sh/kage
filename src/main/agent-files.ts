@@ -220,6 +220,8 @@ export async function resolveAgentPath(agentDir: string, rawPath: string, homeDi
         const inside = await realpath(resolve(entry.location, clean.slice(entry.name.length + 1))).catch(() => undefined);
         if (inside) return inside;
       }
+    }
+    for (const entry of entries) {
       const direct = await realpath(resolve(entry.location, clean)).catch(() => undefined);
       if (direct) return direct;
     }

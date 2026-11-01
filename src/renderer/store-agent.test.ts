@@ -75,10 +75,15 @@ test("an unreadable agent list is its own pane; a refused create returns its rea
   api.createAgent = async () => {
     throw new Error("EACCES: permission denied, mkdir '/Users/someone/Agents'");
   };
-  await store.createAgent("Reviewer", []);
-  assert.equal(store.getSnapshot().pane, "no-agents", "creating failed; the list itself was read fine");
-  assert.equal(store.getSnapshot().failure?.title, "The agent was not created");
-  assert.match(store.getSnapshot().failure?.reason ?? "", /EACCES/);
+  assert.match((await store.createAgent("Reviewer", [])) ?? "", /EACCES/);
+  assert.equal(store.getSnapshot().failure, undefined, "createAgent returns its error to the form without duplicating it in the strip");
+
+  api.pickFolder = async () => {
+    throw new Error("ENOENT: no such file or directory, realpath '/gone'");
+  };
+  await store.pickFolder();
+  assert.equal(store.getSnapshot().failure?.title, "The folder could not be added");
+  assert.match(store.getSnapshot().failure?.reason ?? "", /realpath/);
   store.dismissFailure();
   assert.equal(store.getSnapshot().failure, undefined);
   store.dispose();
