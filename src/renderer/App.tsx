@@ -424,7 +424,11 @@ export default function App() {
             inspection={view.inspection[agent.id]}
             busy={busy || (view.running[agent.id]?.length ?? 0) > 0}
             onClose={() => setDetailsOpen(false)}
-            onPickModel={agentState === "ready" ? store.openPicker : undefined}
+            onPickModel={
+              agentState === "ready" && (!c?.state?.model || c.state.model === view.model)
+                ? store.openPicker
+                : undefined
+            }
             onPickFolder={() => store.pickFolder()}
             onAddFolder={(folder) => store.addAgentFolder(folder, agent.id)}
             onRemoveFolder={(name) => store.removeAgentFolder(name, agent.id)}

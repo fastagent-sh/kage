@@ -57,6 +57,7 @@ export function harness() {
   const closed: string[] = [];
   const opens: string[] = [];
   const api: DuangApi = {
+    homeDir: undefined,
     listAgents: async () => [
       { id: "a", name: "A", dir: "/a", colour: 0 },
       { id: "b", name: "B", dir: "/b", colour: 1 },
@@ -75,13 +76,11 @@ export function harness() {
         files: [],
         packages: [],
         secrets: [{ name, optional: true, declaredIn: [".secrets/.env"], configured: true, fromFile: true }],
-        channels: [],
-        schedules: [],
       },
     }),
     removeAgentSecret: async () => ({
       ok: true,
-      inspection: { files: [], packages: [], secrets: [], channels: [], schedules: [] },
+      inspection: { files: [], packages: [], secrets: [] },
     }),
     setModel: async () => ({ ok: true }) as Result,
     setThinking: async () => ({ ok: true }) as Result,

@@ -172,7 +172,7 @@ test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers
     );
     assert.deepEqual((await readdir(agentsDir)).sort(), ["Reviewer", "Reviewer-2", "outside"].sort());
 
-    // inspectAgentDir reports definition files, environment packages, secret status (without values), channels, and schedules.
+    // inspectAgentDir reports definition files, environment packages/variables, and secret status (without values).
     await mkdir(join(first.dir, ".fastagent"), { recursive: true });
     await writeFile(
       join(first.dir, ".fastagent", "secrets.json"),
@@ -182,15 +182,16 @@ test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers
       ]),
     );
     await mkdir(join(first.dir, ".secrets"), { recursive: true });
-    await writeFile(join(first.dir, ".secrets", ".env"), "GITHUB_TOKEN=secret-value\n");
+    await writeFile(join(first.dir, ".secrets", ".env"), "# --- fastagent ---\nGITHUB_TOKEN=secret-value\n");
     await writeFile(
       join(first.dir, "context.json"),
-      JSON.stringify({ environment: { packages: { gh: "2", jq: "latest" } } }),
+      JSON.stringify({
+        environment: {
+          packages: { gh: "2", jq: "latest" },
+          variables: { CONTEXT_VAR: { description: "From context.json" } },
+        },
+      }),
     );
-    await mkdir(join(first.dir, "src", "channels"), { recursive: true });
-    await writeFile(join(first.dir, "src", "channels", "telegram.ts"), "export default {};\n");
-    await mkdir(join(first.dir, "src", "schedules"), { recursive: true });
-    await writeFile(join(first.dir, "src", "schedules", "daily.ts"), "export default {};\n");
     const inspected = await inspectAgentDir(first.dir, "Reviews pull requests");
     assert.equal(inspected.description, "Reviews pull requests");
     assert.ok(inspected.files.includes("SYSTEM.md"));
@@ -209,18 +210,28 @@ test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers
         fromFile: true,
       },
       { name: "OPTIONAL_KEY", optional: true, declaredIn: ["src/tools/opt.ts"], configured: false },
+      {
+        name: "CONTEXT_VAR",
+        optional: false,
+        description: "From context.json",
+        declaredIn: ["context.json"],
+        configured: false,
+      },
     ]);
-    assert.deepEqual(inspected.channels, ["telegram"]);
-    assert.deepEqual(inspected.schedules, ["daily"]);
 
     const afterSet = await setAgentSecret(first.dir, "CUSTOM_API_KEY", 'a"b\\c');
     assert.ok(afterSet.secrets.some((s) => s.name === "CUSTOM_API_KEY" && s.configured && s.fromFile));
     await setAgentSecret(first.dir, "SINGLE_QUOTE", '"');
     const rawEnv = await readFile(join(first.dir, ".secrets", ".env"), "utf8");
+    assert.match(rawEnv, /^# --- fastagent ---$/m, "comments and section headers in .secrets/.env are preserved");
     assert.match(rawEnv, /^CUSTOM_API_KEY=a"b\\c$/m, "values with quotes and backslashes do not accumulate JSON escapes");
-    assert.match(rawEnv, /^SINGLE_QUOTE="$/m, "a single quote character is not stripped to empty");
+    assert.match(rawEnv, /^SINGLE_QUOTE="""$/m, "a single quote character is wrapped so FastAgent's slice(1, -1) preserves it");
     const afterDelete = await removeAgentSecret(first.dir, "CUSTOM_API_KEY");
     assert.ok(!afterDelete.secrets.some((s) => s.name === "CUSTOM_API_KEY"));
+    assert.ok(afterDelete.secrets.some((s) => s.name === "SINGLE_QUOTE" && s.configured));
+
+    await writeFile(join(first.dir, ".fastagent", "secrets.json"), "{not-json");
+    await assert.rejects(inspectAgentDir(first.dir), /secrets\.json/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

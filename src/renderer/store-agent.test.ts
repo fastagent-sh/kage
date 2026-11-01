@@ -461,8 +461,6 @@ test("opening an agent records its loaded tools and commands, and adding or remo
             files: ["SYSTEM.md"],
             packages: [],
             secrets: [{ name: "GITHUB_TOKEN", optional: false, declaredIn: ["src/tools/gh.ts"], configured: true, fromFile: true }],
-            channels: [],
-            schedules: [],
           },
         }
       : {
@@ -474,8 +472,6 @@ test("opening an agent records its loaded tools and commands, and adding or remo
             files: ["SYSTEM.md"],
             packages: [],
             secrets: [{ name: "GITHUB_TOKEN", optional: false, declaredIn: ["src/tools/gh.ts"], configured: false }],
-            channels: [],
-            schedules: [],
           },
         };
   await store.load();
@@ -519,8 +515,6 @@ test("opening an agent records its loaded tools and commands, and adding or remo
         files: ["SYSTEM.md"],
         packages: [],
         secrets: [{ name: "GITHUB_TOKEN", optional: false, declaredIn: ["src/tools/gh.ts"], configured: false }],
-        channels: [],
-        schedules: [],
       },
     };
   };
@@ -536,8 +530,6 @@ test("opening an agent records its loaded tools and commands, and adding or remo
         files: ["SYSTEM.md"],
         packages: [],
         secrets: [{ name: "GITHUB_TOKEN", optional: false, declaredIn: ["src/tools/gh.ts"], configured: true, fromFile: true }],
-        channels: [],
-        schedules: [],
       },
     };
   };

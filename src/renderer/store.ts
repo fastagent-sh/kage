@@ -569,43 +569,51 @@ export function createStore(api: DuangApi) {
       void listSessions(id);
       return;
     }
-    const request = navigation;
+    const request = ++navigation;
     const currentSession = view.conversation?.agentId === id ? view.conversation.session : undefined;
     if (view.conversation?.agentId === id) close(view.conversation);
+    leave();
     resetCommands();
-    const opened = await api.openAgent(id);
-    if (request !== navigation || view.agentId !== id) return;
-    const nextContent = opened.content ?? fallback.content;
-    const nextInspection = withDesc(opened.inspection ?? fallback.inspection);
-    if (!opened.ok) {
-      leave();
+    publish({ loading: true, error: undefined, errorInConfig: undefined });
+    try {
+      const opened = await api.openAgent(id);
+      if (request !== navigation || view.agentId !== id) return;
+      const nextContent = opened.content ?? fallback.content;
+      const nextInspection = withDesc(opened.inspection ?? fallback.inspection);
+      if (!opened.ok) {
+        publish({
+          loading: false,
+          states: { ...view.states, [id]: opened.code },
+          error: opened.message,
+          errorInConfig: opened.inConfig,
+          ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
+          ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
+        });
+        return;
+      }
       publish({
-        states: { ...view.states, [id]: opened.code },
-        error: opened.message,
-        errorInConfig: opened.inConfig,
+        loading: false,
+        error: undefined,
+        errorInConfig: undefined,
+        model: opened.model,
+        contextWindows: opened.windows,
         ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
+        ...(opened.tools && { tools: { ...view.tools, [id]: opened.tools } }),
+        ...(opened.commands && { agentCommands: { ...view.agentCommands, [id]: opened.commands } }),
         ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
+        sessions: { ...view.sessions, [id]: opened.sessions },
+        states: { ...view.states, [id]: "ready" },
       });
-      return;
+      staleDefault = opened.staleDefault ? { agentId: id, model: opened.staleDefault } : undefined;
+      const nextSession = currentSession ?? openable(id, opened.sessions) ?? (await begin(id, opened.sessions));
+      if (request !== navigation || view.agentId !== id) return;
+      await open(nextSession);
+      if (request === navigation && view.agentId === id) publish();
+    } catch (error) {
+      if (request === navigation && view.agentId === id) {
+        publish({ loading: false, error: message(error), states: { ...view.states, [id]: "broken" } });
+      }
     }
-    const nextSession = currentSession ?? openable(id, opened.sessions) ?? (await begin(id, opened.sessions));
-    if (request !== navigation || view.agentId !== id) return;
-    await open(nextSession);
-    if (request !== navigation || view.agentId !== id) return;
-    publish({
-      error: undefined,
-      errorInConfig: undefined,
-      model: opened.model,
-      contextWindows: opened.windows,
-      ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
-      ...(opened.tools && { tools: { ...view.tools, [id]: opened.tools } }),
-      ...(opened.commands && { agentCommands: { ...view.agentCommands, [id]: opened.commands } }),
-      ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
-      sessions: { ...view.sessions, [id]: opened.sessions },
-      states: { ...view.states, [id]: "ready" },
-    });
-    staleDefault = opened.staleDefault ? { agentId: id, model: opened.staleDefault } : undefined;
-    publish();
   }
 
   // Read again after a model change, which the session's own events may not have reported before it was subscribed.

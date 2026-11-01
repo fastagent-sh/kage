@@ -1,7 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import {
   ArrowSquareOut,
-  Broadcast,
   CaretDown,
   CaretRight,
   Check,
@@ -324,8 +323,6 @@ export function AgentInspector({
   const files = inspection?.files ?? [];
   const secrets = inspection?.secrets ?? [];
   const packages = inspection?.packages ?? [];
-  const channels = inspection?.channels ?? [];
-  const schedules = inspection?.schedules ?? [];
 
   return (
     <aside
@@ -383,7 +380,7 @@ export function AgentInspector({
           )}
         </div>
 
-        {onPickModel && (
+        {(model || onPickModel) && (
           <section className="space-y-1.5">
             <div className="flex items-center justify-between px-1">
               <h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
@@ -392,21 +389,27 @@ export function AgentInspector({
               </h3>
             </div>
             <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
-              <button
-                type="button"
-                aria-disabled={Boolean(modelBlocked || disabledReason) || undefined}
-                title={modelBlocked || disabledReason || undefined}
-                onClick={() => {
-                  if (modelBlocked || disabledReason) return;
-                  onPickModel();
-                }}
-                className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-hover aria-disabled:opacity-50"
-              >
-                <span className="min-w-0 flex-1 break-all font-mono text-[12.5px] font-medium text-text">
-                  {model ?? "Choose model…"}
-                </span>
-                <CaretRight size={13} className="shrink-0 text-muted" />
-              </button>
+              {onPickModel ? (
+                <button
+                  type="button"
+                  aria-disabled={Boolean(modelBlocked || disabledReason) || undefined}
+                  title={modelBlocked || disabledReason || undefined}
+                  onClick={() => {
+                    if (modelBlocked || disabledReason) return;
+                    onPickModel();
+                  }}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-hover aria-disabled:opacity-50"
+                >
+                  <span className="min-w-0 flex-1 break-all font-mono text-[12.5px] font-medium text-text">
+                    {model ?? "Choose model…"}
+                  </span>
+                  <CaretRight size={13} className="shrink-0 text-muted" />
+                </button>
+              ) : (
+                <div className="px-3 py-2.5">
+                  <span className="break-all font-mono text-[12.5px] font-medium text-text">{model}</span>
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -531,26 +534,39 @@ export function AgentInspector({
               ) : (
                 <div
                   key={secret.name}
-                  title={secret.description ?? secret.declaredIn.join(", ")}
+                  title={
+                    secret.fromEnv
+                      ? `${secret.name} is set in the process environment and overrides .secrets/.env`
+                      : (secret.description ?? secret.declaredIn.join(", "))
+                  }
                   className={`${rowDivider} flex items-center justify-between gap-2 py-2 pr-1.5 pl-3`}
                 >
                   <button
                     type="button"
-                    disabled={!!disabledReason}
-                    onClick={() => setEditingSecret({ name: secret.name, value: "", fixedName: true })}
-                    className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left"
+                    disabled={!!disabledReason || secret.fromEnv}
+                    onClick={() => {
+                      if (secret.fromEnv) return;
+                      setEditingSecret({ name: secret.name, value: "", fixedName: true });
+                    }}
+                    className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left disabled:cursor-default"
                   >
                     <span className="break-all font-mono text-[12px] font-medium text-text">{secret.name}</span>
-                    {secret.configured && (
+                    {secret.configured && !secret.fromEnv && (
                       <span className="shrink-0 font-mono text-[11px] text-muted">••••••</span>
                     )}
                   </button>
-                  {!secret.configured && (
-                    <Badge tone={secret.optional ? "muted" : "danger"}>
-                      {secret.optional ? "optional" : "missing"}
+                  {secret.fromEnv ? (
+                    <Badge tone={secret.configured ? "muted" : "danger"}>
+                      {secret.configured ? "from env" : "empty in env"}
                     </Badge>
+                  ) : (
+                    !secret.configured && (
+                      <Badge tone={secret.optional ? "muted" : "danger"}>
+                        {secret.optional ? "optional" : "missing"}
+                      </Badge>
+                    )
                   )}
-                  {secret.fromFile && onRemoveSecret && (
+                  {secret.fromFile && !secret.fromEnv && onRemoveSecret && (
                     <Button
                       kind="ghost"
                       size={28}
@@ -655,40 +671,6 @@ export function AgentInspector({
             )}
           </div>
         </section>
-
-        {(channels.length > 0 || schedules.length > 0) && (
-          <section className="space-y-1.5">
-            <div className="flex items-center justify-between px-1">
-              <h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
-                <Broadcast size={13} />
-                <span>Channels & schedules</span>
-              </h3>
-              <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted tabular-nums">
-                {channels.length + schedules.length}
-              </span>
-            </div>
-            <div className="rounded-card bg-surface p-2.5 ring-1 ring-stroke">
-              <div className="flex flex-wrap gap-1.5">
-                {channels.map((channel) => (
-                  <span
-                    key={`ch:${channel}`}
-                    className="rounded-[4px] bg-accent-weak px-2 py-0.5 font-mono text-[11px] text-accent"
-                  >
-                    {channel}
-                  </span>
-                ))}
-                {schedules.map((schedule) => (
-                  <span
-                    key={`sc:${schedule}`}
-                    className="rounded-[4px] bg-surface-2 px-2 py-0.5 font-mono text-[11px] text-text"
-                  >
-                    {schedule}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </section>
-        )}
 
         <section className="space-y-1.5">
           <div className="flex items-center justify-between px-1">

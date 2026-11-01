@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { copyFile, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -184,6 +184,7 @@ export interface AgentSecretStatus {
   declaredIn: string[];
   configured: boolean;
   fromFile?: boolean;
+  fromEnv?: boolean;
 }
 
 export interface AgentInspection {
@@ -191,13 +192,9 @@ export interface AgentInspection {
   files: string[];
   packages: { name: string; version: string }[];
   secrets: AgentSecretStatus[];
-  channels: string[];
-  schedules: string[];
 }
 
 const DEFINITION_FILES = ["SYSTEM.md", "APPEND_SYSTEM.md", "AGENTS.md", "fastagent.config.ts", "context.json"];
-const MODULE_EXT = /^([^.][^/]*)\.(ts|mts|js|mjs)$/;
-const IGNORED_MODULE = /\.(d|test|spec)\.[a-z]+$/;
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 async function readTextIfPresent(file: string): Promise<string | undefined> {
@@ -209,44 +206,39 @@ async function readTextIfPresent(file: string): Promise<string | undefined> {
   }
 }
 
+function parseDotEnvLine(raw: string): { key: string; value: string } | undefined {
+  const line = raw.trim();
+  if (!line || line.startsWith("#")) return undefined;
+  const eq = line.indexOf("=");
+  if (eq < 1) return undefined;
+  const key = line.slice(0, eq).trim();
+  let value = line.slice(eq + 1).trim();
+  const quote = value[0];
+  if ((quote === '"' || quote === "'") && value.at(-1) === quote) value = value.slice(1, -1);
+  return { key, value };
+}
+
 function parseDotEnvMap(text: string): Map<string, string> {
   const map = new Map<string, string>();
   for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
-    if (eq < 1) continue;
-    const key = line.slice(0, eq).trim();
-    let value = line.slice(eq + 1).trim();
-    const quote = value[0];
-    if (value.length >= 2 && (quote === '"' || quote === "'") && value.at(-1) === quote) value = value.slice(1, -1);
-    if (value.trim()) map.set(key, value);
-    else map.delete(key);
+    const parsed = parseDotEnvLine(raw);
+    if (!parsed) continue;
+    if (parsed.value.trim()) map.set(parsed.key, parsed.value);
+    else map.delete(parsed.key);
   }
   return map;
 }
 
 function formatDotEnvValue(value: string): string {
   const quote = value[0];
-  if (value.length >= 2 && (quote === '"' || quote === "'") && value.at(-1) === quote) return `"${value}"`;
+  if (((quote === '"' || quote === "'") && value.at(-1) === quote) || value !== value.trim()) {
+    return `"${value}"`;
+  }
   return value;
 }
 
-async function moduleNamesIn(dir: string): Promise<string[]> {
-  try {
-    const entries = await readdir(dir);
-    return entries.sort().flatMap((entry) => {
-      const match = MODULE_EXT.exec(entry);
-      return match && !IGNORED_MODULE.test(entry) && match[1] ? [match[1]] : [];
-    });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-}
-
 export async function inspectAgentDir(agentDir: string, description?: string): Promise<AgentInspection> {
-  const [fileChecks, contextRaw, secretsRaw, envRaw, channels, schedules] = await Promise.all([
+  const [fileChecks, contextRaw, secretsRaw, envRaw] = await Promise.all([
     Promise.all(
       DEFINITION_FILES.map((file) =>
         stat(join(agentDir, file)).then(
@@ -261,22 +253,29 @@ export async function inspectAgentDir(agentDir: string, description?: string): P
     readTextIfPresent(join(agentDir, "context.json")),
     readTextIfPresent(join(agentDir, ".fastagent", "secrets.json")),
     readTextIfPresent(join(agentDir, ".secrets", ".env")),
-    moduleNamesIn(join(agentDir, "src", "channels")),
-    moduleNamesIn(join(agentDir, "src", "schedules")),
   ]);
 
   const files = fileChecks.filter((file): file is string => file !== undefined);
   const packages: { name: string; version: string }[] = [];
+  const contextVariables = new Map<string, string | undefined>();
   if (contextRaw) {
     try {
       const parsed = JSON.parse(contextRaw) as {
-        environment?: { packages?: Record<string, unknown>; aptPackages?: unknown[] };
+        environment?: {
+          packages?: Record<string, unknown>;
+          aptPackages?: unknown[];
+          variables?: Record<string, { description?: unknown }>;
+        };
       };
       for (const [name, version] of Object.entries(parsed.environment?.packages ?? {})) {
         if (typeof version === "string") packages.push({ name, version });
       }
       for (const apt of parsed.environment?.aptPackages ?? []) {
         if (typeof apt === "string") packages.push({ name: `apt:${apt}`, version: "system" });
+      }
+      for (const [name, variable] of Object.entries(parsed.environment?.variables ?? {})) {
+        const desc = variable && typeof variable === "object" && typeof variable.description === "string" ? variable.description : undefined;
+        contextVariables.set(name, desc);
       }
     } catch {
       // Malformed context.json is reported by openAgentResult's listContent check.
@@ -286,41 +285,67 @@ export async function inspectAgentDir(agentDir: string, description?: string): P
   const configuredEnv = parseDotEnvMap(envRaw ?? "");
   const secrets: AgentSecretStatus[] = [];
   const seenSecrets = new Set<string>();
-  if (secretsRaw) {
+  const statusOf = (name: string) => {
+    const fromEnv = name in process.env;
+    const fromFile = !fromEnv && configuredEnv.has(name);
+    const configured = fromEnv ? Boolean(process.env[name]?.trim()) : fromFile;
+    return { configured, fromEnv, fromFile };
+  };
+
+  if (secretsRaw !== undefined) {
+    const secretsFile = join(agentDir, ".fastagent", "secrets.json");
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(secretsRaw) as unknown[];
-      if (Array.isArray(parsed)) {
-        for (const item of parsed) {
-          if (!item || typeof item !== "object") continue;
-          const record = item as { name?: unknown; optional?: unknown; description?: unknown; declaredIn?: unknown };
-          if (typeof record.name !== "string") continue;
-          seenSecrets.add(record.name);
-          const fromFile = configuredEnv.has(record.name);
-          const configured = Boolean(process.env[record.name]?.trim()) || fromFile;
-          secrets.push({
-            name: record.name,
-            optional: record.optional === true,
-            ...(typeof record.description === "string" && { description: record.description }),
-            declaredIn: Array.isArray(record.declaredIn)
-              ? record.declaredIn.filter((source): source is string => typeof source === "string")
-              : [],
-            configured,
-            ...(fromFile && { fromFile: true }),
-          });
-        }
-      }
-    } catch {
-      // Ignore unreadable manifest.
+      parsed = JSON.parse(secretsRaw);
+    } catch (error) {
+      throw new Error(`${secretsFile}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+    if (!Array.isArray(parsed)) throw new Error(`${secretsFile}: expected an array of secrets`);
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") continue;
+      const record = item as { name?: unknown; optional?: unknown; description?: unknown; declaredIn?: unknown };
+      if (typeof record.name !== "string") continue;
+      seenSecrets.add(record.name);
+      const { configured, fromEnv, fromFile } = statusOf(record.name);
+      secrets.push({
+        name: record.name,
+        optional: record.optional === true,
+        ...(typeof record.description === "string" && { description: record.description }),
+        declaredIn: Array.isArray(record.declaredIn)
+          ? record.declaredIn.filter((source): source is string => typeof source === "string")
+          : [],
+        configured,
+        ...(fromFile && { fromFile: true }),
+        ...(fromEnv && { fromEnv: true }),
+      });
     }
   }
+
+  for (const [name, desc] of contextVariables) {
+    if (seenSecrets.has(name)) continue;
+    seenSecrets.add(name);
+    const { configured, fromEnv, fromFile } = statusOf(name);
+    secrets.push({
+      name,
+      optional: false,
+      ...(desc && { description: desc }),
+      declaredIn: ["context.json"],
+      configured,
+      ...(fromFile && { fromFile: true }),
+      ...(fromEnv && { fromEnv: true }),
+    });
+  }
+
   for (const name of configuredEnv.keys()) {
     if (seenSecrets.has(name)) continue;
+    const { configured, fromEnv, fromFile } = statusOf(name);
     secrets.push({
       name,
       optional: true,
       declaredIn: [".secrets/.env"],
-      configured: true,
-      fromFile: true,
+      configured,
+      ...(fromFile && { fromFile: true }),
+      ...(fromEnv && { fromEnv: true }),
     });
   }
 
@@ -329,8 +354,6 @@ export async function inspectAgentDir(agentDir: string, description?: string): P
     files,
     packages,
     secrets,
-    channels,
-    schedules,
   };
 }
 
@@ -349,10 +372,23 @@ export async function setAgentSecret(agentDir: string, rawName: string, rawValue
   });
   const envFile = join(secretsDir, ".env");
   const existing = (await readTextIfPresent(envFile)) ?? "";
-  const map = parseDotEnvMap(existing);
-  map.set(name, value);
-  const serialized = [...map.entries()].map(([k, v]) => `${k}=${formatDotEnvValue(v)}`).join("\n") + "\n";
-  await writeFile(envFile, serialized, { mode: 0o600 });
+  const formatted = `${name}=${formatDotEnvValue(value)}`;
+  const lines = existing === "" ? [] : existing.replace(/\n$/, "").split("\n");
+  let replaced = false;
+  const nextLines: string[] = [];
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!;
+    if (parseDotEnvLine(line)?.key === name) {
+      if (!replaced) {
+        nextLines.unshift(formatted);
+        replaced = true;
+      }
+    } else {
+      nextLines.unshift(line);
+    }
+  }
+  if (!replaced) nextLines.push(formatted);
+  await writeFile(envFile, `${nextLines.join("\n")}\n`, { mode: 0o600 });
   return inspectAgentDir(agentDir);
 }
 
@@ -361,10 +397,11 @@ export async function removeAgentSecret(agentDir: string, rawName: string): Prom
   const envFile = join(agentDir, ".secrets", ".env");
   const existing = await readTextIfPresent(envFile);
   if (existing !== undefined) {
-    const map = parseDotEnvMap(existing);
-    map.delete(name);
-    const serialized = map.size > 0 ? [...map.entries()].map(([k, v]) => `${k}=${formatDotEnvValue(v)}`).join("\n") + "\n" : "";
-    await writeFile(envFile, serialized, { mode: 0o600 });
+    const lines = existing
+      .replace(/\n$/, "")
+      .split("\n")
+      .filter((line) => line !== "" && parseDotEnvLine(line)?.key !== name);
+    await writeFile(envFile, lines.length > 0 ? `${lines.join("\n")}\n` : "", { mode: 0o600 });
   }
   return inspectAgentDir(agentDir);
 }

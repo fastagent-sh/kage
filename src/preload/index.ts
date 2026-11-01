@@ -25,6 +25,7 @@ import type { ProviderUsage } from "../main/usage.ts";
 export type SessionFrame = Frame;
 
 const api = {
+  homeDir: process.env.HOME,
   listAgents: (): Promise<AgentRow[]> => ipcRenderer.invoke("agents:list"),
   pickFolder: (): Promise<{ name: string; path: string } | undefined> => ipcRenderer.invoke("agents:pickFolder"),
   createAgent: (name: string, folders: string[]): Promise<Result<{ agent: AgentRow }>> =>
