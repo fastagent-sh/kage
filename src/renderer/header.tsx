@@ -1,5 +1,16 @@
 import { Fragment, useEffect, useState } from "react";
-import { ArrowSquareOut, FolderSimple, ListBullets, Plus, SidebarSimple, WarningCircle, X } from "@phosphor-icons/react";
+import {
+  ArrowSquareOut,
+  CaretDown,
+  FolderSimple,
+  ListBullets,
+  Plus,
+  SidebarSimple,
+  Sparkle,
+  WarningCircle,
+  Wrench,
+  X,
+} from "@phosphor-icons/react";
 import type { AgentCapability, AgentContent, ProviderUsage } from "../preload/index.ts";
 import { explainContentError } from "./panels.tsx";
 import { home, location } from "./paths.ts";
@@ -161,6 +172,8 @@ export function ConversationHeader({
 const rowDivider =
   "relative [&+&]:before:content-[''] [&+&]:before:absolute [&+&]:before:top-0 [&+&]:before:right-0 [&+&]:before:left-3 [&+&]:before:h-px [&+&]:before:bg-stroke";
 
+const SKILL_PREVIEW_LIMIT = 5;
+
 export function AgentInspector({
   id,
   name,
@@ -177,6 +190,7 @@ export function AgentInspector({
   onRemoveFolder,
   onReveal,
   onRevealPath,
+  onSelectSkill,
 }: {
   id: string;
   name: string;
@@ -193,11 +207,14 @@ export function AgentInspector({
   onRemoveFolder: (name: string) => Promise<string | undefined>;
   onReveal: () => void;
   onRevealPath: (path: string) => void;
+  onSelectSkill?: (skillName: string) => void;
 }) {
   const [error, setError] = useState<string>();
   const [updating, setUpdating] = useState(false);
+  const [showAllSkills, setShowAllSkills] = useState(false);
   useEffect(() => {
     setError(undefined);
+    setShowAllSkills(false);
   }, [dir]);
 
   const disabledReason =
@@ -239,6 +256,7 @@ export function AgentInspector({
 
   const explained = error ? explainContentError(error, "The folders could not be updated") : undefined;
   const skills = commands.filter((cmd) => cmd.name.startsWith("skill:"));
+  const visibleSkills = showAllSkills ? skills : skills.slice(0, SKILL_PREVIEW_LIMIT);
 
   return (
     <aside
@@ -246,11 +264,7 @@ export function AgentInspector({
       aria-label="Agent details"
       className="w-[clamp(16.5rem,24vw,19.5rem)] shrink-0 flex flex-col min-h-0 rounded-float bg-sidebar ring-1 ring-stroke overflow-hidden"
     >
-      <div className="h-12 shrink-0 flex items-center gap-2.5 border-b border-stroke px-3 drag">
-        <Avatar id={id} name={name} colour={colour} size={24} face={face} />
-        <span className="min-w-0 flex-1 truncate font-prose text-[15px] font-semibold text-text" title={name}>
-          {name}
-        </span>
+      <div className="h-10 shrink-0 flex items-center justify-end px-2.5 pt-1 drag">
         <Button
           kind="ghost"
           size={28}
@@ -262,11 +276,34 @@ export function AgentInspector({
         />
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-4 space-y-5">
+        <div className="flex flex-col items-center px-2 pb-1 text-center">
+          <Avatar id={id} name={name} colour={colour} size={52} face={face} />
+          <div className="mt-2.5 max-w-full truncate font-prose text-[15px] font-semibold text-text" title={name}>
+            {name}
+          </div>
+          <button
+            type="button"
+            onClick={onReveal}
+            title={`Show agent folder in Finder (${dir})`}
+            className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[11px] text-muted ring-1 ring-stroke transition-colors hover:bg-hover hover:text-text"
+          >
+            <FolderSimple size={12} className="shrink-0" />
+            <span className="truncate font-mono">{location(dir)}</span>
+            <span className="sr-only">Show agent folder in Finder</span>
+            <ArrowSquareOut size={11} className="shrink-0 opacity-70" />
+          </button>
+        </div>
+
         <section className="space-y-1.5">
-          <div className="flex items-baseline justify-between px-1">
-            <h3 className="text-[12px] font-semibold text-text">Folders it works on</h3>
-            <span className="text-[11px] text-muted tabular-nums">{content.length}</span>
+          <div className="flex items-center justify-between px-1">
+            <h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
+              <FolderSimple size={13} />
+              <span>Folders it works on</span>
+            </h3>
+            <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted tabular-nums">
+              {content.length}
+            </span>
           </div>
           {error && explained && (
             <div role="alert" className="rounded-card bg-surface p-2.5 ring-1 ring-stroke">
@@ -286,10 +323,12 @@ export function AgentInspector({
                 <button
                   type="button"
                   onClick={() => onRevealPath(entry.location)}
-                  title={entry.location}
-                  className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pl-3 pr-1 text-left transition-colors hover:text-text"
+                  title={`Show in Finder (${entry.location})`}
+                  className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pl-2.5 pr-1 text-left transition-colors hover:text-text"
                 >
-                  <FolderSimple size={15} className="shrink-0 text-muted" />
+                  <span className="grid size-7 shrink-0 place-items-center rounded-[4px] bg-accent-weak text-accent">
+                    <FolderSimple size={14} />
+                  </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-medium text-text">{entry.name}</div>
                     <div className="truncate font-mono text-[11px] text-muted">{home(entry.location)}</div>
@@ -300,7 +339,7 @@ export function AgentInspector({
                   size={28}
                   onClick={() => void removeFolder(entry.name)}
                   disabled={disabledReason}
-                  title={`Remove ${entry.name}`}
+                  title={`Detach ${entry.name} (keeps files on disk)`}
                   aria-label={`Remove ${entry.name}`}
                   icon={<X size={13} />}
                 />
@@ -311,39 +350,70 @@ export function AgentInspector({
               onClick={() => void addFolder()}
               disabled={!!disabledReason}
               title={disabledReason || undefined}
-              className={`${rowDivider} flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[13px] font-medium text-accent transition-colors hover:bg-hover disabled:opacity-50`}
+              className={`${rowDivider} flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium text-accent transition-colors hover:bg-hover disabled:opacity-50`}
             >
-              <Plus size={15} weight="bold" />
+              <Plus size={14} weight="bold" />
               <span>Add folder…</span>
             </button>
           </div>
-          <p className="px-1 text-[11px] leading-relaxed text-muted">
-            Removing a folder here only detaches it; your files stay on disk.
-          </p>
         </section>
 
         <section className="space-y-1.5">
-          <div className="px-1">
-            <h3 className="text-[12px] font-semibold text-text">Agent folder</h3>
+          <div className="flex items-center justify-between px-1">
+            <h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
+              <Sparkle size={13} />
+              <span>Skills</span>
+            </h3>
+            <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted tabular-nums">
+              {skills.length}
+            </span>
           </div>
-          <button
-            type="button"
-            onClick={onReveal}
-            title={dir}
-            className="flex w-full items-center justify-between gap-2.5 rounded-card bg-surface px-3 py-2.5 text-left ring-1 ring-stroke transition-colors hover:bg-hover"
-          >
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-mono text-[12px] text-text">{home(dir)}</div>
-              <div className="mt-0.5 text-[11px] text-muted">Show agent folder in Finder</div>
+          {skills.length > 0 ? (
+            <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
+              {visibleSkills.map((skill) => {
+                const skillName = skill.name.slice("skill:".length);
+                return (
+                  <button
+                    key={skill.name}
+                    type="button"
+                    onClick={() => onSelectSkill?.(skillName)}
+                    title={skill.description ? `${skill.description}\n\nClick to use /skill:${skillName}` : `/skill:${skillName}`}
+                    className={`${rowDivider} flex w-full items-baseline gap-2 px-3 py-2 text-left transition-colors hover:bg-hover`}
+                  >
+                    <span className="shrink-0 font-mono text-[12.5px] font-medium text-accent">/{skillName}</span>
+                    {skill.description && (
+                      <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{skill.description}</span>
+                    )}
+                  </button>
+                );
+              })}
+              {skills.length > SKILL_PREVIEW_LIMIT && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllSkills((open) => !open)}
+                  className={`${rowDivider} flex w-full items-center justify-between px-3 py-2 text-left text-[12px] font-medium text-muted transition-colors hover:bg-hover hover:text-text`}
+                >
+                  <span>{showAllSkills ? "Show fewer" : `Show all ${skills.length} skills`}</span>
+                  <CaretDown size={13} className={`transition-transform ${showAllSkills ? "rotate-180" : ""}`} />
+                </button>
+              )}
             </div>
-            <ArrowSquareOut size={14} className="shrink-0 text-muted" />
-          </button>
+          ) : (
+            <div className="rounded-card bg-surface px-3 py-2 text-[12px] text-muted ring-1 ring-stroke">
+              No skills in <span className="font-mono text-[11px]">skills/</span> yet.
+            </div>
+          )}
         </section>
 
         <section className="space-y-1.5">
-          <div className="flex items-baseline justify-between px-1">
-            <h3 className="text-[12px] font-semibold text-text">Tools</h3>
-            <span className="text-[11px] text-muted tabular-nums">{tools.length}</span>
+          <div className="flex items-center justify-between px-1">
+            <h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
+              <Wrench size={13} />
+              <span>Tools</span>
+            </h3>
+            <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted tabular-nums">
+              {tools.length}
+            </span>
           </div>
           <div className="rounded-card bg-surface p-2.5 ring-1 ring-stroke">
             {tools.length > 0 ? (
@@ -352,7 +422,7 @@ export function AgentInspector({
                   <span
                     key={tool.name}
                     title={tool.description}
-                    className="rounded-[4px] bg-raised px-2 py-0.5 font-mono text-[11px] text-muted"
+                    className="rounded-[4px] bg-surface-2 px-2 py-0.5 font-mono text-[11px] text-text"
                   >
                     {tool.name}
                   </span>
@@ -362,33 +432,6 @@ export function AgentInspector({
               <span className="text-[12px] text-muted">None loaded</span>
             )}
           </div>
-        </section>
-
-        <section className="space-y-1.5">
-          <div className="flex items-baseline justify-between px-1">
-            <h3 className="text-[12px] font-semibold text-text">Skills</h3>
-            <span className="text-[11px] text-muted tabular-nums">{skills.length}</span>
-          </div>
-          {skills.length > 0 ? (
-            <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
-              {skills.map((skill) => (
-                <div key={skill.name} className={`${rowDivider} px-3 py-2`}>
-                  <div className="font-mono text-[12.5px] font-medium text-text">
-                    {skill.name.slice("skill:".length)}
-                  </div>
-                  {skill.description && (
-                    <div className="mt-0.5 text-[12px] leading-snug text-muted line-clamp-2">
-                      {skill.description}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-card bg-surface px-3 py-2.5 text-[12px] text-muted ring-1 ring-stroke">
-              No skills in <span className="font-mono text-[11px]">skills/</span> yet.
-            </div>
-          )}
         </section>
       </div>
     </aside>

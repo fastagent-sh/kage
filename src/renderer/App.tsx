@@ -425,6 +425,12 @@ export default function App() {
             onRemoveFolder={(name) => store.removeAgentFolder(name)}
             onReveal={() => void store.reveal()}
             onRevealPath={(path) => void store.reveal(agent.id, path)}
+            onSelectSkill={(skillName) => {
+              const prefix = `/skill:${skillName} `;
+              const current = c?.draft ?? "";
+              store.setDraft(current.startsWith(prefix) ? current : `${prefix}${current.replace(/^\/skill:\S+\s*/, "")}`);
+              document.querySelector<HTMLTextAreaElement>('main textarea[aria-label="Message"]')?.focus();
+            }}
           />
         )}
       </div>
