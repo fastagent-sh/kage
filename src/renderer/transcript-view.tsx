@@ -23,6 +23,7 @@ import {
 } from "@phosphor-icons/react";
 import { Streamdown } from "streamdown";
 import { MarkdownCode } from "./code.tsx";
+import { markdownPlugins, normalizeMath } from "./markdown.ts";
 import {
   dayLabel,
   duration,
@@ -437,9 +438,17 @@ export function Message({
       return (
         <div className="group/msg">
           <div className="md">
-            {/* Appended to the text: Streamdown emits blocks, so a sibling span would start its own line. */}
-            <Streamdown components={markdownComponents} controls={markdownControls} icons={markdownIcons} tableMaxHeight={TABLE_FULL_HEIGHT}>
-              {item.open ? `${item.text}▍` : item.text}
+            <Streamdown
+              caret="block"
+              components={markdownComponents}
+              controls={markdownControls}
+              icons={markdownIcons}
+              isAnimating={item.open}
+              parseIncompleteMarkdown={item.open}
+              plugins={markdownPlugins}
+              tableMaxHeight={TABLE_FULL_HEIGHT}
+            >
+              {normalizeMath(item.text)}
             </Streamdown>
           </div>
           {!item.open && ends && <Footer text={item.text} at={item.at} />}

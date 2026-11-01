@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "katex/dist/katex.min.css";
 @source "../../node_modules/streamdown/dist/*.js";
 
 /* Tokens for docs/ui.md §4. Every interactive role is a set: a component picks `bg-hover`, never computes one. */
@@ -475,8 +476,13 @@ summary:focus-visible,
 .md > div > [data-streamdown^="heading-"] + * {
   margin-top: 8px;
 }
-.md > div > :is(.code-block, [data-streamdown="table-wrapper"], [data-streamdown="blockquote"]) {
+.md > div > :is(.code-block, [data-streamdown="table-wrapper"], [data-streamdown="blockquote"], .katex-display) {
   margin-block: 16px;
+}
+.md .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: 2px;
 }
 .md > div > [data-streamdown="horizontal-rule"] {
   margin-block: 24px;
