@@ -171,7 +171,7 @@ export function MarkdownCode({
           type="button"
           title={`Show ${stripPathSuffix(text)} in Finder`}
           onClick={() => onOpenPath?.(text)}
-          className="inline-code cursor-pointer rounded-[4px] px-[0.3em] py-px font-mono underline decoration-stroke underline-offset-2 transition-colors hover:bg-surface-2 hover:decoration-accent"
+          className="inline-code cursor-pointer rounded-[4px] px-[0.3em] py-px font-mono transition-colors hover:bg-surface-2 hover:text-accent"
         >
           {text}
         </button>
