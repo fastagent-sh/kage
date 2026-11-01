@@ -88,8 +88,11 @@ if (root) {
     }
     const webProject = join(root, "amazonseo-web");
     await mkdir(webProject, { recursive: true });
+    await writeFile(join(workspace, "SYSTEM.md"), "You are the amazonseo.ai listing optimization agent.\n");
     await writeFile(join(workspace, "hello.txt"), "Hello from the workspace\n");
     await writeFile(join(workspace, "context.local.json"), JSON.stringify({ content: { "amazonseo-web": { path: webProject } } }));
+    await mkdir(join(workspace, ".secrets"), { recursive: true });
+    await writeFile(join(workspace, ".secrets", ".env"), "SEMRUSH_API_KEY=sr_shot_key\n");
     await writeFile(join(second, "fastagent.config.ts"), 'export default { model: "openai/gpt-4o-mini" };\n');
     await writeFile(join(data, "agents.json"), JSON.stringify([
       { id: "shot", name: "amazonseo.ai", dir: workspace, colour: 0 },

@@ -17,9 +17,11 @@ import {
   inspectAgentDir,
   MissingDirError,
   previewContentFolder,
+  removeAgentSecret as deleteSecretFromAgent,
   removeFolderFromAgent,
   requireFolder,
   resolveAgentPath,
+  setAgentSecret as writeSecretToAgent,
   type AgentInspection,
   type AgentRow,
   type AgentSecretStatus,
@@ -260,6 +262,39 @@ export function removeAgentFolder(
       return { ok: true, content };
     } catch (error) {
       return refuse("invalid_content", error instanceof Error ? error.message : String(error));
+    }
+  });
+}
+
+export function setAgentSecret(
+  row: AgentRow,
+  name: string,
+  value: string,
+  beforeClose?: () => void,
+): Promise<Result<{ inspection: AgentInspection }>> {
+  return change(row.id, async () => {
+    try {
+      const inspection = await writeSecretToAgent(row.dir, name, value);
+      beforeClose?.();
+      return { ok: true, inspection };
+    } catch (error) {
+      return refuse("invalid_secret", error instanceof Error ? error.message : String(error));
+    }
+  });
+}
+
+export function removeAgentSecret(
+  row: AgentRow,
+  name: string,
+  beforeClose?: () => void,
+): Promise<Result<{ inspection: AgentInspection }>> {
+  return change(row.id, async () => {
+    try {
+      const inspection = await deleteSecretFromAgent(row.dir, name);
+      beforeClose?.();
+      return { ok: true, inspection };
+    } catch (error) {
+      return refuse("invalid_secret", error instanceof Error ? error.message : String(error));
     }
   });
 }

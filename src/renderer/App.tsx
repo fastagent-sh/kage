@@ -415,15 +415,19 @@ export default function App() {
               open: false,
             })}
             dir={agent.dir}
+            model={model}
             content={view.content[agent.id]}
             commands={view.agentCommands[agent.id]}
             tools={view.tools[agent.id]}
             inspection={view.inspection[agent.id]}
             busy={busy || (view.running[agent.id]?.length ?? 0) > 0}
             onClose={() => setDetailsOpen(false)}
+            onPickModel={store.openPicker}
             onPickFolder={() => store.pickFolder()}
             onAddFolder={(folder) => store.addAgentFolder(folder)}
             onRemoveFolder={(name) => store.removeAgentFolder(name)}
+            onSetSecret={(name, value) => store.setAgentSecret(name, value)}
+            onRemoveSecret={(name) => store.removeAgentSecret(name)}
             onReveal={() => void store.reveal()}
             onRevealPath={(path) => void store.reveal(agent.id, path)}
             onSelectSkill={(skillName) => {

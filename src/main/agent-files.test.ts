@@ -13,9 +13,11 @@ import {
   freshConfig,
   inspectAgentDir,
   MissingDirError,
+  removeAgentSecret,
   removeFolderFromAgent,
   requireFolder,
   resolveAgentPath,
+  setAgentSecret,
 } from "./agent-files.ts";
 
 test("registry serializes writes in one process, survives restart and deduplicates real paths", async () => {
@@ -198,11 +200,23 @@ test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers
       { name: "jq", version: "latest" },
     ]);
     assert.deepEqual(inspected.secrets, [
-      { name: "GITHUB_TOKEN", optional: false, description: "GitHub API access", declaredIn: ["src/tools/gh.ts"], configured: true },
+      {
+        name: "GITHUB_TOKEN",
+        optional: false,
+        description: "GitHub API access",
+        declaredIn: ["src/tools/gh.ts"],
+        configured: true,
+        fromFile: true,
+      },
       { name: "OPTIONAL_KEY", optional: true, declaredIn: ["src/tools/opt.ts"], configured: false },
     ]);
     assert.deepEqual(inspected.channels, ["telegram"]);
     assert.deepEqual(inspected.schedules, ["daily"]);
+
+    const afterSet = await setAgentSecret(first.dir, "CUSTOM_API_KEY", "secret-123");
+    assert.ok(afterSet.secrets.some((s) => s.name === "CUSTOM_API_KEY" && s.configured && s.fromFile));
+    const afterDelete = await removeAgentSecret(first.dir, "CUSTOM_API_KEY");
+    assert.ok(!afterDelete.secrets.some((s) => s.name === "CUSTOM_API_KEY"));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -747,6 +747,40 @@ export function createStore(api: DuangApi) {
         return message(error);
       }
     },
+    async setAgentSecret(name: string, value: string): Promise<string | undefined> {
+      const id = view.agentId;
+      if (!id) return undefined;
+      try {
+        const result = await api.setAgentSecret(id, name, value);
+        if (!result.ok) return result.error.message;
+        publish({ inspection: { ...view.inspection, [id]: result.inspection } });
+        const c = view.conversation;
+        if (c?.agentId === id) {
+          close(c);
+          await open(c.session);
+        }
+        return undefined;
+      } catch (error) {
+        return message(error);
+      }
+    },
+    async removeAgentSecret(name: string): Promise<string | undefined> {
+      const id = view.agentId;
+      if (!id) return undefined;
+      try {
+        const result = await api.removeAgentSecret(id, name);
+        if (!result.ok) return result.error.message;
+        publish({ inspection: { ...view.inspection, [id]: result.inspection } });
+        const c = view.conversation;
+        if (c?.agentId === id) {
+          close(c);
+          await open(c.session);
+        }
+        return undefined;
+      } catch (error) {
+        return message(error);
+      }
+    },
     async pickModel(model: string) {
       const id = view.agentId;
       const c = view.conversation;

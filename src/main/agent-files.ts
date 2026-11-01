@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { copyFile, lstat, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -183,6 +183,7 @@ export interface AgentSecretStatus {
   description?: string;
   declaredIn: string[];
   configured: boolean;
+  fromFile?: boolean;
 }
 
 export interface AgentInspection {
@@ -197,9 +198,10 @@ export interface AgentInspection {
 const DEFINITION_FILES = ["SYSTEM.md", "APPEND_SYSTEM.md", "AGENTS.md", "fastagent.config.ts", "context.json"];
 const MODULE_EXT = /^([^.][^/]*)\.(ts|mts|js|mjs)$/;
 const IGNORED_MODULE = /\.(d|test|spec)\.[a-z]+$/;
+const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-function parseDotEnvKeys(text: string): Set<string> {
-  const keys = new Set<string>();
+function parseDotEnvMap(text: string): Map<string, string> {
+  const map = new Map<string, string>();
   for (const raw of text.split("\n")) {
     const line = raw.trim();
     if (!line || line.startsWith("#")) continue;
@@ -209,10 +211,10 @@ function parseDotEnvKeys(text: string): Set<string> {
     let value = line.slice(eq + 1).trim();
     const quote = value[0];
     if ((quote === '"' || quote === "'") && value.at(-1) === quote) value = value.slice(1, -1);
-    if (value.trim()) keys.add(key);
-    else keys.delete(key);
+    if (value.trim()) map.set(key, value);
+    else map.delete(key);
   }
-  return keys;
+  return map;
 }
 
 async function moduleNamesIn(dir: string): Promise<string[]> {
@@ -258,8 +260,9 @@ export async function inspectAgentDir(agentDir: string, description?: string): P
     }
   }
 
-  const configuredEnv = parseDotEnvKeys(envRaw);
+  const configuredEnv = parseDotEnvMap(envRaw);
   const secrets: AgentSecretStatus[] = [];
+  const seenSecrets = new Set<string>();
   if (secretsRaw) {
     try {
       const parsed = JSON.parse(secretsRaw) as unknown[];
@@ -268,7 +271,9 @@ export async function inspectAgentDir(agentDir: string, description?: string): P
           if (!item || typeof item !== "object") continue;
           const record = item as { name?: unknown; optional?: unknown; description?: unknown; declaredIn?: unknown };
           if (typeof record.name !== "string") continue;
-          const configured = Boolean(process.env[record.name]?.trim()) || configuredEnv.has(record.name);
+          seenSecrets.add(record.name);
+          const fromFile = configuredEnv.has(record.name);
+          const configured = Boolean(process.env[record.name]?.trim()) || fromFile;
           secrets.push({
             name: record.name,
             optional: record.optional === true,
@@ -277,12 +282,23 @@ export async function inspectAgentDir(agentDir: string, description?: string): P
               ? record.declaredIn.filter((source): source is string => typeof source === "string")
               : [],
             configured,
+            ...(fromFile && { fromFile: true }),
           });
         }
       }
     } catch {
       // Ignore unreadable manifest.
     }
+  }
+  for (const name of configuredEnv.keys()) {
+    if (seenSecrets.has(name)) continue;
+    secrets.push({
+      name,
+      optional: true,
+      declaredIn: [".secrets/.env"],
+      configured: true,
+      fromFile: true,
+    });
   }
 
   return {
@@ -293,6 +309,39 @@ export async function inspectAgentDir(agentDir: string, description?: string): P
     channels,
     schedules,
   };
+}
+
+export async function setAgentSecret(agentDir: string, rawName: string, rawValue: string): Promise<AgentInspection> {
+  const name = rawName.trim();
+  const value = rawValue.trim();
+  if (!ENV_NAME_PATTERN.test(name)) {
+    throw new Error("Variable name must use letters, digits, and underscores (for example GITHUB_TOKEN)");
+  }
+  if (!value) throw new Error("Variable value cannot be empty");
+  if (/[\r\n]/.test(value)) throw new Error("Variable value cannot contain newlines");
+  const secretsDir = join(agentDir, ".secrets");
+  await mkdir(secretsDir, { recursive: true });
+  await writeFile(join(secretsDir, ".gitignore"), "*\n!.gitignore\n", { flag: "wx" }).catch((err: NodeJS.ErrnoException) => {
+    if (err.code !== "EEXIST") throw err;
+  });
+  const envFile = join(secretsDir, ".env");
+  const existing = await readFile(envFile, "utf8").catch(() => "");
+  const map = parseDotEnvMap(existing);
+  map.set(name, value);
+  const serialized = [...map.entries()].map(([k, v]) => `${k}=${JSON.stringify(v)}`).join("\n") + "\n";
+  await writeFile(envFile, serialized, { mode: 0o600 });
+  return inspectAgentDir(agentDir);
+}
+
+export async function removeAgentSecret(agentDir: string, rawName: string): Promise<AgentInspection> {
+  const name = rawName.trim();
+  const envFile = join(agentDir, ".secrets", ".env");
+  const existing = await readFile(envFile, "utf8").catch(() => "");
+  const map = parseDotEnvMap(existing);
+  map.delete(name);
+  const serialized = map.size > 0 ? [...map.entries()].map(([k, v]) => `${k}=${JSON.stringify(v)}`).join("\n") + "\n" : "";
+  await writeFile(envFile, serialized, { mode: 0o600 });
+  return inspectAgentDir(agentDir);
 }
 
 const CONFIG_FILE = "fastagent.config.ts";

@@ -11,11 +11,13 @@ import {
   previewContentFolder,
   registryFile,
   removeAgentFolder,
+  removeAgentSecret,
   resetAgentConfig,
   removeAgent,
   renameAgent,
   resolveAgentPath,
   setAgentModel,
+  setAgentSecret,
 } from "../agents.ts";
 import { modelsOf, offered } from "../models.ts";
 import { refusal, refuse } from "../send.ts";
@@ -49,6 +51,14 @@ export function registerAgents(): void {
   ipcMain.handle("agent:removeFolder", async (_e, id: string, name: string) => {
     if (typeof name !== "string" || !name.trim()) throw new Error("Folder name must be a string");
     return removeAgentFolder(await agentRow(id), name, () => releaseAgent(id));
+  });
+  ipcMain.handle("agent:setSecret", async (_e, id: string, name: string, value: string) => {
+    if (typeof name !== "string" || typeof value !== "string") throw new Error("Secret name and value must be strings");
+    return setAgentSecret(await agentRow(id), name, value, () => releaseAgent(id));
+  });
+  ipcMain.handle("agent:removeSecret", async (_e, id: string, name: string) => {
+    if (typeof name !== "string") throw new Error("Secret name must be a string");
+    return removeAgentSecret(await agentRow(id), name, () => releaseAgent(id));
   });
   ipcMain.handle("agent:resetConfig", async (_e, id: string) =>
     ended(id, "The agent's config was replaced", await resetAgentConfig(await agentRow(id))),

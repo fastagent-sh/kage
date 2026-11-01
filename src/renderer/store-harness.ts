@@ -69,6 +69,20 @@ export function harness() {
       content: [{ name: folder.split("/").pop() ?? "folder", location: folder }],
     }),
     removeAgentFolder: async () => ({ ok: true, content: [] }),
+    setAgentSecret: async (_id, name) => ({
+      ok: true,
+      inspection: {
+        files: [],
+        packages: [],
+        secrets: [{ name, optional: true, declaredIn: [".secrets/.env"], configured: true, fromFile: true }],
+        channels: [],
+        schedules: [],
+      },
+    }),
+    removeAgentSecret: async () => ({
+      ok: true,
+      inspection: { files: [], packages: [], secrets: [], channels: [], schedules: [] },
+    }),
     setModel: async () => ({ ok: true }) as Result,
     setThinking: async () => ({ ok: true }) as Result,
     readState: async (_id, session) => sessionOf(session),

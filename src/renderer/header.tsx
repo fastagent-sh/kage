@@ -3,6 +3,8 @@ import {
   ArrowSquareOut,
   Broadcast,
   CaretDown,
+  CaretRight,
+  Cpu,
   FileText,
   FolderSimple,
   Key,
@@ -176,7 +178,7 @@ export function ConversationHeader({
 const rowDivider =
   "relative [&+&]:before:content-[''] [&+&]:before:absolute [&+&]:before:top-0 [&+&]:before:right-0 [&+&]:before:left-3 [&+&]:before:h-px [&+&]:before:bg-stroke";
 
-const SKILL_PREVIEW_LIMIT = 5;
+const SKILL_PREVIEW_LIMIT = 4;
 
 export function AgentInspector({
   id,
@@ -184,15 +186,19 @@ export function AgentInspector({
   colour,
   face,
   dir,
+  model,
   content = [],
   commands = [],
   tools = [],
   inspection,
   busy,
   onClose,
+  onPickModel,
   onPickFolder,
   onAddFolder,
   onRemoveFolder,
+  onSetSecret,
+  onRemoveSecret,
   onReveal,
   onRevealPath,
   onSelectSkill,
@@ -203,15 +209,19 @@ export function AgentInspector({
   colour: number;
   face: Face;
   dir: string;
+  model?: string;
   content?: AgentContent[];
   commands?: AgentCapability[];
   tools?: AgentCapability[];
   inspection?: AgentInspection;
   busy: boolean;
   onClose: () => void;
+  onPickModel?: () => void;
   onPickFolder: () => Promise<{ name: string; path: string } | undefined>;
   onAddFolder: (folder: string) => Promise<string | undefined>;
   onRemoveFolder: (name: string) => Promise<string | undefined>;
+  onSetSecret?: (name: string, value: string) => Promise<string | undefined>;
+  onRemoveSecret?: (name: string) => Promise<string | undefined>;
   onReveal: () => void;
   onRevealPath: (path: string) => void;
   onSelectSkill?: (skillName: string) => void;
@@ -220,14 +230,19 @@ export function AgentInspector({
   const [error, setError] = useState<string>();
   const [updating, setUpdating] = useState(false);
   const [showAllSkills, setShowAllSkills] = useState(false);
+  const [editingSecret, setEditingSecret] = useState<{ name: string; value: string; fixedName?: boolean }>();
+  const [secretError, setSecretError] = useState<string>();
+
   useEffect(() => {
     setError(undefined);
+    setSecretError(undefined);
+    setEditingSecret(undefined);
     setShowAllSkills(false);
   }, [dir]);
 
   const disabledReason =
-    (busy && "Stop the running conversation before changing folders") ||
-    (updating && "Updating folders…") ||
+    (busy && "Stop the running conversation before changing agent settings") ||
+    (updating && "Updating agent…") ||
     false;
 
   const addFolder = async () => {
@@ -262,6 +277,35 @@ export function AgentInspector({
     }
   };
 
+  const saveSecret = async () => {
+    if (!editingSecret || !onSetSecret || disabledReason) return;
+    setSecretError(undefined);
+    setUpdating(true);
+    try {
+      const refusal = await onSetSecret(editingSecret.name, editingSecret.value);
+      if (refusal) setSecretError(refusal);
+      else setEditingSecret(undefined);
+    } catch (err) {
+      setSecretError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const deleteSecret = async (secretName: string) => {
+    if (!onRemoveSecret || disabledReason) return;
+    setSecretError(undefined);
+    setUpdating(true);
+    try {
+      const refusal = await onRemoveSecret(secretName);
+      if (refusal) setSecretError(refusal);
+    } catch (err) {
+      setSecretError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const explained = error ? explainContentError(error, "The folders could not be updated") : undefined;
   const skills = commands.filter((cmd) => cmd.name.startsWith("skill:"));
   const visibleSkills = showAllSkills ? skills : skills.slice(0, SKILL_PREVIEW_LIMIT);
@@ -289,10 +333,10 @@ export function AgentInspector({
         />
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-4 space-y-5">
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-4 space-y-4">
         <div className="flex flex-col items-center px-2 pb-1 text-center">
           <Avatar id={id} name={name} colour={colour} size={52} face={face} />
-          <div className="mt-2.5 max-w-full truncate font-prose text-[15px] font-semibold text-text" title={name}>
+          <div className="mt-2 max-w-full truncate font-prose text-[15px] font-semibold text-text" title={name}>
             {name}
           </div>
           {inspection?.description && (
@@ -326,6 +370,25 @@ export function AgentInspector({
             </div>
           )}
         </div>
+
+        {onPickModel && (
+          <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
+            <button
+              type="button"
+              onClick={onPickModel}
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-hover"
+            >
+              <span className="flex shrink-0 items-center gap-2 text-[12px] font-medium text-muted">
+                <Cpu size={14} className="shrink-0" />
+                <span>Default model</span>
+              </span>
+              <span className="flex min-w-0 items-center gap-1 font-mono text-[11px] text-text">
+                <span className="truncate">{model ?? "Choose model…"}</span>
+                <CaretRight size={12} className="shrink-0 text-muted" />
+              </span>
+            </button>
+          </div>
+        )}
 
         <section className="space-y-1.5">
           <div className="flex items-center justify-between px-1">
@@ -390,51 +453,131 @@ export function AgentInspector({
           </div>
         </section>
 
-        {(secrets.length > 0 || packages.length > 0) && (
-          <section className="space-y-1.5">
-            <div className="flex items-center justify-between px-1">
-              <h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
-                <Key size={13} />
-                <span>Environment & secrets</span>
-              </h3>
-              <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted tabular-nums">
-                {secrets.length + packages.length}
-              </span>
+        <section className="space-y-1.5">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
+              <Key size={13} />
+              <span>Environment & secrets</span>
+            </h3>
+            <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted tabular-nums">
+              {secrets.length + packages.length}
+            </span>
+          </div>
+          {secretError && (
+            <div role="alert" className="rounded-card bg-surface p-2.5 text-[12px] text-danger ring-1 ring-stroke">
+              {secretError}
             </div>
-            <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
-              {secrets.map((secret) => (
-                <div
-                  key={secret.name}
-                  title={secret.description ?? secret.declaredIn.join(", ")}
-                  className={`${rowDivider} flex items-center justify-between gap-2 px-3 py-2`}
+          )}
+          <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
+            {secrets.map((secret) => (
+              <div
+                key={secret.name}
+                title={secret.description ?? secret.declaredIn.join(", ")}
+                className={`${rowDivider} flex items-center justify-between gap-2 py-2 pr-1.5 pl-3`}
+              >
+                <button
+                  type="button"
+                  disabled={!!disabledReason}
+                  onClick={() => setEditingSecret({ name: secret.name, value: "", fixedName: true })}
+                  className="min-w-0 flex-1 text-left"
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-mono text-[12px] font-medium text-text">{secret.name}</div>
-                    {secret.description && (
-                      <div className="truncate text-[11px] text-muted">{secret.description}</div>
-                    )}
-                  </div>
-                  <Badge tone={secret.configured ? "success" : secret.optional ? "muted" : "danger"}>
-                    {secret.configured ? "set" : secret.optional ? "optional" : "missing"}
-                  </Badge>
+                  <div className="truncate font-mono text-[12px] font-medium text-text">{secret.name}</div>
+                  {secret.description && (
+                    <div className="truncate text-[11px] text-muted">{secret.description}</div>
+                  )}
+                </button>
+                <Badge tone={secret.configured ? "success" : secret.optional ? "muted" : "danger"}>
+                  {secret.configured ? "set" : secret.optional ? "optional" : "missing"}
+                </Badge>
+                {secret.fromFile && onRemoveSecret && (
+                  <Button
+                    kind="ghost"
+                    size={28}
+                    onClick={() => void deleteSecret(secret.name)}
+                    disabled={disabledReason}
+                    title={`Remove ${secret.name}`}
+                    aria-label={`Remove ${secret.name}`}
+                    icon={<X size={13} />}
+                  />
+                )}
+              </div>
+            ))}
+            {packages.length > 0 && (
+              <div className={`${rowDivider} flex flex-wrap items-center gap-1.5 px-3 py-2`}>
+                <span className="text-[11px] text-muted">Packages:</span>
+                {packages.map((pkg) => (
+                  <span
+                    key={pkg.name}
+                    className="rounded-[4px] bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-text"
+                  >
+                    {pkg.name}
+                    {pkg.version !== "latest" && pkg.version !== "system" ? `@${pkg.version}` : ""}
+                  </span>
+                ))}
+              </div>
+            )}
+            {editingSecret ? (
+              <div className={`${rowDivider} space-y-2 p-2.5`}>
+                {!editingSecret.fixedName ? (
+                  <input
+                    type="text"
+                    aria-label="Variable name"
+                    placeholder="VARIABLE_NAME"
+                    value={editingSecret.name}
+                    onChange={(e) => setEditingSecret({ ...editingSecret, name: e.target.value })}
+                    className="w-full rounded-[4px] bg-surface-2 px-2 py-1 font-mono text-[12px] text-text"
+                    autoFocus
+                  />
+                ) : (
+                  <div className="font-mono text-[12px] font-medium text-text">{editingSecret.name}</div>
+                )}
+                <input
+                  type="password"
+                  aria-label="Variable value"
+                  placeholder="Value (saved in .secrets/.env)"
+                  value={editingSecret.value}
+                  onChange={(e) => setEditingSecret({ ...editingSecret, value: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void saveSecret();
+                    if (e.key === "Escape") setEditingSecret(undefined);
+                  }}
+                  className="w-full rounded-[4px] bg-surface-2 px-2 py-1 font-mono text-[12px] text-text"
+                  autoFocus={editingSecret.fixedName}
+                />
+                <div className="flex justify-end gap-1.5">
+                  <Button size={28} onClick={() => setEditingSecret(undefined)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    kind="primary"
+                    size={28}
+                    disabled={
+                      disabledReason ||
+                      (!editingSecret.name.trim() && "Enter a variable name") ||
+                      (!editingSecret.value.trim() && "Enter a value")
+                    }
+                    onClick={() => void saveSecret()}
+                  >
+                    Save
+                  </Button>
                 </div>
-              ))}
-              {packages.length > 0 && (
-                <div className={`${rowDivider} flex flex-wrap gap-1.5 p-2.5`}>
-                  {packages.map((pkg) => (
-                    <span
-                      key={pkg.name}
-                      className="rounded-[4px] bg-surface-2 px-2 py-0.5 font-mono text-[11px] text-text"
-                    >
-                      {pkg.name}
-                      {pkg.version !== "latest" && pkg.version !== "system" ? `@${pkg.version}` : ""}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-        )}
+              </div>
+            ) : (
+              onSetSecret && (
+                <button
+                  type="button"
+                  onClick={() => setEditingSecret({ name: "", value: "" })}
+                  disabled={!!disabledReason}
+                  title={disabledReason || undefined}
+                  className={`${rowDivider} flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium text-accent transition-colors hover:bg-hover disabled:opacity-50`}
+                >
+                  <Plus size={14} weight="bold" />
+                  <span>Add secret or variable…</span>
+                </button>
+              )
+            )}
+          </div>
+        </section>
 
         {(channels.length > 0 || schedules.length > 0) && (
           <section className="space-y-1.5">
