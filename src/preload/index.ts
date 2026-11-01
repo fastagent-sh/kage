@@ -5,8 +5,8 @@ import type { Result, Sent } from "../shared/result.ts";
 
 export type { AgentRow } from "../main/agent-files.ts";
 import type { AgentRow } from "../main/agent-files.ts";
-export type { AgentContent, AgentSetup, OpenResult } from "../main/agents.ts";
-import type { OpenResult } from "../main/agents.ts";
+export type { AgentCapability, AgentContent, AgentSetup, OpenResult } from "../main/agents.ts";
+import type { AgentContent, OpenResult } from "../main/agents.ts";
 export type { ModelChoice, Models } from "../main/models.ts";
 export type { SessionSummary } from "../main/session-list.ts";
 import type { Models } from "../main/models.ts";
@@ -30,6 +30,10 @@ const api = {
   createAgent: (name: string, folders: string[]): Promise<Result<{ agent: AgentRow }>> =>
     ipcRenderer.invoke("agents:create", name, folders),
   openAgent: (agentId: string): Promise<OpenResult> => ipcRenderer.invoke("agent:open", agentId),
+  addAgentFolder: (agentId: string, folder: string): Promise<Result<{ content: AgentContent[] }>> =>
+    ipcRenderer.invoke("agent:addFolder", agentId, folder),
+  removeAgentFolder: (agentId: string, name: string): Promise<Result<{ content: AgentContent[] }>> =>
+    ipcRenderer.invoke("agent:removeFolder", agentId, name),
   setModel: (agentId: string, model: string, session?: string): Promise<Result> =>
     ipcRenderer.invoke("agent:setModel", agentId, model, session),
   setThinking: (agentId: string, session: string, level: string): Promise<Result> =>

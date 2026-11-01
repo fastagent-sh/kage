@@ -9,7 +9,7 @@ import { BrokenAgent, CreateAgent, MissingFolder, NewConversation, NoAgents, Unr
 import { Problem } from "./problem.tsx";
 import { ArrowClockwise } from "@phosphor-icons/react";
 import { ConversationList, Sidebar } from "./rows.tsx";
-import { ConversationHeader } from "./header.tsx";
+import { AgentDetails, ConversationHeader } from "./header.tsx";
 import { Transcript } from "./transcript-view.tsx";
 import { Composer } from "./composer.tsx";
 import { Settings } from "./settings.tsx";
@@ -43,6 +43,7 @@ export default function App() {
   })();
   // Mirrors the popover, which owns the fact; it arrives a task later with the `toggle` event.
   const [listOpen, setListOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const rowsFor = (id: string) =>
     rows(
       sessions[id] ?? [],
@@ -91,8 +92,10 @@ export default function App() {
         return;
       }
       // Asked of the popover, not `listOpen`: an Escape right after it opens arrives before that mirror and would stop the run.
-      const listShowing = document.getElementById("conversations")?.matches(":popover-open");
-      if (event.key === "Escape" && busy && !listShowing) void store.abort();
+      const popoverShowing =
+        document.getElementById("conversations")?.matches(":popover-open") ||
+        document.getElementById("agent-info")?.matches(":popover-open");
+      if (event.key === "Escape" && busy && !popoverShowing) void store.abort();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -284,6 +287,7 @@ export default function App() {
                   }
                   plan={provider ? view.usage[provider] : undefined}
                   queued={c ? waiting.filter(({ listed }) => listed).length : undefined}
+                  details={agentState === "ready" ? { open: detailsOpen } : undefined}
                   list={
                     agentState === "ready"
                       ? { open: listOpen, unseen: Object.keys(view.unseen[agent.id] ?? {}).length }
@@ -295,15 +299,30 @@ export default function App() {
                 />
               )}
               {agent && agentState === "ready" && (
-                <ConversationList
-                  rows={sessionRows}
-                  session={c?.session}
-                  error={view.sessionsError[agent.id]}
-                  disabled={held}
-                  onToggle={setListOpen}
-                  onOpen={(session) => void store.open(session)}
-                  onNew={newConversation}
-                />
+                <>
+                  <AgentDetails
+                    dir={agent.dir}
+                    content={view.content[agent.id]}
+                    commands={view.agentCommands[agent.id]}
+                    tools={view.tools[agent.id]}
+                    busy={busy || (view.running[agent.id]?.length ?? 0) > 0}
+                    onToggle={setDetailsOpen}
+                    onPickFolder={() => store.pickFolder()}
+                    onAddFolder={(folder) => store.addAgentFolder(folder)}
+                    onRemoveFolder={(name) => store.removeAgentFolder(name)}
+                    onReveal={() => void store.reveal()}
+                    onRevealPath={(path) => void store.reveal(agent.id, path)}
+                  />
+                  <ConversationList
+                    rows={sessionRows}
+                    session={c?.session}
+                    error={view.sessionsError[agent.id]}
+                    disabled={held}
+                    onToggle={setListOpen}
+                    onOpen={(session) => void store.open(session)}
+                    onNew={newConversation}
+                  />
+                </>
               )}
               {pane === "unreadable-registry" ? (
                 // Not an empty registry: "create your first agent" would deny the failure.

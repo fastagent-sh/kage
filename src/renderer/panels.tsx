@@ -128,7 +128,7 @@ export function MissingFolder({
   );
 }
 
-function explainCreateError(reason: string): { title: string; advice?: string } {
+export function explainContentError(reason: string, fallbackTitle = "The agent could not be created"): { title: string; advice?: string } {
   const duplicate = /already has content named "([^"]+)"/.exec(reason);
   if (duplicate) {
     return {
@@ -148,7 +148,7 @@ function explainCreateError(reason: string): { title: string; advice?: string } 
       advice: "Rename the folder to use letters, numbers, hyphens, or underscores, then add it again.",
     };
   }
-  return { title: "The agent could not be created" };
+  return { title: fallbackTitle };
 }
 
 export function CreateAgent({
@@ -198,7 +198,7 @@ export function CreateAgent({
 
   const trimmed = name.trim();
   const folderHint = trimmed ? `~/Agents/${agentSlug(trimmed)}` : "~/Agents/";
-  const explained = error ? explainCreateError(error) : undefined;
+  const explained = error ? explainContentError(error) : undefined;
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto">

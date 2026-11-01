@@ -2,6 +2,7 @@
 // what it can run belongs to `main/agents.ts` and `main/models.ts`.
 import { dialog, ipcMain, shell } from "electron";
 import {
+  addAgentFolder,
   agentRow,
   createAgentWithFolders,
   listAgents,
@@ -9,6 +10,7 @@ import {
   openAgentResult,
   previewContentFolder,
   registryFile,
+  removeAgentFolder,
   resetAgentConfig,
   removeAgent,
   renameAgent,
@@ -19,7 +21,7 @@ import { modelsOf, offered } from "../models.ts";
 import { refusal, refuse } from "../send.ts";
 import type { Result } from "../../shared/result.ts";
 import { MODEL_UNAVAILABLE_CODE } from "../../shared/refusals.ts";
-import { endAgent, requireSession } from "./sessions.ts";
+import { endAgent, releaseAgent, requireSession } from "./sessions.ts";
 
 // Cutting an agent's subscriptions is invisible to the window unless each one says why it ended.
 function ended(id: string, reason: string, result: Result): Result {
@@ -40,6 +42,14 @@ export function registerAgents(): void {
     return createAgentWithFolders(name, folders);
   });
   ipcMain.handle("agent:open", (_e, agentId: string) => openAgentResult(agentId));
+  ipcMain.handle("agent:addFolder", async (_e, id: string, folder: string) => {
+    if (typeof folder !== "string" || !folder.trim()) throw new Error("Folder path must be a string");
+    return addAgentFolder(await agentRow(id), folder, () => releaseAgent(id));
+  });
+  ipcMain.handle("agent:removeFolder", async (_e, id: string, name: string) => {
+    if (typeof name !== "string" || !name.trim()) throw new Error("Folder name must be a string");
+    return removeAgentFolder(await agentRow(id), name, () => releaseAgent(id));
+  });
   ipcMain.handle("agent:resetConfig", async (_e, id: string) =>
     ended(id, "The agent's config was replaced", await resetAgentConfig(await agentRow(id))),
   );

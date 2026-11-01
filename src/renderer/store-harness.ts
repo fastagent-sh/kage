@@ -64,6 +64,11 @@ export function harness() {
     pickFolder: async () => undefined,
     createAgent: async (name) => ({ ok: true, agent: { id: "c", name, dir: `/Agents/${name}`, colour: 2 } }),
     openAgent: async () => ready,
+    addAgentFolder: async (_id, folder) => ({
+      ok: true,
+      content: [{ name: folder.split("/").pop() ?? "folder", location: folder }],
+    }),
+    removeAgentFolder: async () => ({ ok: true, content: [] }),
     setModel: async () => ({ ok: true }) as Result,
     setThinking: async () => ({ ok: true }) as Result,
     readState: async (_id, session) => sessionOf(session),

@@ -444,3 +444,46 @@ test("a fresh start opens the agent on a new conversation, not the one it was le
   assert.equal(store.getSnapshot().pane, "start");
   store.dispose();
 });
+
+test("opening an agent records its loaded tools and commands, and adding or removing folders updates its content in place", async () => {
+  const { api, store } = harness();
+  api.openAgent = async () => ({
+    ...listed("s1"),
+    content: [{ name: "tally", location: "/work/tally" }],
+    tools: [{ name: "read", description: "Read files" }, { name: "bash" }],
+    commands: [{ name: "skill:review", description: "Review code" }],
+  });
+  await store.load();
+  assert.deepEqual(store.getSnapshot().content.a, [{ name: "tally", location: "/work/tally" }]);
+  assert.deepEqual(store.getSnapshot().tools.a, [{ name: "read", description: "Read files" }, { name: "bash" }]);
+  assert.deepEqual(store.getSnapshot().agentCommands.a, [{ name: "skill:review", description: "Review code" }]);
+
+  api.addAgentFolder = async () => ({
+    ok: false,
+    error: { code: "invalid_content", message: 'this agent already has content named "tally"', retryable: false },
+  });
+  assert.equal(await store.addAgentFolder("/other/tally"), 'this agent already has content named "tally"');
+  assert.deepEqual(store.getSnapshot().content.a, [{ name: "tally", location: "/work/tally" }]);
+
+  api.addAgentFolder = async () => ({
+    ok: true,
+    content: [
+      { name: "tally", location: "/work/tally" },
+      { name: "handbook", location: "/work/handbook" },
+    ],
+  });
+  assert.equal(await store.addAgentFolder("/work/handbook"), undefined);
+  assert.deepEqual(store.getSnapshot().content.a, [
+    { name: "tally", location: "/work/tally" },
+    { name: "handbook", location: "/work/handbook" },
+  ]);
+
+  api.removeAgentFolder = async () => ({
+    ok: true,
+    content: [{ name: "handbook", location: "/work/handbook" }],
+  });
+  assert.equal(await store.removeAgentFolder("tally"), undefined);
+  assert.deepEqual(store.getSnapshot().content.a, [{ name: "handbook", location: "/work/handbook" }]);
+  store.dispose();
+});
+

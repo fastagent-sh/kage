@@ -1,5 +1,5 @@
 import { MODEL_UNAVAILABLE_CODE, STOPPED_CODE } from "../shared/refusals.ts";
-import type { AgentContent, AgentRow, AgentSetup, DuangApi, SessionFrame, SessionSummary } from "../preload/index.ts";
+import type { AgentCapability, AgentContent, AgentRow, AgentSetup, DuangApi, SessionFrame, SessionSummary } from "../preload/index.ts";
 import { foldEntries, itemsOf, noLive } from "./fold.ts";
 import { phase, previewOf, queueView, type Activity, type Place } from "./transcript.ts";
 import {
@@ -86,6 +86,8 @@ export interface View extends SettingsView, AgentResourcesView {
   states: Record<string, AgentState>;
   sessions: Record<string, SessionSummary[]>;
   content: Record<string, AgentContent[]>;
+  tools: Record<string, AgentCapability[]>;
+  agentCommands: Record<string, AgentCapability[]>;
   // The window of each model the open agent offers, in tokens: what the context meter is measured against.
   contextWindows: Record<string, number>;
   // An empty list and a failed one are not the same.
@@ -230,6 +232,8 @@ export function createStore(api: DuangApi) {
     states: {},
     sessions: {},
     content: {},
+    tools: {},
+    agentCommands: {},
     contextWindows: {},
     sessionsError: {},
     loading: false,
@@ -513,6 +517,8 @@ export function createStore(api: DuangApi) {
         model: result.model,
         contextWindows: result.windows,
         ...(result.content && { content: { ...view.content, [id]: result.content } }),
+        ...(result.tools && { tools: { ...view.tools, [id]: result.tools } }),
+        ...(result.commands && { agentCommands: { ...view.agentCommands, [id]: result.commands } }),
         ...(listCurrent() ? { sessions: { ...view.sessions, [id]: result.sessions } } : {}),
         states: { ...view.states, [id]: "ready" },
       });
@@ -695,6 +701,40 @@ export function createStore(api: DuangApi) {
         return message(error);
       }
     },
+    async addAgentFolder(folder: string): Promise<string | undefined> {
+      const id = view.agentId;
+      if (!id) return undefined;
+      try {
+        const result = await api.addAgentFolder(id, folder);
+        if (!result.ok) return result.error.message;
+        publish({ content: { ...view.content, [id]: result.content } });
+        const c = view.conversation;
+        if (c?.agentId === id) {
+          close(c);
+          await open(c.session);
+        }
+        return undefined;
+      } catch (error) {
+        return message(error);
+      }
+    },
+    async removeAgentFolder(name: string): Promise<string | undefined> {
+      const id = view.agentId;
+      if (!id) return undefined;
+      try {
+        const result = await api.removeAgentFolder(id, name);
+        if (!result.ok) return result.error.message;
+        publish({ content: { ...view.content, [id]: result.content } });
+        const c = view.conversation;
+        if (c?.agentId === id) {
+          close(c);
+          await open(c.session);
+        }
+        return undefined;
+      } catch (error) {
+        return message(error);
+      }
+    },
     async pickModel(model: string) {
       const id = view.agentId;
       const c = view.conversation;
@@ -786,8 +826,18 @@ export function createStore(api: DuangApi) {
         ++navigation;
         const { [id]: _gone, ...rest } = view.sessions;
         const { [id]: _contentGone, ...restContent } = view.content;
+        const { [id]: _toolsGone, ...restTools } = view.tools;
+        const { [id]: _commandsGone, ...restCommands } = view.agentCommands;
         selectResources();
-        publish({ agentId: undefined, conversation: undefined, error: undefined, sessions: rest, content: restContent });
+        publish({
+          agentId: undefined,
+          conversation: undefined,
+          error: undefined,
+          sessions: rest,
+          content: restContent,
+          tools: restTools,
+          agentCommands: restCommands,
+        });
         if (view.agents[0]) await selectAgent(view.agents[0].id);
       } catch (error) {
         fail("The agent was not removed", error);

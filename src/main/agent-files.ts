@@ -4,7 +4,7 @@ import { copyFile, lstat, realpath, rm, stat, writeFile } from "node:fs/promises
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createAgent, listContent, readContentSource } from "@fastagent-sh/fastagent";
+import { addContent, createAgent, listContent, readContentSource, removeContent } from "@fastagent-sh/fastagent";
 import { stripPathSuffix } from "../shared/links.ts";
 import { readJson, serially, writeJsonAtomic } from "./json-file.ts";
 
@@ -161,6 +161,20 @@ export async function createNewAgent({
     await rm(dir, { recursive: true, force: true }).catch(() => {});
     throw error;
   }
+}
+
+export async function addFolderToAgent(agentDir: string, folder: string): Promise<{ name: string; location: string }[]> {
+  const real = await realpath(folder);
+  const info = await stat(real);
+  if (!info.isDirectory()) throw new Error(`Not a folder: ${folder}`);
+  const { addition } = readContentSource(real, agentDir);
+  const { content } = await addContent(agentDir, addition);
+  return content.map(({ name, location }) => ({ name, location }));
+}
+
+export async function removeFolderFromAgent(agentDir: string, name: string): Promise<{ name: string; location: string }[]> {
+  const { content } = await removeContent(agentDir, name);
+  return content.map(({ name, location }) => ({ name, location }));
 }
 
 const CONFIG_FILE = "fastagent.config.ts";

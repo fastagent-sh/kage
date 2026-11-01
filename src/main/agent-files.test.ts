@@ -6,11 +6,13 @@ import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { listContent, openAgent } from "@fastagent-sh/fastagent";
 import {
+  addFolderToAgent,
   AgentRegistry,
   createNewAgent,
   failingConfig,
   freshConfig,
   MissingDirError,
+  removeFolderFromAgent,
   requireFolder,
   resolveAgentPath,
 } from "./agent-files.ts";
@@ -143,9 +145,20 @@ test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers
     await registry.rename(first.id, "Renamed Reviewer");
     assert.equal((await registry.list()).find((row) => row.id === first.id)?.dir, first.dir, "rename leaves the directory");
 
-    // Refused declarations (duplicate folder name, or nesting around the agent directory) leave no directory.
+    // Adding and removing folders on an existing agent updates its bindings and leaves the folders on disk untouched.
     const otherTally = join(root, "other", "tally");
     await mkdir(otherTally, { recursive: true });
+    const added = await addFolderToAgent(second.dir, tally);
+    assert.deepEqual(added, [{ name: "tally", location: await realpath(tally) }]);
+    await assert.rejects(
+      addFolderToAgent(second.dir, otherTally),
+      /already has content named "tally"/,
+    );
+    const afterRemove = await removeFolderFromAgent(second.dir, "tally");
+    assert.deepEqual(afterRemove, []);
+    assert.equal(await readFile(join(tally, "index.ts"), "utf8"), "export const n = 1;\n");
+
+    // Refused declarations (duplicate folder name, or nesting around the agent directory) leave no directory.
     await assert.rejects(
       createNewAgent({ name: "Duplicate", folders: [tally, otherTally], root: agentsDir, registry }),
       /already has content named "tally"/,

@@ -86,7 +86,10 @@ if (root) {
       await mkdir(join(workspace, "skills", name), { recursive: true });
       await writeFile(join(workspace, "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n---\n\nDo ${name}.\n`);
     }
+    const webProject = join(root, "amazonseo-web");
+    await mkdir(webProject, { recursive: true });
     await writeFile(join(workspace, "hello.txt"), "Hello from the workspace\n");
+    await writeFile(join(workspace, "context.local.json"), JSON.stringify({ content: { "amazonseo-web": { path: webProject } } }));
     await writeFile(join(second, "fastagent.config.ts"), 'export default { model: "openai/gpt-4o-mini" };\n');
     await writeFile(join(data, "agents.json"), JSON.stringify([
       { id: "shot", name: "amazonseo.ai", dir: workspace, colour: 0 },
@@ -213,6 +216,10 @@ if (root) {
     await until(`document.querySelector('#conversations:popover-open')`, "conversation list");
     await capture("app-conversations");
     await evaluate(`document.querySelector('#conversations').hidePopover()`);
+    await evaluate(`document.querySelector('main > header button[aria-label="Agent details"]').click()`);
+    await until(`document.querySelector('#agent-info:popover-open')`, "agent details");
+    await capture("agent-details");
+    await evaluate(`document.querySelector('#agent-info').hidePopover()`);
     await evaluate(`document.querySelector('button[title^="Model for this agent"]').click()`);
     await until(`document.querySelector('dialog[open]')`, "model picker");
     await capture("models");

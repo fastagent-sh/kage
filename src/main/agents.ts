@@ -9,12 +9,14 @@ import { runningSessions, stopRuns } from "./runs.ts";
 import { refuse } from "./send.ts";
 import { summaries, type SessionSummary } from "./session-list.ts";
 import {
+  addFolderToAgent,
   AgentRegistry,
   createNewAgent,
   failingConfig,
   freshConfig,
   MissingDirError,
   previewContentFolder,
+  removeFolderFromAgent,
   requireFolder,
   resolveAgentPath,
   type AgentRow,
@@ -46,12 +48,19 @@ export interface AgentContent {
   location: string;
 }
 
+export interface AgentCapability {
+  name: string;
+  description?: string;
+}
+
 /** What the window's open call answers: the agent's sessions, content and model, or why it could not be opened. */
 export type OpenResult =
   | {
       ok: true;
       sessions: SessionSummary[];
       content?: AgentContent[];
+      commands?: AgentCapability[];
+      tools?: AgentCapability[];
       model?: string;
       staleDefault?: string;
       windows: Record<string, number>;
@@ -151,6 +160,8 @@ export async function openAgentResult(agentId: string): Promise<OpenResult> {
       ok: true,
       sessions: await summaries(agent),
       content,
+      commands: info.commands.map(({ name, description }) => ({ name, ...(description ? { description } : {}) })),
+      tools: info.tools.map(({ name, description }) => ({ name, ...(description ? { description } : {}) })),
       windows: Object.fromEntries(models.flatMap(({ spec, contextWindow }) => (contextWindow ? [[spec, contextWindow]] : []))),
       ...(model && { model }),
       ...(staleDefault && { staleDefault }),
@@ -182,7 +193,7 @@ export async function withAgentRun<T>(row: AgentRow, run: (agent: LocalAgent) =>
   }
 }
 
-function change(id: string, apply: () => Promise<Result>, afterClose?: () => Promise<void>): Promise<Result> {
+function change<T = {}>(id: string, apply: () => Promise<Result<T>>, afterClose?: () => Promise<void>): Promise<Result<T>> {
   if (changing.has(id)) return Promise.resolve(refuse("agent_changing", "Agent settings are changing; try again."));
   if (sending.has(id))
     return Promise.resolve(
@@ -194,13 +205,15 @@ function change(id: string, apply: () => Promise<Result>, afterClose?: () => Pro
     const agent = await opened.get(id)?.catch(() => undefined);
     if (agent && (await runningSessions([{ id, agent }])).length > 0)
       return refuse("agent_busy", "An agent conversation is running — stop it before changing or removing the agent.");
-    if (agent) {
-      // The instance's storage is held by one opener: release it before changing or removing the agent.
-      opened.delete(id);
-      await agent.close();
-    }
     const result = await apply();
-    if (result.ok) await afterClose?.();
+    if (result.ok) {
+      if (agent) {
+        // The instance's storage is held by one opener: release it so the next open reads the new definition.
+        opened.delete(id);
+        await agent.close();
+      }
+      await afterClose?.();
+    }
     return result;
   })();
   changing.set(
@@ -211,6 +224,38 @@ function change(id: string, apply: () => Promise<Result>, afterClose?: () => Pro
     ),
   );
   return running.finally(() => changing.delete(id));
+}
+
+export function addAgentFolder(
+  row: AgentRow,
+  folder: string,
+  beforeClose?: () => void,
+): Promise<Result<{ content: AgentContent[] }>> {
+  return change(row.id, async () => {
+    try {
+      const content = await addFolderToAgent(row.dir, folder);
+      beforeClose?.();
+      return { ok: true, content };
+    } catch (error) {
+      return refuse("invalid_content", error instanceof Error ? error.message : String(error));
+    }
+  });
+}
+
+export function removeAgentFolder(
+  row: AgentRow,
+  name: string,
+  beforeClose?: () => void,
+): Promise<Result<{ content: AgentContent[] }>> {
+  return change(row.id, async () => {
+    try {
+      const content = await removeFolderFromAgent(row.dir, name);
+      beforeClose?.();
+      return { ok: true, content };
+    } catch (error) {
+      return refuse("invalid_content", error instanceof Error ? error.message : String(error));
+    }
+  });
 }
 
 /**
