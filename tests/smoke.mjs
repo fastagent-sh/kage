@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import electron from "electron";
 import { isolated, withoutCredentials, writeMockAgent } from "./harness.mjs";
 import { open, windowDriver } from "./window.mjs";
-import { checkCompactSettings, checkPanelEscapeDuringRun, checkPanelLayout } from "./layout.mjs";
+import { checkAgentPointerRename, checkCompactSettings, checkPanelEscapeDuringRun, checkPanelLayout, checkUsagePopoverLayout } from "./layout.mjs";
 
 const root = await isolated(import.meta.url, { name: "smoke", timeout: 150000 });
 if (root) {
@@ -299,6 +299,7 @@ if (root) {
       try {
         await evaluate(`document.querySelector('#agent-info button[aria-label="Remove project"]').click()`);
         await until("document.querySelectorAll('#agent-info button[aria-label=\"Remove project\"]').length === 0", "removing the folder updates the details pane");
+        await until("[...document.querySelectorAll('#agent-info button')].some((button) => button.textContent.includes('Add folder…') && !button.disabled)", "folder refresh enables Add folder");
         await evaluate(`[...document.querySelectorAll('#agent-info button')].find((b) => b.textContent.includes('Add folder…')).click()`);
         await until("/works on\\s+project/.test(document.querySelector('main > header').innerText)", "adding the folder back updates the header");
       } finally {
@@ -691,6 +692,7 @@ if (root) {
       assert.equal(await evaluate(table), "0", "the plan's windows wait for a hover");
       assert.match(await evaluate("document.querySelector('header [aria-label=Usage]').textContent"), /5h[\s\S]*4%[\s\S]*7d[\s\S]*18%/, "the hover table lists every window");
       assert.equal(usageRequests, 1, "the run ending inside the gap reuses the answer instead of asking again");
+      await checkUsagePopoverLayout(win, { evaluate, until });
 
       // A new conversation says `–`, and the plan's windows are still one hover away.
       await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true, cancelable: true }))`);
@@ -904,6 +906,7 @@ if (root) {
       );
       await evaluate("document.querySelector('button[aria-label=\"Smoke\"]').click()");
       await until("document.querySelector('main').innerText.includes('Smoke answer')", "the other agents are unaffected");
+      await checkAgentPointerRename(win, { evaluate, until, type });
 
       // The picker's own states: named for assistive technology, and honest when nothing matches.
       await click("openai/gpt-4o-mini");

@@ -184,7 +184,6 @@ export default function App() {
           settingsOpen={Boolean(settings)}
           creatingOpen={creating}
           onSelect={(id) => {
-            setSidebarOpen(false);
             setSettings(false);
             setCreating(false);
             if (id !== agentId) void store.selectAgent(id);

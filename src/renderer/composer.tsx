@@ -434,8 +434,8 @@ export function Composer({
             }}
             placeholder={view.blocked ?? (busy ? "steer the run…" : "Ask, build, / for commands…")}
             disabled={disabled}
-            // Same leading as the bubble it becomes, so a long message does not reflow on send. 1px keeps one line 28 tall.
-            className={`bubble min-h-7 min-w-0 resize-none bg-transparent py-px outline-none ${stacked ? "basis-full" : "flex-1"}  placeholder:text-muted disabled:opacity-40`}
+            // Match the sent bubble so sending a long draft does not reflow it.
+            className={`bubble min-h-7 min-w-0 resize-none bg-transparent py-[var(--composer-input-padding)] outline-none ${stacked ? "basis-full" : "flex-1"}  placeholder:text-muted disabled:opacity-40`}
           />
           <div ref={chip} className="relative ml-auto min-w-0 max-w-[45%]">
             <Button

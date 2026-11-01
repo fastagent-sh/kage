@@ -19,7 +19,8 @@ time, and its avatar's face shows what kind of work it is (docs/ui.md §3); a se
 unreadable list or history replaces the quote. Reading every row's list
 at launch opens each agent's instance. A failed list read is shown on
 that agent's row, not as an empty list. An agent's name can be changed from its row's context menu
-or by double-clicking it; this renames duang's registry entry, never the directory. The window opens
+or by double-clicking it; this renames duang's registry entry, never the directory. Selecting a row
+alone leaves the compact roster open so the second click can still reach it. The window opens
 at a size that fits the sidebar and the reading column, and reopens where it was left; a window whose
 display is gone comes back on an attached one.
 
@@ -119,8 +120,9 @@ the clock (`▼` under, `▲` over), then the context as `45% of 1.0M`. Sign in 
 row in Settings. An API key has no plan windows, so the table is the context alone. Opening a conversation, changing its provider and a run starting or ending ask again; main
 answers from a three-minute cache, since Anthropic's route answers 429 when polled. A failed read
 shows no plan windows, never a stale percentage: the numbers are a glance, and a failure there is
-not something to act on. The context is FastAgent's, once it reports it
-([fastagent#608](https://github.com/fastagent-sh/fastagent/issues/608)).
+not something to act on. In the compact layout the usage table aligns with the conversation header;
+reset details wrap within it rather than extending beyond the window. The context is FastAgent's, once
+it reports it ([fastagent#608](https://github.com/fastagent-sh/fastagent/issues/608)).
 
 A new conversation is made in FastAgent when it is started (the agent's blank one is reused when it has one), so
 it is selectable at once and listed as *New conversation* until something is said in it. Selection reads FastAgent

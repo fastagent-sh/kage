@@ -96,8 +96,8 @@ reading area rather than covering it as the window gets shorter.
 **The composer starts as one row**: the field, with what belongs to the next message (the model chip)
 inside its right end, and one round button that is the next action. The model moves below the text
 before it leaves too little writing space. In the compact layout a long draft scrolls inside a
-viewport-bounded field so the reading area and action stay reachable. There is no attach or voice
-button until either works: a control that can only say it is not there yet is furniture.
+viewport-bounded field, rounded down to complete text lines, so the reading area and action stay reachable.
+There is no attach or voice button until either works: a control that can only say it is not there yet is furniture.
 
 Not included until a real roster stops being readable: pinning, hiding, archiving, folders, a global
 activity row, a permanent third column. Removal is offered where a problem explains it, not one slip

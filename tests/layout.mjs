@@ -25,7 +25,7 @@ export async function checkPanelLayout(win, { evaluate, until, type }) {
   const geometry = () => evaluate(`(() => {
     const rect = (selector) => {
       const el = document.querySelector(selector), r = el.getBoundingClientRect();
-      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth };
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, scrollHeight: el.scrollHeight };
     };
     return {
       viewport: { width: innerWidth, height: innerHeight, pageWidth: document.documentElement.scrollWidth },
@@ -33,6 +33,7 @@ export async function checkPanelLayout(win, { evaluate, until, type }) {
       input: rect('textarea[aria-label=Message]'), composer: rect('.composer'),
       transcript: rect('[aria-label="Transcript"]'),
       lineHeight: parseFloat(getComputedStyle(document.querySelector('textarea')).lineHeight),
+      inputPadding: parseFloat(getComputedStyle(document.querySelector('textarea')).paddingTop) + parseFloat(getComputedStyle(document.querySelector('textarea')).paddingBottom),
       inspector: document.querySelector('#agent-info') ? rect('#agent-info') : undefined,
     };
   })()`);
@@ -47,6 +48,12 @@ export async function checkPanelLayout(win, { evaluate, until, type }) {
     assert.ok(result.viewport.pageWidth <= result.viewport.width + 1, `${label}: page overflows`);
     assert.ok(result.header.bottom <= result.input.top, `${label}: the editor overlaps the header`);
     assert.ok(result.composer.bottom <= result.viewport.height, `${label}: composer leaves the window`);
+  };
+  const wholeLines = (result, label) => {
+    const contentHeight = result.input.height - result.inputPadding;
+    const lines = Math.round(contentHeight / result.lineHeight);
+    assert.ok(lines >= 1 && Math.abs(contentHeight - lines * result.lineHeight) <= 1, `${label}: draft ends on a complete text line (height ${result.input.height}, padding ${result.inputPadding}, line ${result.lineHeight})`);
+    assert.ok(result.input.scrollHeight > result.input.height, `${label}: longer drafts remain scrollable`);
   };
   const capture = async (name) => {
     if (!shots) return;
@@ -88,10 +95,33 @@ export async function checkPanelLayout(win, { evaluate, until, type }) {
           await settle();
           const drafting = await geometry();
           readable(drafting, `${label} long draft`);
+          wholeLines(drafting, label);
+          if (width === 1180 && zoom === 2) {
+            win.setSize(width, 640);
+            await settle();
+            wholeLines(await geometry(), `${label} resized without typing`);
+            win.setSize(width, height);
+            await settle();
+          }
           assert.ok(drafting.transcript.height >= drafting.lineHeight * 2, `${label}: long drafts must leave two readable lines, got ${drafting.transcript.height}`);
           assert.equal(await evaluate("document.querySelector('button[aria-label=\"Send\"]').getAttribute('aria-disabled')"), null, `${label}: the draft can be sent`);
           assert.ok(await hit('button[aria-label="Send"]'), `${label}: Send remains reachable`);
           await capture(`${label}-draft`);
+          if (width === 1180 && zoom === 2) {
+            const draft = await evaluate("document.querySelector('textarea').value");
+            await evaluate("document.querySelector('textarea').select()");
+            await win.webContents.insertText(`${draft}\nNative insertion at the end.`);
+            win.webContents.sendInputEvent({ type: "keyDown", keyCode: "X" });
+            win.webContents.sendInputEvent({ type: "char", keyCode: "x" });
+            win.webContents.sendInputEvent({ type: "keyUp", keyCode: "X" });
+            await until("document.querySelector('textarea').value.endsWith('Native insertion at the end.x')", "native insertion and typing preserve the draft");
+            await settle();
+            await capture(`${label}-native-input`);
+            const caret = await evaluate(`(() => { const el = document.querySelector('textarea'), style = getComputedStyle(el); return { atEnd: el.selectionEnd === el.value.length, bottom: el.scrollHeight - el.scrollTop - el.clientHeight, lineHeight: parseFloat(style.lineHeight), fontSize: parseFloat(style.fontSize), paddingBottom: parseFloat(style.paddingBottom) }; })()`);
+            // Caret scrolling aligns the glyphs, not necessarily the bottom of their line box.
+            const trailingSpace = (caret.lineHeight - caret.fontSize) / 2 + caret.paddingBottom;
+            assert.ok(caret.atEnd && caret.bottom <= trailingSpace + 1, `continued native input keeps the caret's final line visible: ${JSON.stringify(caret)}`);
+          }
           if (closed.viewport.width <= 640) {
             await evaluate(`(() => { const button = document.querySelector('button[title^="Model for this agent"]'); button.focus(); button.click(); })()`);
             await until("!!document.querySelector('dialog[open]')", "model picker opens at zoom");
@@ -140,6 +170,120 @@ export async function checkPanelLayout(win, { evaluate, until, type }) {
     await type(initialDraft);
   }
   console.log("Panel layout passed: light/dark, 800/1180px, 100/150/200%, long drafts and live panel resizing.");
+}
+
+export async function checkUsagePopoverLayout(win, { evaluate, until }) {
+  const { nativeTheme } = electron;
+  const initialSize = win.getSize();
+  const initialZoom = win.webContents.getZoomFactor();
+  const initialTheme = nativeTheme.themeSource;
+  const folder = fileURLToPath(new URL("../out/layout-shots/", import.meta.url));
+  try {
+    for (const theme of ["light", "dark"]) {
+      nativeTheme.themeSource = theme;
+      for (const [width, height] of [[1180, 860], [800, 540]]) {
+        for (const zoom of [1, 1.5, 2]) {
+          win.setSize(width, height);
+          win.webContents.setZoomFactor(zoom);
+          await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+          const { root } = await win.webContents.debugger.sendCommand("DOM.getDocument");
+          const { nodeId } = await win.webContents.debugger.sendCommand("DOM.querySelector", { nodeId: root.nodeId, selector: 'header [aria-label="Usage"]' });
+          await win.webContents.debugger.sendCommand("CSS.enable");
+          // Window resizing can move the OS pointer; fix only the pseudo state while measuring geometry.
+          for (const mode of ["hover", "focus-visible"]) {
+            await win.webContents.debugger.sendCommand("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: [mode] });
+            await until("getComputedStyle(document.querySelector('header [aria-label=Usage] .popover').parentElement).opacity === '1'", `${width}-${zoom * 100}-${theme}: usage is visible on ${mode}`);
+            const bounds = await evaluate(`(() => {
+              const panel = document.querySelector('header [aria-label=Usage] .popover');
+              const outside = [panel, ...panel.querySelectorAll('span')].filter(element => {
+                const r = element.getBoundingClientRect();
+                return r.left < 0 || r.right > innerWidth || r.top < 0 || r.bottom > innerHeight;
+              }).map(element => ({ text: element.textContent, left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right }));
+              return { text: panel.textContent, outside };
+            })()`);
+            assert.match(bounds.text, /5h[\s\S]*4%[\s\S]*7d[\s\S]*18%/, "the fixture includes both subscription windows");
+            assert.deepEqual(bounds.outside, [], `${width}-${zoom * 100}-${theme}-${mode}: every usage label and value stays in the viewport`);
+            if (mode === "hover") {
+              assert.ok(await evaluate(`(() => {
+                const panel = document.querySelector('header [aria-label=Usage] .popover');
+                const back = document.querySelector('button[aria-label="Back to the latest"]');
+                if (!back) return true;
+                const p = panel.getBoundingClientRect(), r = back.getBoundingClientRect();
+                const x = r.left + r.width / 2, y = r.top + r.height / 2;
+                return x < p.left || x > p.right || y < p.top || y > p.bottom || panel.contains(document.elementFromPoint(x, y));
+              })()`), `${width}-${zoom * 100}-${theme}: transcript controls do not cover the usage table`);
+            }
+            if (process.env.DUANG_LAYOUT_SHOTS === "1" && zoom === 2 && mode === "hover") {
+              await mkdir(folder, { recursive: true });
+              await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+              await writeFile(`${folder}${width}-200-${theme}-usage.png`, (await win.webContents.capturePage()).toPNG());
+            }
+          }
+          await win.webContents.debugger.sendCommand("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: [] });
+        }
+      }
+    }
+  } finally {
+    nativeTheme.themeSource = initialTheme;
+    win.setSize(...initialSize);
+    win.webContents.setZoomFactor(initialZoom);
+    win.webContents.sendInputEvent({ type: "mouseMove", x: 4, y: initialSize[1] - 4 });
+    await evaluate("document.querySelector('textarea').focus()");
+  }
+}
+
+export async function checkAgentPointerRename(win, { evaluate, until, type }) {
+  const initialSize = win.getSize();
+  const initialZoom = win.webContents.getZoomFactor();
+  const initialAgent = await evaluate("document.querySelector('.sidebar-panel button[aria-current=true]').getAttribute('aria-label')");
+  const initialTabStop = await evaluate("document.querySelector('.sidebar-panel [aria-label=Agents] button[tabindex=\"0\"]').getAttribute('aria-label')");
+  try {
+    win.setSize(800, 540);
+    for (const zoom of [1, 2]) {
+      win.webContents.setZoomFactor(zoom);
+      await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+      if (zoom === 2) {
+        await evaluate(`document.querySelector('button[aria-label="Show agents"]').click()`);
+        await until("document.querySelector('.sidebar-panel').matches(':popover-open')", "Agent roster opens for pointer rename");
+      }
+      for (const name of ["Smoke", "Configured"]) {
+        const point = await evaluate(`(() => {
+          const row = document.querySelector('aside button[aria-label="${name}"]');
+          const rect = row.getBoundingClientRect();
+          window.__renameClicks = [];
+          row.addEventListener('click', event => window.__renameClicks.push(event.detail));
+          return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        })()`);
+        for (const clickCount of [1, 2]) {
+          const coordinates = { x: Math.round(point.x * zoom), y: Math.round(point.y * zoom), button: "left", clickCount };
+          win.webContents.sendInputEvent({ type: "mouseDown", ...coordinates });
+          win.webContents.sendInputEvent({ type: "mouseUp", ...coordinates });
+          await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+        }
+        await until("!!document.querySelector('aside input[aria-label=\"Agent name\"]')", `${zoom * 100}%: two pointer clicks open rename for ${name}`, { timeout: 1500 });
+        assert.deepEqual(await evaluate("window.__renameClicks"), [1, 2], "the first click must leave the target available for the second");
+        await type("An unsaved rename", 'aside input[aria-label="Agent name"]');
+        win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+        win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+        await until("!document.querySelector('aside input[aria-label=\"Agent name\"]')", "Escape cancels rename");
+        await until(`document.activeElement.getAttribute('aria-label') === ${JSON.stringify(name)}`, "rename returns focus to its row");
+        assert.ok(await evaluate(`!!document.querySelector('aside button[aria-label="${name}"]')`), "canceling preserves the Agent name");
+        if (zoom === 2) assert.ok(await evaluate("document.querySelector('.sidebar-panel').matches(':popover-open')"), "canceling rename keeps the roster open");
+      }
+      if (zoom === 2) {
+        win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+        win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+        await until("document.querySelector('button[aria-label=\"Show agents\"]').getAttribute('aria-expanded') === 'false'", "a second Escape closes the roster");
+        assert.equal(await evaluate("document.querySelector('.sidebar-panel').matches(':popover-open')"), false);
+      }
+    }
+  } finally {
+    win.setSize(...initialSize);
+    win.webContents.setZoomFactor(initialZoom);
+    await evaluate(`delete window.__renameClicks; document.querySelector('aside button[aria-label=${JSON.stringify(initialAgent)}]').click()`);
+    await until("!!document.querySelector('textarea') && !document.querySelector('textarea').disabled", "original Agent restored after pointer checks");
+    await evaluate(`document.querySelector('aside button[aria-label=${JSON.stringify(initialTabStop)}]').focus()`);
+  }
 }
 
 export async function checkCompactSettings(win, { evaluate, until }) {

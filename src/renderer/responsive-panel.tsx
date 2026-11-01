@@ -40,6 +40,15 @@ export function ResponsivePanel({
       if (panel.hasAttribute("popover")) panel.hidePopover();
     };
   }, []);
+  useLayoutEffect(() => {
+    const panel = ref.current!;
+    const toggled = (event: ToggleEvent) => {
+      if (overlay && open && event.newState === "closed" && panel.hasAttribute("popover")) onClose();
+    };
+    // React only registers its toggle listener when it sets the popover attribute itself.
+    panel.addEventListener("toggle", toggled);
+    return () => panel.removeEventListener("toggle", toggled);
+  }, [overlay, open, onClose]);
 
   return (
     <aside
@@ -48,9 +57,6 @@ export function ResponsivePanel({
       role={overlay ? "dialog" : undefined}
       tabIndex={overlay ? -1 : undefined}
       className={`responsive-panel ${className ?? ""}`}
-      onToggle={(event) => {
-        if (overlay && open && event.newState === "closed" && event.currentTarget.hasAttribute("popover")) onClose();
-      }}
       onBlur={(event) => {
         if (overlay && open && event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) onClose();
       }}
