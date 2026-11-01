@@ -1,7 +1,7 @@
 import { app } from "electron";
-import { rm } from "node:fs/promises";
+import { rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { openAgent as openFastAgent, type LocalAgent } from "@fastagent-sh/fastagent";
+import { listContent, openAgent as openFastAgent, type LocalAgent } from "@fastagent-sh/fastagent";
 import type { Result } from "../shared/result.ts";
 import { credentials } from "./credential-file.ts";
 import { changesForModel, choicesOf, offered, refOf, specOf } from "./models.ts";
@@ -10,48 +10,82 @@ import { refuse } from "./send.ts";
 import { summaries, type SessionSummary } from "./session-list.ts";
 import {
   AgentRegistry,
+  createNewAgent,
   failingConfig,
   freshConfig,
-  hasAgent,
   MissingDirError,
+  previewContentFolder,
   requireFolder,
+  resolveAgentPath,
   type AgentRow,
 } from "./agent-files.ts";
 
-export { createAgentIn, resolveAgentPath } from "./agent-files.ts";
+export { previewContentFolder, resolveAgentPath };
 export const registryFile = join(app.getPath("userData"), "agents.json");
 const registry = new AgentRegistry(registryFile);
 export const listAgents = () => registry.list();
-export const addAgent = (dir: string) => registry.add(dir);
 export const renameAgent = (id: string, name: string) => registry.rename(id, name);
+
+export async function createAgentWithFolders(name: string, folders: string[]): Promise<Result<{ agent: AgentRow }>> {
+  try {
+    const agent = await createNewAgent({ name, folders, registry });
+    return { ok: true, agent };
+  } catch (error) {
+    return refuse("invalid_agent", error instanceof Error ? error.message : String(error));
+  }
+}
 
 // One instance of the agent per duang, kept apart from the one `fastagent dev` opens in the same folder.
 const instanceDir = (id: string) => join(app.getPath("userData"), "instances", id);
 
-/** Why an agent is not ready: no agent in this folder yet, its folder is gone, or its definition does not load. */
-export type AgentSetup = "no_agent" | "missing_dir" | "broken";
+/** Why an agent is not ready: its folder is gone, or its definition does not load. */
+export type AgentSetup = "missing_dir" | "broken";
 
-/** What the window's open call answers: the agent's sessions and model, or why it could not be opened. */
+export interface AgentContent {
+  name: string;
+  location: string;
+}
+
+/** What the window's open call answers: the agent's sessions, content and model, or why it could not be opened. */
 export type OpenResult =
-  | { ok: true; sessions: SessionSummary[]; model?: string; staleDefault?: string; windows: Record<string, number> }
+  | {
+      ok: true;
+      sessions: SessionSummary[];
+      content?: AgentContent[];
+      model?: string;
+      staleDefault?: string;
+      windows: Record<string, number>;
+    }
   | { ok: false; code: AgentSetup; message: string; inConfig?: true };
 
-// Agent-scoped admission: sends share (a count); removing or moving an agent excludes them, including a send
+// Agent-scoped admission: sends share (a count); removing or changing an agent excludes them, including a send
 // still opening its runtime.
 const opened = new Map<string, Promise<LocalAgent>>();
 const sending = new Map<string, number>();
 const changing = new Map<string, Promise<void>>();
 
-class NoAgentError extends Error {}
 // Main keeps the failing path rather than taking one from the window.
 const failedConfigs = new Map<string, string>();
 
+async function evictAgent(id: string): Promise<void> {
+  while (changing.has(id)) await changing.get(id);
+  const existing = opened.get(id);
+  if (!existing) return;
+  const closing = (async () => {
+    const agent = await existing.catch(() => undefined);
+    if (opened.get(id) === existing) opened.delete(id);
+    await agent?.close().catch(() => undefined);
+  })();
+  changing.set(id, closing);
+  await closing.finally(() => {
+    if (changing.get(id) === closing) changing.delete(id);
+  });
+}
+
 async function build(row: AgentRow): Promise<LocalAgent> {
   // Before anything can fail: a failure that is not the config's must not offer to replace it.
-  // A missing folder must fail here: FastAgent opens it as an empty agent and would create files in it.
   failedConfigs.delete(row.id);
   await requireFolder(row.dir);
-  if (!(await hasAgent(row.dir))) throw new NoAgentError(`${row.dir} holds no fastagent.config.ts`);
   try {
     return await openFastAgent(row.dir, { credentials, stateDir: instanceDir(row.id) });
   } catch (error) {
@@ -93,12 +127,20 @@ export async function openedAgents(): Promise<{ id: string; agent: LocalAgent }[
 }
 
 /**
- * The window's open call: the agent's sessions and its model, or why it could not be opened. Decided here,
+ * The window's open call: the agent's sessions, content and model, or why it could not be opened. Decided here,
  * beside the runtime's own errors, so the window takes one shape and never classifies a condition itself.
  */
 export async function openAgentResult(agentId: string): Promise<OpenResult> {
   try {
     const row = await agentRow(agentId);
+    let content: AgentContent[];
+    try {
+      await requireFolder(row.dir);
+      content = (await listContent(row.dir)).content.map(({ name, location }) => ({ name, location }));
+    } catch (error) {
+      await evictAgent(row.id);
+      throw error;
+    }
     const agent = await openAgent(row);
     const info = await agent.info();
     const models = choicesOf(info);
@@ -108,13 +150,13 @@ export async function openAgentResult(agentId: string): Promise<OpenResult> {
     return {
       ok: true,
       sessions: await summaries(agent),
+      content,
       windows: Object.fromEntries(models.flatMap(({ spec, contextWindow }) => (contextWindow ? [[spec, contextWindow]] : []))),
       ...(model && { model }),
       ...(staleDefault && { staleDefault }),
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (error instanceof NoAgentError) return { ok: false, code: "no_agent", message };
     if (error instanceof MissingDirError) return { ok: false, code: "missing_dir", message };
     return configFailed(agentId) ? { ok: false, code: "broken", message, inConfig: true } : { ok: false, code: "broken", message };
   }
@@ -127,7 +169,7 @@ export async function createSession(row: AgentRow): Promise<string> {
   return (await agent.sessions.create(model)).id;
 }
 
-/** Count admission as busy too: removing or moving an agent must not race a send that is still opening its runtime. */
+/** Count admission as busy too: removing or changing an agent must not race a send that is still opening its runtime. */
 export async function withAgentRun<T>(row: AgentRow, run: (agent: LocalAgent) => Promise<Result<T>>): Promise<Result<T>> {
   if (changing.has(row.id)) return refuse("agent_changing", "Agent settings are changing; try again.");
   sending.set(row.id, (sending.get(row.id) ?? 0) + 1);
@@ -152,13 +194,13 @@ function change(id: string, apply: () => Promise<Result>, afterClose?: () => Pro
     const agent = await opened.get(id)?.catch(() => undefined);
     if (agent && (await runningSessions([{ id, agent }])).length > 0)
       return refuse("agent_busy", "An agent conversation is running — stop it before changing or removing the agent.");
-    const result = await apply();
-    if (result.ok) {
-      // The instance's storage is held by one opener: it must be released for the agent to open again.
+    if (agent) {
+      // The instance's storage is held by one opener: release it before changing or removing the agent.
       opened.delete(id);
-      await agent?.close();
-      await afterClose?.();
+      await agent.close();
     }
+    const result = await apply();
+    if (result.ok) await afterClose?.();
     return result;
   })();
   changing.set(
@@ -182,14 +224,6 @@ export async function setAgentModel(row: AgentRow, model: string, session?: stri
   return { ok: true };
 }
 
-export function relocateAgent(id: string, dir: string): Promise<Result> {
-  return change(id, async () => {
-    await registry.relocate(id, dir);
-    failedConfigs.delete(id);
-    return { ok: true };
-  });
-}
-
 const configFailed = (id: string) => failedConfigs.has(id);
 
 export function resetAgentConfig(row: AgentRow): Promise<Result> {
@@ -202,12 +236,23 @@ export function resetAgentConfig(row: AgentRow): Promise<Result> {
   });
 }
 
-// The instance is keyed by an id that only this registry row holds: once the row is gone nothing can reach its
-// conversations again, so they go with it, after the instance's storage is released.
-export function removeAgent(id: string): Promise<Result> {
+// Removing an agent moves the agent directory duang created to the Trash first, then deletes its registry row and instance; bound folders stay untouched.
+export function removeAgent(
+  id: string,
+  trash: (dir: string) => Promise<void> = (dir) => rm(dir, { recursive: true, force: true }),
+): Promise<Result> {
   return change(
     id,
     async () => {
+      const { dir } = await agentRow(id);
+      const exists = await stat(dir).then(
+        () => true,
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT" || error.code === "ENOTDIR") return false;
+          throw error;
+        },
+      );
+      if (exists) await trash(dir);
       await registry.remove(id);
       failedConfigs.delete(id);
       return { ok: true };

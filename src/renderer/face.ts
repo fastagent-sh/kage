@@ -9,7 +9,6 @@ export type Face =
   | "answering"
   | "done"
   | "failed"
-  | "unborn"
   | "broken";
 
 export const WORKING: readonly Face[] = ["thinking", "tool", "answering"];
@@ -25,7 +24,6 @@ export function faceOf({
   outcomes: readonly ("done" | "failed")[];
   open: boolean;
 }): Face {
-  if (state === "no_agent") return "unborn";
   if (state === "broken" || state === "missing_dir") return "broken";
   if (doing) return doing;
   if (outcomes.includes("failed")) return "failed";

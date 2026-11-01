@@ -212,14 +212,14 @@ Three tiers, decided by what the person has to do about it.
 
 | Tier | States | How it is shown |
 |---|---|---|
-| **Needs a decision** | broken, folder not found, no agent yet, failed, stopped, refused | Text always, plus icon or shape. Colour is the third signal, never the only one. |
+| **Needs a decision** | broken, folder not found, failed, stopped, refused | Text always, plus icon or shape. Colour is the third signal, never the only one. |
 | **Reassurance only** | working and the steps of a run | The avatar's ring and face, the word on the rows, and the live line at the transcript's end. |
 | **Nothing to do** | ready, done once seen | Nothing. A trace where nine calls in ten say `done` is how the one that failed gets lost. |
 
 One vocabulary everywhere, so a condition is never `working` in one place and `running` in another:
 
 `working` · `thinking` · `running` · `reading` · `searching` · `editing` · `fetching` · `answering` · `starting` · `done` · `failed` · `stopped` · `refused` · `unsent` ·
-`no agent yet` · `folder not found` · `broken`
+`folder not found` · `broken`
 
 Copy says what something means for the person, never how duang is built: "Saved on this computer", not
 the name of a credential store. An agent's own files, which its author names, and original error text,

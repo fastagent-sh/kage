@@ -1,5 +1,5 @@
 import { MODEL_UNAVAILABLE_CODE, STOPPED_CODE } from "../shared/refusals.ts";
-import type { AgentRow, AgentSetup, DuangApi, SessionFrame, SessionSummary } from "../preload/index.ts";
+import type { AgentContent, AgentRow, AgentSetup, DuangApi, SessionFrame, SessionSummary } from "../preload/index.ts";
 import { foldEntries, itemsOf, noLive } from "./fold.ts";
 import { phase, previewOf, queueView, type Activity, type Place } from "./transcript.ts";
 import {
@@ -33,7 +33,6 @@ type Pane =
   | "unreadable-registry"
   | "no-agents"
   | "broken"
-  | "no-agent"
   | "missing-dir"
   | "settling"
   | "start"
@@ -86,6 +85,7 @@ export interface View extends SettingsView, AgentResourcesView {
   agentId?: string;
   states: Record<string, AgentState>;
   sessions: Record<string, SessionSummary[]>;
+  content: Record<string, AgentContent[]>;
   // The window of each model the open agent offers, in tokens: what the context meter is measured against.
   contextWindows: Record<string, number>;
   // An empty list and a failed one are not the same.
@@ -132,7 +132,6 @@ function paneOf(view: View): Pane {
   if (!agentId) return view.registryError ? "unreadable-registry" : "no-agents";
   const state = view.states[agentId];
   if (state === "broken") return "broken";
-  if (state === "no_agent") return "no-agent";
   if (state === "missing_dir") return "missing-dir";
   // Not known yet: the agent is still opening (at launch, or the first time it is chosen), and may well
   // have conversations to show.
@@ -149,7 +148,7 @@ function alertOf(view: View): Trouble | undefined {
   if (!view.agentId || !view.error) return undefined;
   // A setup problem's own panel offers the fix; the runtime's prose ("run `fastagent init`") would contradict it.
   const state = view.states[view.agentId];
-  if (state === "broken" || state === "no_agent" || state === "missing_dir") return undefined;
+  if (state === "broken" || state === "missing_dir") return undefined;
   return { title: "This agent could not be opened", advice: "Try again; its folder and conversations are untouched.", reason: view.error };
 }
 function modelBlockedBy(view: View): string | undefined {
@@ -158,7 +157,7 @@ function modelBlockedBy(view: View): string | undefined {
   // A model change mid-run would leave the transcript's model and the one answering apart for a step.
   if (view.busy) return "Stop the turn to change the model or effort";
   const state = view.states[agentId];
-  if (view.loading || view.changingModel === agentId || c?.loading || state === "broken" || state === "no_agent" || state === "missing_dir")
+  if (view.loading || view.changingModel === agentId || c?.loading || state === "broken" || state === "missing_dir")
     return "This agent is not ready";
   return undefined;
 }
@@ -169,7 +168,6 @@ function blockedBy(view: View): string | undefined {
   if (view.agentId && view.changingModel === view.agentId) return "changing the model…";
   if (c?.error || c?.ended) return "reconnect before sending";
   if (state === "broken") return "this agent is broken";
-  if (state === "no_agent") return "create an agent here first";
   if (state === "missing_dir") return "this agent's folder is missing";
   if (!c) return "no conversation";
   if (state !== "ready") return "this agent is not ready";
@@ -231,6 +229,7 @@ export function createStore(api: DuangApi) {
     agents: [],
     states: {},
     sessions: {},
+    content: {},
     contextWindows: {},
     sessionsError: {},
     loading: false,
@@ -360,7 +359,12 @@ export function createStore(api: DuangApi) {
           ...own(result.code),
         });
       const { [id]: _cleared, ...errors } = view.sessionsError;
-      settle({ sessions: { ...view.sessions, [id]: result.sessions }, sessionsError: errors, ...own("ready", result.model) });
+      settle({
+        sessions: { ...view.sessions, [id]: result.sessions },
+        ...(result.content && { content: { ...view.content, [id]: result.content } }),
+        sessionsError: errors,
+        ...own("ready", result.model),
+      });
       if (current()) await readPreview(id);
     } catch (error) {
       settle({ sessionsError: { ...view.sessionsError, [id]: message(error) } });
@@ -508,6 +512,7 @@ export function createStore(api: DuangApi) {
         loading: false,
         model: result.model,
         contextWindows: result.windows,
+        ...(result.content && { content: { ...view.content, [id]: result.content } }),
         ...(listCurrent() ? { sessions: { ...view.sessions, [id]: result.sessions } } : {}),
         states: { ...view.states, [id]: "ready" },
       });
@@ -678,14 +683,16 @@ export function createStore(api: DuangApi) {
         publish();
       }
     },
-    async addAgent() {
+    pickFolder: (): Promise<{ name: string; path: string } | undefined> => api.pickFolder(),
+    async createAgent(name: string, folders: string[]): Promise<string | undefined> {
       try {
-        const row = await api.addAgent();
-        if (!row) return;
+        const result = await api.createAgent(name, folders);
+        if (!result.ok) return result.error.message;
         publish({ agents: await api.listAgents() });
-        await selectAgent(row.id);
+        await selectAgent(result.agent.id);
+        return undefined;
       } catch (error) {
-        fail("The agent was not added", error);
+        return message(error);
       }
     },
     async pickModel(model: string) {
@@ -750,30 +757,6 @@ export function createStore(api: DuangApi) {
         resetting = false;
       }
     },
-    async relocateAgent() {
-      const id = view.agentId;
-      if (!id) return;
-      try {
-        const result = await api.relocateAgent(id);
-        if (!result) return;
-        if (!result.ok) return fail("The agent was not moved", result.error.message);
-        publish({ agents: await api.listAgents() });
-        await selectAgent(id);
-      } catch (error) {
-        fail("The agent was not moved", error);
-      }
-    },
-    async scaffold() {
-      const id = view.agentId;
-      if (!id) return;
-      const request = navigation;
-      try {
-        await api.scaffoldAgent(id);
-        if (request === navigation) await selectAgent(id);
-      } catch (error) {
-        if (request === navigation) fail("The agent could not be created here", error);
-      }
-    },
     async reveal(agentId = view.agentId, path?: string) {
       try {
         // No agent to name means the list itself is what failed; show that file instead.
@@ -802,8 +785,9 @@ export function createStore(api: DuangApi) {
         if (view.agentId !== id) return;
         ++navigation;
         const { [id]: _gone, ...rest } = view.sessions;
+        const { [id]: _contentGone, ...restContent } = view.content;
         selectResources();
-        publish({ agentId: undefined, conversation: undefined, error: undefined, sessions: rest });
+        publish({ agentId: undefined, conversation: undefined, error: undefined, sessions: rest, content: restContent });
         if (view.agents[0]) await selectAgent(view.agents[0].id);
       } catch (error) {
         fail("The agent was not removed", error);

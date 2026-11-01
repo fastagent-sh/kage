@@ -1,5 +1,6 @@
+import { Fragment } from "react";
 import { ListBullets } from "@phosphor-icons/react";
-import type { ProviderUsage } from "../preload/index.ts";
+import type { AgentContent, ProviderUsage } from "../preload/index.ts";
 import { location } from "./paths.ts";
 import { UsageMeter } from "./plan-usage.tsx";
 import { Avatar } from "./avatar.tsx";
@@ -12,6 +13,7 @@ export function ConversationHeader({
   colour,
   face,
   dir,
+  content,
   working,
   others,
   context,
@@ -19,6 +21,7 @@ export function ConversationHeader({
   queued,
   list,
   onReveal,
+  onRevealPath,
   onUsagePage,
 }: {
   id: string;
@@ -26,6 +29,7 @@ export function ConversationHeader({
   colour: number;
   face: Face;
   dir?: string;
+  content?: AgentContent[];
   working: boolean;
   others?: { count: number; open?: () => void };
   context?: { used: number; window: number };
@@ -33,6 +37,7 @@ export function ConversationHeader({
   queued?: number;
   list?: { open: boolean; unseen: number };
   onReveal: () => void;
+  onRevealPath?: (path: string) => void;
   onUsagePage: (provider: string) => void;
 }) {
   return (
@@ -48,14 +53,33 @@ export function ConversationHeader({
                 {agent}
               </div>
             </div>
-            {dir && (
-              <button
-                onClick={onReveal}
-                title={dir}
-                className="pointer-events-auto block max-w-full truncate text-left text-[11px] text-muted hover:text-text"
-              >
-                {location(dir)}
-              </button>
+            {content && content.length > 0 ? (
+              <div className="pointer-events-auto flex max-w-full items-center gap-1 truncate text-[11px] text-muted">
+                <span className="shrink-0">works on</span>
+                {content.map((entry, index) => (
+                  <Fragment key={entry.name}>
+                    {index > 0 && <span className="shrink-0">·</span>}
+                    <button
+                      type="button"
+                      onClick={() => (onRevealPath ? onRevealPath(entry.location) : onReveal())}
+                      title={entry.location}
+                      className="truncate text-left hover:text-text"
+                    >
+                      {entry.name}
+                    </button>
+                  </Fragment>
+                ))}
+              </div>
+            ) : (
+              dir && (
+                <button
+                  onClick={onReveal}
+                  title={dir}
+                  className="pointer-events-auto block max-w-full truncate text-left text-[11px] text-muted hover:text-text"
+                >
+                  {location(dir)}
+                </button>
+              )
             )}
           </div>
           {working ? (

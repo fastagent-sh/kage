@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { copyFile, realpath, stat, writeFile } from "node:fs/promises";
+import { copyFile, lstat, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, join, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createAgent } from "@fastagent-sh/fastagent";
+import { createAgent, listContent, readContentSource } from "@fastagent-sh/fastagent";
 import { stripPathSuffix } from "../shared/links.ts";
 import { readJson, serially, writeJsonAtomic } from "./json-file.ts";
 
@@ -68,12 +68,13 @@ export class AgentRegistry {
     });
   }
 
-  async add(dir: string): Promise<AgentRow> {
+  async add(dir: string, name?: string): Promise<AgentRow> {
     const canonical = await realpath(dir);
+    const label = name?.trim() || basename(canonical);
     return this.change((rows) => {
       const existing = rows.find((row) => row.dir === canonical);
       if (existing) return existing;
-      const row = { id: randomUUID(), name: basename(canonical), dir: canonical, colour: lowestFree(rows) };
+      const row = { id: randomUUID(), name: label, dir: canonical, colour: lowestFree(rows) };
       rows.push(row);
       return row;
     });
@@ -95,23 +96,70 @@ export class AgentRegistry {
     });
   }
 
-  async relocate(id: string, dir: string): Promise<void> {
-    const canonical = await realpath(dir);
-    return this.change((rows) => {
-      const row = rows.find((row) => row.id === id);
-      if (!row) throw new Error(`unknown agent ${id}`);
-      const other = rows.find((other) => other.dir === canonical && other.id !== id);
-      if (other) throw new Error(`${canonical} is already the agent "${other.name}"`);
-      row.dir = canonical;
-    });
-  }
-
   setModel(id: string, model: string): Promise<void> {
     return this.change((rows) => {
       const row = rows.find((row) => row.id === id);
       if (!row) throw new Error(`unknown agent ${id}`);
       row.model = model;
     });
+  }
+}
+
+export const agentsRoot = (homeDir = process.env.HOME || homedir()): string => join(homeDir, "Agents");
+
+export function agentSlug(name: string): string {
+  const slug = name
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/g, "-")
+    .replace(/^[-_]+|[-_]+$/g, "");
+  return slug || "agent";
+}
+
+export async function nextAgentDir(name: string, root = agentsRoot()): Promise<string> {
+  const base = agentSlug(name);
+  const resolvedRoot = resolve(root);
+  for (let n = 1; ; n++) {
+    const slug = n === 1 ? base : `${base}-${n}`;
+    const candidate = resolve(resolvedRoot, slug);
+    if (dirname(candidate) !== resolvedRoot) throw new Error(`Invalid agent directory: ${candidate}`);
+    const exists = await lstat(candidate).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      },
+    );
+    if (!exists) return candidate;
+  }
+}
+
+export function previewContentFolder(dir: string): { name: string; path: string } {
+  const resolved = resolve(dir);
+  return { name: readContentSource(resolved, resolved).addition.name, path: resolved };
+}
+
+export async function createNewAgent({
+  name,
+  folders = [],
+  root = agentsRoot(),
+  registry,
+}: {
+  name: string;
+  folders?: string[];
+  root?: string;
+  registry: AgentRegistry;
+}): Promise<AgentRow> {
+  const label = name.trim();
+  if (!label) throw new Error("Agent name is required");
+  await registry.list();
+  const dir = await nextAgentDir(label, root);
+  const content = folders.map((folder) => readContentSource(folder, dir).addition);
+  await createAgent(dir, content.length ? { content } : {});
+  try {
+    return await registry.add(dir, label);
+  } catch (error) {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+    throw error;
   }
 }
 
@@ -131,17 +179,6 @@ export async function requireFolder(dir: string): Promise<void> {
   }
 }
 
-// FastAgent opens a folder with no agent in it as an empty one, so the agent is recognised by its config.
-export async function hasAgent(dir: string): Promise<boolean> {
-  return stat(join(dir, CONFIG_FILE)).then(
-    (file) => file.isFile(),
-    (error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT" || error.code === "ENOTDIR") return false;
-      throw error;
-    },
-  );
-}
-
 // Every failure to load the config starts with its file name.
 export function failingConfig(dir: string, message: string): string | undefined {
   return message.startsWith(`${CONFIG_FILE}: `) ? join(dir, CONFIG_FILE) : undefined;
@@ -158,17 +195,36 @@ export async function freshConfig(dir: string, config: string, now = new Date())
   await writeFile(real, FRESH_CONFIG);
 }
 
-// The folder is the agent. FastAgent refuses one that holds anything, so the person's own files are never touched.
-export const createAgentIn = (dir: string) => createAgent(dir);
-
 export async function resolveAgentPath(agentDir: string, rawPath: string, homeDir = homedir()): Promise<string> {
   const trimmed = rawPath.trim();
   if (!trimmed) throw new Error("Path cannot be empty");
   const fromUrl = /^file:\/\//i.test(trimmed) ? fileURLToPath(new URL(trimmed)) : trimmed;
   const clean = stripPathSuffix(fromUrl);
   if (!clean) throw new Error(`Invalid path: ${rawPath}`);
-  const expanded =
-    clean === "~" ? homeDir : clean.startsWith("~/") ? join(homeDir, clean.slice(2)) : resolve(agentDir, clean);
-  return realpath(expanded);
+  if (clean === "~" || clean.startsWith("~/")) {
+    return realpath(clean === "~" ? homeDir : join(homeDir, clean.slice(2)));
+  }
+  if (isAbsolute(clean)) {
+    return realpath(clean);
+  }
+  try {
+    return await realpath(resolve(agentDir, clean));
+  } catch (firstError) {
+    const entries = await listContent(agentDir).then(
+      (res) => res.content,
+      () => [],
+    );
+    for (const entry of entries) {
+      if (clean === entry.name) return realpath(entry.location);
+      if (clean.startsWith(`${entry.name}/`)) {
+        const inside = await realpath(resolve(entry.location, clean.slice(entry.name.length + 1))).catch(() => undefined);
+        if (inside) return inside;
+      }
+    }
+    for (const entry of entries) {
+      const direct = await realpath(resolve(entry.location, clean)).catch(() => undefined);
+      if (direct) return direct;
+    }
+    throw firstError;
+  }
 }
-

@@ -4,13 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
-import { openAgent } from "@fastagent-sh/fastagent";
+import { listContent, openAgent } from "@fastagent-sh/fastagent";
 import {
   AgentRegistry,
-  createAgentIn,
+  createNewAgent,
   failingConfig,
   freshConfig,
-  hasAgent,
   MissingDirError,
   requireFolder,
   resolveAgentPath,
@@ -106,57 +105,56 @@ test("invalid or unreadable registry fails visibly and is never replaced with an
   }
 });
 
-test("scaffolding fills only an empty folder and never overwrites what is there", async () => {
-  const root = await mkdtemp(join(tmpdir(), "duang-scaffold-"));
+test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers collisions, and refuses invalid content without leaving files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "duang-create-"));
   try {
-    const dir = join(root, "agent");
-    await mkdir(dir);
-    const created = await createAgentIn(dir);
-    assert.equal(created.dir, dir);
-    assert.ok(created.created.includes("fastagent.config.ts"));
-    assert.ok(await hasAgent(dir));
-    await writeFile(join(dir, "fastagent.config.ts"), "existing config");
-    await assert.rejects(createAgentIn(dir), /already a fastagent agent/);
-    assert.equal(await readFile(join(dir, "fastagent.config.ts"), "utf8"), "existing config");
-
-    const project = join(root, "project");
-    await mkdir(project);
-    await writeFile(join(project, "notes.md"), "mine");
-    await assert.rejects(createAgentIn(project), /empty/i);
-    assert.deepEqual(await readdir(project), ["notes.md"], "a folder with the person's files in it is left alone");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("an agent is a folder with a config in it; one that cannot be looked at says why", async () => {
-  const root = await mkdtemp(join(tmpdir(), "duang-has-"));
-  try {
-    assert.equal(await hasAgent(root), false);
-    assert.equal(await hasAgent(join(root, "gone")), false);
-    await writeFile(join(root, "fastagent.config.ts"), "export default {};\n");
-    assert.equal(await hasAgent(root), true);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("a moved folder is the same agent where it is now; a folder that is another agent is refused", async () => {
-  const root = await mkdtemp(join(tmpdir(), "duang-registry-"));
-  try {
+    const agentsDir = join(root, "Agents");
     const registry = new AgentRegistry(join(root, "agents.json"));
-    const [before, after, other] = [join(root, "before"), join(root, "after"), join(root, "other")];
-    await Promise.all([mkdir(before), mkdir(after), mkdir(other)]);
-    const moved = await registry.add(before);
-    const second = await registry.add(other);
-    await registry.relocate(moved.id, after);
+    const tally = join(root, "tally");
+    const handbook = join(root, "handbook");
+    await Promise.all([mkdir(join(tally, "handbook"), { recursive: true }), mkdir(handbook)]);
+    await writeFile(join(tally, "index.ts"), "export const n = 1;\n");
+    await writeFile(join(tally, "handbook", "guide.md"), "shadow\n");
+    await writeFile(join(handbook, "guide.md"), "real handbook\n");
+
+    const first = await createNewAgent({ name: "Reviewer", folders: [tally, handbook], root: agentsDir, registry });
+    assert.equal(first.name, "Reviewer");
+    assert.equal(first.dir, join(await realpath(agentsDir), "Reviewer"));
+    const gitignore = await readFile(join(first.dir, ".gitignore"), "utf8");
+    for (const entry of [".state", ".secrets", ".env"]) assert.match(gitignore, new RegExp(entry.replace(".", "\\.")));
+    const listed = await listContent(first.dir);
     assert.deepEqual(
-      (await registry.list()).find((row) => row.id === moved.id),
-      { ...moved, dir: await realpath(after) },
-      "its id, name and colour are kept",
+      listed.content.map(({ name, location }) => [name, location]),
+      [
+        ["tally", await realpath(tally)],
+        ["handbook", await realpath(handbook)],
+      ],
     );
-    await assert.rejects(registry.relocate(moved.id, other), new RegExp(`already the agent "${second.name}"`));
-    await assert.rejects(registry.relocate(moved.id, join(root, "nowhere")), /ENOENT/);
+    // Relative paths inside bound folders resolve through resolveAgentPath, preferring explicit <name>/ prefixes.
+    assert.equal(await resolveAgentPath(first.dir, "index.ts", root), await realpath(join(tally, "index.ts")));
+    assert.equal(await resolveAgentPath(first.dir, "tally/index.ts", root), await realpath(join(tally, "index.ts")));
+    assert.equal(await resolveAgentPath(first.dir, "handbook/guide.md", root), await realpath(join(handbook, "guide.md")));
+
+    // Same name gets -2, and a name with / or .. never escapes ~/Agents/.
+    const second = await createNewAgent({ name: "Reviewer", folders: [], root: agentsDir, registry });
+    assert.equal(second.dir, join(await realpath(agentsDir), "Reviewer-2"));
+    const escaped = await createNewAgent({ name: "../../outside", folders: [], root: agentsDir, registry });
+    assert.equal(escaped.dir, join(await realpath(agentsDir), "outside"));
+    await registry.rename(first.id, "Renamed Reviewer");
+    assert.equal((await registry.list()).find((row) => row.id === first.id)?.dir, first.dir, "rename leaves the directory");
+
+    // Refused declarations (duplicate folder name, or nesting around the agent directory) leave no directory.
+    const otherTally = join(root, "other", "tally");
+    await mkdir(otherTally, { recursive: true });
+    await assert.rejects(
+      createNewAgent({ name: "Duplicate", folders: [tally, otherTally], root: agentsDir, registry }),
+      /already has content named "tally"/,
+    );
+    await assert.rejects(
+      createNewAgent({ name: "Nested", folders: [agentsDir], root: agentsDir, registry }),
+      /contains the agent directory/,
+    );
+    assert.deepEqual((await readdir(agentsDir)).sort(), ["Reviewer", "Reviewer-2", "outside"].sort());
   } finally {
     await rm(root, { recursive: true, force: true });
   }

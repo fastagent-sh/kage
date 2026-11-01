@@ -28,22 +28,18 @@ the header's list button, a round disc beside its info pill, shows and hides; it
 Escape (without stopping a run), and closes when a conversation is chosen or started. Running and
 drafted work stays attached to its originating agent and conversation when navigating.
 
-Adding an agent chooses a folder; an empty one can be made an agent after confirmation (FastAgent's starter files and a git repository), and one that holds files is refused with FastAgent's reason and left untouched. An agent whose
-directory is no longer there (moved, deleted, a drive not mounted) says so, with Retry and Remove from duang,
-and is never offered a scaffold: its row says `folder not found`. A folder that cannot be looked at (no
+Creating an agent asks for its name and any folders on this computer it should work on, and creates the agent in `~/Agents/<slug>/` (FastAgent's starter files, `context.json` / `context.local.json`, and a git repository). A refused declaration (duplicate folder name, nesting) is shown in FastAgent's words and creates nothing. An agent whose
+directory is no longer there (moved, deleted, a drive not mounted) says so, with Retry and Remove from duang:
+its row says `folder not found`. A folder that cannot be looked at (no
 permission, macOS privacy controls) is not missing: it is a broken agent, in the system's own words.
-**Locate folder…** asks where it is now
-and points the same agent there, keeping its name, colour and conversations (they are in the folder); a
-folder that is already another agent is refused. An agent whose config does not load (FastAgent names the
+An agent whose config does not load (FastAgent names the
 config for a mistake in it, in a file it imports, or a package it needs) offers **Start a fresh config**: a
 copy of the old file is kept beside it (`fastagent.config.ts.broken-20261003-144000`, which nothing loads, and
 never written over an earlier copy), a new `export default {};` takes its place, and the agent opens asking
 for a model. Main replaces only the config FastAgent said failed, inside the agent's folder; the window does
 not name the file. Any other failure offers Retry and Reveal in Finder. A
 broken agent shows its original failure with a way to retry, reveal or remove it; any agent's row menu
-has Reveal in Finder, and the header shows the agent's folder, a click on which opens it. Removal today deletes
-the local registry row and duang's conversations with the agent (its instance), after asking, and not the directory ([#133](https://github.com/fastagent-sh/duang/issues/133)
-moves the directory duang created to the Trash, after asking). Removing an agent, moving it or replacing its config
+has Reveal in Finder, and the header shows the folders the agent works on (`works on app · handbook`, or its own folder when none are attached), a click on which reveals that folder. Removal moves the agent's directory in `~/Agents/` and duang's conversations with the agent (its instance) to the Trash, after asking, and leaves the folders it works on untouched. Removing an agent or replacing its config
 is refused while one of its conversations is at work, including a send still being recorded; changing its model is not, since nothing is rebuilt.
 A default model duang keeps for an agent that this computer's providers no longer offer (its provider was
 disconnected, or its config no longer declares the model) does not stop the agent opening: the chip names it, the picker

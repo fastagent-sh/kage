@@ -40,7 +40,7 @@
     "release:major": "node scripts/release.mjs major"
   },
   "dependencies": {
-    "@fastagent-sh/fastagent": "0.27.0",
+    "@fastagent-sh/fastagent": "0.28.0",
     "undici": "^7.18.1"
   },
   "devDependencies": {
