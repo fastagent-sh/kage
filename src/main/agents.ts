@@ -71,7 +71,14 @@ export type OpenResult =
       staleDefault?: string;
       windows: Record<string, number>;
     }
-  | { ok: false; code: AgentSetup; message: string; inConfig?: true };
+  | {
+      ok: false;
+      code: AgentSetup;
+      message: string;
+      inConfig?: true;
+      content?: AgentContent[];
+      inspection?: AgentInspection;
+    };
 
 // Agent-scoped admission: sends share (a count); removing or changing an agent excludes them, including a send
 // still opening its runtime.
@@ -146,9 +153,11 @@ export async function openedAgents(): Promise<{ id: string; agent: LocalAgent }[
  * beside the runtime's own errors, so the window takes one shape and never classifies a condition itself.
  */
 export async function openAgentResult(agentId: string): Promise<OpenResult> {
+  let dir: string | undefined;
+  let content: AgentContent[] | undefined;
   try {
     const row = await agentRow(agentId);
-    let content: AgentContent[];
+    dir = row.dir;
     try {
       await requireFolder(row.dir);
       content = (await listContent(row.dir)).content.map(({ name, location }) => ({ name, location }));
@@ -177,7 +186,15 @@ export async function openAgentResult(agentId: string): Promise<OpenResult> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof MissingDirError) return { ok: false, code: "missing_dir", message };
-    return configFailed(agentId) ? { ok: false, code: "broken", message, inConfig: true } : { ok: false, code: "broken", message };
+    const inspection = dir ? await inspectAgentDir(dir).catch(() => undefined) : undefined;
+    return {
+      ok: false,
+      code: "broken",
+      message,
+      ...(configFailed(agentId) && { inConfig: true }),
+      ...(content && { content }),
+      ...(inspection && { inspection }),
+    };
   }
 }
 

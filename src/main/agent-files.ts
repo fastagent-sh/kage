@@ -200,6 +200,15 @@ const MODULE_EXT = /^([^.][^/]*)\.(ts|mts|js|mjs)$/;
 const IGNORED_MODULE = /\.(d|test|spec)\.[a-z]+$/;
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+async function readTextIfPresent(file: string): Promise<string | undefined> {
+  try {
+    return await readFile(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
 function parseDotEnvMap(text: string): Map<string, string> {
   const map = new Map<string, string>();
   for (const raw of text.split("\n")) {
@@ -210,19 +219,30 @@ function parseDotEnvMap(text: string): Map<string, string> {
     const key = line.slice(0, eq).trim();
     let value = line.slice(eq + 1).trim();
     const quote = value[0];
-    if ((quote === '"' || quote === "'") && value.at(-1) === quote) value = value.slice(1, -1);
+    if (value.length >= 2 && (quote === '"' || quote === "'") && value.at(-1) === quote) value = value.slice(1, -1);
     if (value.trim()) map.set(key, value);
     else map.delete(key);
   }
   return map;
 }
 
+function formatDotEnvValue(value: string): string {
+  const quote = value[0];
+  if (value.length >= 2 && (quote === '"' || quote === "'") && value.at(-1) === quote) return `"${value}"`;
+  return value;
+}
+
 async function moduleNamesIn(dir: string): Promise<string[]> {
-  const entries = await readdir(dir).catch(() => []);
-  return entries.sort().flatMap((entry) => {
-    const match = MODULE_EXT.exec(entry);
-    return match && !IGNORED_MODULE.test(entry) && match[1] ? [match[1]] : [];
-  });
+  try {
+    const entries = await readdir(dir);
+    return entries.sort().flatMap((entry) => {
+      const match = MODULE_EXT.exec(entry);
+      return match && !IGNORED_MODULE.test(entry) && match[1] ? [match[1]] : [];
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
 }
 
 export async function inspectAgentDir(agentDir: string, description?: string): Promise<AgentInspection> {
@@ -231,13 +251,16 @@ export async function inspectAgentDir(agentDir: string, description?: string): P
       DEFINITION_FILES.map((file) =>
         stat(join(agentDir, file)).then(
           (info) => (info.isFile() ? file : undefined),
-          () => undefined,
+          (error: NodeJS.ErrnoException) => {
+            if (error.code === "ENOENT") return undefined;
+            throw error;
+          },
         ),
       ),
     ),
-    readFile(join(agentDir, "context.json"), "utf8").catch(() => undefined),
-    readFile(join(agentDir, ".fastagent", "secrets.json"), "utf8").catch(() => undefined),
-    readFile(join(agentDir, ".secrets", ".env"), "utf8").catch(() => ""),
+    readTextIfPresent(join(agentDir, "context.json")),
+    readTextIfPresent(join(agentDir, ".fastagent", "secrets.json")),
+    readTextIfPresent(join(agentDir, ".secrets", ".env")),
     moduleNamesIn(join(agentDir, "src", "channels")),
     moduleNamesIn(join(agentDir, "src", "schedules")),
   ]);
@@ -260,7 +283,7 @@ export async function inspectAgentDir(agentDir: string, description?: string): P
     }
   }
 
-  const configuredEnv = parseDotEnvMap(envRaw);
+  const configuredEnv = parseDotEnvMap(envRaw ?? "");
   const secrets: AgentSecretStatus[] = [];
   const seenSecrets = new Set<string>();
   if (secretsRaw) {
@@ -325,10 +348,10 @@ export async function setAgentSecret(agentDir: string, rawName: string, rawValue
     if (err.code !== "EEXIST") throw err;
   });
   const envFile = join(secretsDir, ".env");
-  const existing = await readFile(envFile, "utf8").catch(() => "");
+  const existing = (await readTextIfPresent(envFile)) ?? "";
   const map = parseDotEnvMap(existing);
   map.set(name, value);
-  const serialized = [...map.entries()].map(([k, v]) => `${k}=${JSON.stringify(v)}`).join("\n") + "\n";
+  const serialized = [...map.entries()].map(([k, v]) => `${k}=${formatDotEnvValue(v)}`).join("\n") + "\n";
   await writeFile(envFile, serialized, { mode: 0o600 });
   return inspectAgentDir(agentDir);
 }
@@ -336,11 +359,13 @@ export async function setAgentSecret(agentDir: string, rawName: string, rawValue
 export async function removeAgentSecret(agentDir: string, rawName: string): Promise<AgentInspection> {
   const name = rawName.trim();
   const envFile = join(agentDir, ".secrets", ".env");
-  const existing = await readFile(envFile, "utf8").catch(() => "");
-  const map = parseDotEnvMap(existing);
-  map.delete(name);
-  const serialized = map.size > 0 ? [...map.entries()].map(([k, v]) => `${k}=${JSON.stringify(v)}`).join("\n") + "\n" : "";
-  await writeFile(envFile, serialized, { mode: 0o600 });
+  const existing = await readTextIfPresent(envFile);
+  if (existing !== undefined) {
+    const map = parseDotEnvMap(existing);
+    map.delete(name);
+    const serialized = map.size > 0 ? [...map.entries()].map(([k, v]) => `${k}=${formatDotEnvValue(v)}`).join("\n") + "\n" : "";
+    await writeFile(envFile, serialized, { mode: 0o600 });
+  }
   return inspectAgentDir(agentDir);
 }
 

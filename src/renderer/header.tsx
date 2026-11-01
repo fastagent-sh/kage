@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   ArrowSquareOut,
   Broadcast,
@@ -188,6 +188,7 @@ export function AgentInspector({
   face,
   dir,
   model,
+  modelBlocked,
   content = [],
   commands = [],
   tools = [],
@@ -211,6 +212,7 @@ export function AgentInspector({
   face: Face;
   dir: string;
   model?: string;
+  modelBlocked?: string;
   content?: AgentContent[];
   commands?: AgentCapability[];
   tools?: AgentCapability[];
@@ -233,6 +235,14 @@ export function AgentInspector({
   const [showAllSkills, setShowAllSkills] = useState(false);
   const [editingSecret, setEditingSecret] = useState<{ name: string; value: string; fixedName?: boolean }>();
   const [secretError, setSecretError] = useState<string>();
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     setError(undefined);
@@ -251,16 +261,16 @@ export function AgentInspector({
     setError(undefined);
     try {
       const picked = await onPickFolder();
-      if (!picked) return;
+      if (!picked || !mounted.current) return;
       setUpdating(true);
       try {
         const refusal = await onAddFolder(picked.path);
-        if (refusal) setError(refusal);
+        if (mounted.current && refusal) setError(refusal);
       } finally {
-        setUpdating(false);
+        if (mounted.current) setUpdating(false);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (mounted.current) setError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -270,11 +280,11 @@ export function AgentInspector({
     setUpdating(true);
     try {
       const refusal = await onRemoveFolder(folderName);
-      if (refusal) setError(refusal);
+      if (mounted.current && refusal) setError(refusal);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (mounted.current) setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setUpdating(false);
+      if (mounted.current) setUpdating(false);
     }
   };
 
@@ -284,12 +294,13 @@ export function AgentInspector({
     setUpdating(true);
     try {
       const refusal = await onSetSecret(editingSecret.name, editingSecret.value);
+      if (!mounted.current) return;
       if (refusal) setSecretError(refusal);
       else setEditingSecret(undefined);
     } catch (err) {
-      setSecretError(err instanceof Error ? err.message : String(err));
+      if (mounted.current) setSecretError(err instanceof Error ? err.message : String(err));
     } finally {
-      setUpdating(false);
+      if (mounted.current) setUpdating(false);
     }
   };
 
@@ -299,11 +310,11 @@ export function AgentInspector({
     setUpdating(true);
     try {
       const refusal = await onRemoveSecret(secretName);
-      if (refusal) setSecretError(refusal);
+      if (mounted.current && refusal) setSecretError(refusal);
     } catch (err) {
-      setSecretError(err instanceof Error ? err.message : String(err));
+      if (mounted.current) setSecretError(err instanceof Error ? err.message : String(err));
     } finally {
-      setUpdating(false);
+      if (mounted.current) setUpdating(false);
     }
   };
 
@@ -383,8 +394,13 @@ export function AgentInspector({
             <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
               <button
                 type="button"
-                onClick={onPickModel}
-                className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-hover"
+                aria-disabled={Boolean(modelBlocked || disabledReason) || undefined}
+                title={modelBlocked || disabledReason || undefined}
+                onClick={() => {
+                  if (modelBlocked || disabledReason) return;
+                  onPickModel();
+                }}
+                className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-hover aria-disabled:opacity-50"
               >
                 <span className="min-w-0 flex-1 break-all font-mono text-[12.5px] font-medium text-text">
                   {model ?? "Choose model…"}

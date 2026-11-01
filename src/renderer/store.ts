@@ -353,7 +353,7 @@ export function createStore(api: DuangApi) {
   const leave = () => publish({ conversation: undefined });
   // A provider disconnected here leaves a plan's numbers behind, which this store owns: it drops them, so the
   // settings sub-store never reaches into state it does not own.
-  const { select: selectResources, closeModels, ...resources } = createAgentResources(api, publish);
+  const { select: selectResources, closeModels, resetCommands, ...resources } = createAgentResources(api, publish);
   const { forget: forgetUsage, ...usage } = createProviderUsage(api, publish);
   const { onStep, ...settings } = createSettings(api, () => view, publish, forgetUsage);
 
@@ -520,7 +520,14 @@ export function createStore(api: DuangApi) {
       const result = await api.openAgent(id);
       if (request !== navigation) return;
       if (!result.ok) {
-        publish({ loading: false, states: { ...view.states, [id]: result.code }, error: result.message, errorInConfig: result.inConfig });
+        publish({
+          loading: false,
+          states: { ...view.states, [id]: result.code },
+          error: result.message,
+          errorInConfig: result.inConfig,
+          ...(result.content && { content: { ...view.content, [id]: result.content } }),
+          ...(result.inspection && { inspection: { ...view.inspection, [id]: result.inspection } }),
+        });
         return;
       }
       publish({
@@ -545,6 +552,60 @@ export function createStore(api: DuangApi) {
       if (request === navigation)
         publish({ loading: false, error: message(error), states: { ...view.states, [id]: "broken" } });
     }
+  }
+
+  async function refreshOpenAgent(
+    id: string,
+    fallback: { content?: AgentContent[]; inspection?: AgentInspection } = {},
+  ) {
+    const prevDescription = view.inspection[id]?.description;
+    const withDesc = (insp?: AgentInspection) =>
+      insp && prevDescription && !insp.description ? { ...insp, description: prevDescription } : insp;
+    if (view.agentId !== id) {
+      publish({
+        ...(fallback.content && { content: { ...view.content, [id]: fallback.content } }),
+        ...(fallback.inspection && { inspection: { ...view.inspection, [id]: withDesc(fallback.inspection)! } }),
+      });
+      void listSessions(id);
+      return;
+    }
+    const request = navigation;
+    const currentSession = view.conversation?.agentId === id ? view.conversation.session : undefined;
+    if (view.conversation?.agentId === id) close(view.conversation);
+    resetCommands();
+    const opened = await api.openAgent(id);
+    if (request !== navigation || view.agentId !== id) return;
+    const nextContent = opened.content ?? fallback.content;
+    const nextInspection = withDesc(opened.inspection ?? fallback.inspection);
+    if (!opened.ok) {
+      leave();
+      publish({
+        states: { ...view.states, [id]: opened.code },
+        error: opened.message,
+        errorInConfig: opened.inConfig,
+        ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
+        ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
+      });
+      return;
+    }
+    const nextSession = currentSession ?? openable(id, opened.sessions) ?? (await begin(id, opened.sessions));
+    if (request !== navigation || view.agentId !== id) return;
+    await open(nextSession);
+    if (request !== navigation || view.agentId !== id) return;
+    publish({
+      error: undefined,
+      errorInConfig: undefined,
+      model: opened.model,
+      contextWindows: opened.windows,
+      ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
+      ...(opened.tools && { tools: { ...view.tools, [id]: opened.tools } }),
+      ...(opened.commands && { agentCommands: { ...view.agentCommands, [id]: opened.commands } }),
+      ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
+      sessions: { ...view.sessions, [id]: opened.sessions },
+      states: { ...view.states, [id]: "ready" },
+    });
+    staleDefault = opened.staleDefault ? { agentId: id, model: opened.staleDefault } : undefined;
+    publish();
   }
 
   // Read again after a model change, which the session's own events may not have reported before it was subscribed.
@@ -713,69 +774,45 @@ export function createStore(api: DuangApi) {
         return message(error);
       }
     },
-    async addAgentFolder(folder: string): Promise<string | undefined> {
-      const id = view.agentId;
+    async addAgentFolder(folder: string, id = view.agentId): Promise<string | undefined> {
       if (!id) return undefined;
       try {
         const result = await api.addAgentFolder(id, folder);
         if (!result.ok) return result.error.message;
-        publish({ content: { ...view.content, [id]: result.content } });
-        const c = view.conversation;
-        if (c?.agentId === id) {
-          close(c);
-          await open(c.session);
-        }
+        await refreshOpenAgent(id, { content: result.content });
         return undefined;
       } catch (error) {
         return message(error);
       }
     },
-    async removeAgentFolder(name: string): Promise<string | undefined> {
-      const id = view.agentId;
+    async removeAgentFolder(name: string, id = view.agentId): Promise<string | undefined> {
       if (!id) return undefined;
       try {
         const result = await api.removeAgentFolder(id, name);
         if (!result.ok) return result.error.message;
-        publish({ content: { ...view.content, [id]: result.content } });
-        const c = view.conversation;
-        if (c?.agentId === id) {
-          close(c);
-          await open(c.session);
-        }
+        await refreshOpenAgent(id, { content: result.content });
         return undefined;
       } catch (error) {
         return message(error);
       }
     },
-    async setAgentSecret(name: string, value: string): Promise<string | undefined> {
-      const id = view.agentId;
+    async setAgentSecret(name: string, value: string, id = view.agentId): Promise<string | undefined> {
       if (!id) return undefined;
       try {
         const result = await api.setAgentSecret(id, name, value);
         if (!result.ok) return result.error.message;
-        publish({ inspection: { ...view.inspection, [id]: result.inspection } });
-        const c = view.conversation;
-        if (c?.agentId === id) {
-          close(c);
-          await open(c.session);
-        }
+        await refreshOpenAgent(id, { inspection: result.inspection });
         return undefined;
       } catch (error) {
         return message(error);
       }
     },
-    async removeAgentSecret(name: string): Promise<string | undefined> {
-      const id = view.agentId;
+    async removeAgentSecret(name: string, id = view.agentId): Promise<string | undefined> {
       if (!id) return undefined;
       try {
         const result = await api.removeAgentSecret(id, name);
         if (!result.ok) return result.error.message;
-        publish({ inspection: { ...view.inspection, [id]: result.inspection } });
-        const c = view.conversation;
-        if (c?.agentId === id) {
-          close(c);
-          await open(c.session);
-        }
+        await refreshOpenAgent(id, { inspection: result.inspection });
         return undefined;
       } catch (error) {
         return message(error);

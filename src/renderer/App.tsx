@@ -286,7 +286,7 @@ export default function App() {
                   plan={provider ? view.usage[provider] : undefined}
                   queued={c ? waiting.filter(({ listed }) => listed).length : undefined}
                   details={
-                    agentState === "ready"
+                    agentState === "ready" || agentState === "broken"
                       ? { open: detailsOpen, onToggle: () => setDetailsOpen((open) => !open) }
                       : undefined
                   }
@@ -403,8 +403,9 @@ export default function App() {
             </>
           )}
         </main>
-        {!settings && !creating && detailsOpen && agent && agentState === "ready" && (
+        {!settings && !creating && detailsOpen && agent && (agentState === "ready" || agentState === "broken") && (
           <AgentInspector
+            key={agent.id}
             id={agent.id}
             name={agent.name}
             colour={agent.colour}
@@ -415,19 +416,20 @@ export default function App() {
               open: false,
             })}
             dir={agent.dir}
-            model={model}
+            model={view.model}
+            modelBlocked={view.modelBlocked ?? (!c ? "Open a conversation to choose a model" : undefined)}
             content={view.content[agent.id]}
             commands={view.agentCommands[agent.id]}
             tools={view.tools[agent.id]}
             inspection={view.inspection[agent.id]}
             busy={busy || (view.running[agent.id]?.length ?? 0) > 0}
             onClose={() => setDetailsOpen(false)}
-            onPickModel={store.openPicker}
+            onPickModel={agentState === "ready" ? store.openPicker : undefined}
             onPickFolder={() => store.pickFolder()}
-            onAddFolder={(folder) => store.addAgentFolder(folder)}
-            onRemoveFolder={(name) => store.removeAgentFolder(name)}
-            onSetSecret={(name, value) => store.setAgentSecret(name, value)}
-            onRemoveSecret={(name) => store.removeAgentSecret(name)}
+            onAddFolder={(folder) => store.addAgentFolder(folder, agent.id)}
+            onRemoveFolder={(name) => store.removeAgentFolder(name, agent.id)}
+            onSetSecret={(name, value) => store.setAgentSecret(name, value, agent.id)}
+            onRemoveSecret={(name) => store.removeAgentSecret(name, agent.id)}
             onReveal={() => void store.reveal()}
             onRevealPath={(path) => void store.reveal(agent.id, path)}
             onSelectSkill={(skillName) => {

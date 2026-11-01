@@ -213,8 +213,12 @@ test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers
     assert.deepEqual(inspected.channels, ["telegram"]);
     assert.deepEqual(inspected.schedules, ["daily"]);
 
-    const afterSet = await setAgentSecret(first.dir, "CUSTOM_API_KEY", "secret-123");
+    const afterSet = await setAgentSecret(first.dir, "CUSTOM_API_KEY", 'a"b\\c');
     assert.ok(afterSet.secrets.some((s) => s.name === "CUSTOM_API_KEY" && s.configured && s.fromFile));
+    await setAgentSecret(first.dir, "SINGLE_QUOTE", '"');
+    const rawEnv = await readFile(join(first.dir, ".secrets", ".env"), "utf8");
+    assert.match(rawEnv, /^CUSTOM_API_KEY=a"b\\c$/m, "values with quotes and backslashes do not accumulate JSON escapes");
+    assert.match(rawEnv, /^SINGLE_QUOTE="$/m, "a single quote character is not stripped to empty");
     const afterDelete = await removeAgentSecret(first.dir, "CUSTOM_API_KEY");
     assert.ok(!afterDelete.secrets.some((s) => s.name === "CUSTOM_API_KEY"));
   } finally {
