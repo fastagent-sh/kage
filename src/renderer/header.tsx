@@ -497,6 +497,7 @@ export function AgentInspector({
                     onKeyDown={(e) => {
                       if (e.key === "Enter") void saveSecret();
                       if (e.key === "Escape") {
+                        e.stopPropagation();
                         setSecretError(undefined);
                         setEditingSecret(undefined);
                       }
@@ -602,7 +603,7 @@ export function AgentInspector({
                     if (eq > 0 && !editingSecret.value) {
                       let val = raw.slice(eq + 1).trim();
                       const quote = val[0];
-                      if ((quote === '"' || quote === "'") && val.at(-1) === quote) val = val.slice(1, -1);
+                      if (val.length >= 2 && (quote === '"' || quote === "'") && val.at(-1) === quote) val = val.slice(1, -1);
                       setEditingSecret({
                         name: raw.slice(0, eq).trim(),
                         value: val,
@@ -614,6 +615,7 @@ export function AgentInspector({
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && editingSecret.name.trim() && editingSecret.value.trim()) void saveSecret();
                     if (e.key === "Escape") {
+                      e.stopPropagation();
                       setSecretError(undefined);
                       setEditingSecret(undefined);
                     }
@@ -631,6 +633,7 @@ export function AgentInspector({
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && editingSecret.name.trim() && editingSecret.value.trim()) void saveSecret();
                     if (e.key === "Escape") {
+                      e.stopPropagation();
                       setSecretError(undefined);
                       setEditingSecret(undefined);
                     }
