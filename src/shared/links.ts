@@ -86,6 +86,7 @@ export function classifyLink(href: string | undefined): LinkTarget {
   if (!trimmed || trimmed === "streamdown:incomplete-link" || trimmed.startsWith("#")) return { kind: "incomplete" };
   const external = externalUrl(trimmed);
   if (external) return { kind: "external", url: external };
+  if (!isFilePath(trimmed)) return { kind: "incomplete" };
   return { kind: "path", path: trimmed, displayPath: stripPathSuffix(trimmed) };
 }
 

@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Streamdown } from "streamdown";
 import { classifyLink, externalUrl, isFilePath, stripPathSuffix } from "../shared/links.ts";
-import { markdownPlugins, normalizeMath } from "./markdown.ts";
+import { markdownPlugins, markdownRehypePlugins, normalizeMath } from "./markdown.ts";
 
 const linkSafety = { enabled: false };
 
@@ -18,6 +18,7 @@ function renderMarkdown(text: string, open = false): string {
         linkSafety,
         parseIncompleteMarkdown: open,
         plugins: markdownPlugins,
+        rehypePlugins: markdownRehypePlugins,
       },
       normalizeMath(text),
     ),
@@ -49,10 +50,12 @@ test("CJK emphasis with punctuation and autolinks followed by Chinese text split
   assert.doesNotMatch(html, /https:\/\/fastagent\.sh\/docs，/);
 });
 
-test("the streaming caret is CSS-driven rather than appended to the markdown text", () => {
-  const streaming = renderMarkdown("Visit https://fastagent.sh", true);
+test("the streaming caret is CSS-driven and streaming display math is not swallowed as fence metadata", () => {
+  const streaming = renderMarkdown("Visit https://fastagent.sh\n\n$$\\sum_{i=1}^k w_i", true);
   assert.match(streaming, /--streamdown-caret/);
   assert.doesNotMatch(streaming, /fastagent\.sh▍/);
+  assert.match(streaming, /class="katex-display"/);
+  assert.match(streaming, /\\sum_\{i=1\}\^k w_i/);
 });
 
 test("only http, https, and mailto links are treated as external URLs", () => {
@@ -96,6 +99,10 @@ test("file paths are distinguished from model specs, slash commands, and code ex
 });
 
 test("markdown links classify into external URLs, local paths, and incomplete streaming targets", () => {
+  const html = renderMarkdown("[Docs](https://fastagent.sh/docs) and [Config](fastagent.config.ts#L1)");
+  assert.doesNotMatch(html, /\[blocked\]/);
+  assert.match(html, /href="fastagent\.config\.ts#L1"/);
+
   assert.deepEqual(classifyLink("https://fastagent.sh/docs"), {
     kind: "external",
     url: "https://fastagent.sh/docs",
@@ -107,4 +114,5 @@ test("markdown links classify into external URLs, local paths, and incomplete st
   });
   assert.deepEqual(classifyLink("streamdown:incomplete-link"), { kind: "incomplete" });
   assert.deepEqual(classifyLink("#section"), { kind: "incomplete" });
+  assert.deepEqual(classifyLink("not a path or url"), { kind: "incomplete" });
 });

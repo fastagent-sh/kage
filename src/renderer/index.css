@@ -484,6 +484,9 @@ summary:focus-visible,
   overflow-y: hidden;
   padding-block: 2px;
 }
+.md .katex-display > .katex {
+  display: inline-block;
+}
 .md > div > [data-streamdown="horizontal-rule"] {
   margin-block: 24px;
 }

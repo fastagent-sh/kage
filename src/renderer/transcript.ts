@@ -408,7 +408,8 @@ export function previewOf(items: Item[]): { text: string; at: number } | undefin
               : "";
     const plain = text
       .replace(/^(#{1,6}|>)\s*/gm, "")
-      .replace(/```\w*|`|\*\*/g, "")
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      .replace(/```\w*|`|\*\*|\$\$/g, "")
       .replace(/\s+/g, " ")
       .trim();
     if (plain) return { text: plain, at: item.at };

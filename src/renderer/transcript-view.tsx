@@ -24,7 +24,7 @@ import {
 import { Streamdown } from "streamdown";
 import { stripPathSuffix } from "../shared/links.ts";
 import { MarkdownCode, MarkdownLink, TranscriptActionsContext } from "./code.tsx";
-import { markdownPlugins, normalizeMath } from "./markdown.ts";
+import { markdownPlugins, markdownRehypePlugins, normalizeMath } from "./markdown.ts";
 import {
   dayLabel,
   duration,
@@ -458,6 +458,7 @@ export function Message({
               linkSafety={markdownLinkSafety}
               parseIncompleteMarkdown={item.open}
               plugins={markdownPlugins}
+              rehypePlugins={markdownRehypePlugins}
               tableMaxHeight={TABLE_FULL_HEIGHT}
             >
               {normalizeMath(item.text)}
@@ -594,7 +595,7 @@ export function Tool({ item }: { item: Extract<Item, { kind: "tool" }> }) {
       (detail.kind === "edit"
         ? !/^Successfully replaced \d+ block\(s\) in /.test(output)
         : detail.kind === "write"
-          ? !/^Successfully wrote \d+ bytes to /.test(output)
+          ? !/^Successfully wrote (?:to |\d+ bytes to )/.test(output)
           : true));
   return (
     // The negative margin lets the hover highlight extend past the text while the command keeps the left edge.
