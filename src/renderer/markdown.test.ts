@@ -3,7 +3,10 @@ import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Streamdown } from "streamdown";
+import { classifyLink, externalUrl, isFilePath, stripPathSuffix } from "../shared/links.ts";
 import { markdownPlugins, normalizeMath } from "./markdown.ts";
+
+const linkSafety = { enabled: false };
 
 function renderMarkdown(text: string, open = false): string {
   return renderToStaticMarkup(
@@ -12,6 +15,7 @@ function renderMarkdown(text: string, open = false): string {
       {
         caret: "block",
         isAnimating: open,
+        linkSafety,
         parseIncompleteMarkdown: open,
         plugins: markdownPlugins,
       },
@@ -49,4 +53,58 @@ test("the streaming caret is CSS-driven rather than appended to the markdown tex
   const streaming = renderMarkdown("Visit https://fastagent.sh", true);
   assert.match(streaming, /--streamdown-caret/);
   assert.doesNotMatch(streaming, /fastagent\.sh▍/);
+});
+
+test("only http, https, and mailto links are treated as external URLs", () => {
+  assert.equal(externalUrl("https://fastagent.sh/docs"), "https://fastagent.sh/docs");
+  assert.equal(externalUrl("http://localhost:3000/api"), "http://localhost:3000/api");
+  assert.equal(externalUrl("mailto:team@fastagent.sh"), "mailto:team@fastagent.sh");
+  assert.equal(externalUrl("file:///etc/passwd"), undefined);
+  assert.equal(externalUrl("javascript:alert(1)"), undefined);
+  assert.equal(externalUrl("src/main/index.ts"), undefined);
+});
+
+test("file paths are distinguished from model specs, slash commands, and code expressions", () => {
+  for (const path of [
+    "src/main/index.ts",
+    "src/main/index.ts:61:5",
+    "src/renderer/App.tsx#L120-L135",
+    "./package.json",
+    "~/Library/Application Support/duang/agents.json",
+    "/Users/someone/research/video-research",
+    "fastagent.config.ts",
+    "README.md",
+    ".gitignore",
+  ]) {
+    assert.equal(isFilePath(path), true, `expected ${path} to be recognised as a file path`);
+  }
+  for (const nonPath of [
+    "openai/gpt-5.5",
+    "provider/model",
+    "/compact",
+    "/skill:review",
+    "npm run build",
+    "https://fastagent.sh/docs.md",
+    "sectionsGenerated",
+    "res.json",
+    'import "./foo.ts"',
+  ]) {
+    assert.equal(isFilePath(nonPath), false, `expected ${nonPath} not to be recognised as a file path`);
+  }
+  assert.equal(stripPathSuffix("src/main/index.ts:61:5"), "src/main/index.ts");
+  assert.equal(stripPathSuffix("src/renderer/App.tsx#L12-L20"), "src/renderer/App.tsx");
+});
+
+test("markdown links classify into external URLs, local paths, and incomplete streaming targets", () => {
+  assert.deepEqual(classifyLink("https://fastagent.sh/docs"), {
+    kind: "external",
+    url: "https://fastagent.sh/docs",
+  });
+  assert.deepEqual(classifyLink("src/main/agents.ts#L10"), {
+    kind: "path",
+    path: "src/main/agents.ts#L10",
+    displayPath: "src/main/agents.ts",
+  });
+  assert.deepEqual(classifyLink("streamdown:incomplete-link"), { kind: "incomplete" });
+  assert.deepEqual(classifyLink("#section"), { kind: "incomplete" });
 });

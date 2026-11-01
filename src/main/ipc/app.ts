@@ -1,6 +1,7 @@
 // The window's own concerns: its settings file, the network route, the Dock badge and the native row menus.
 import { app, BrowserWindow, ipcMain, Menu, shell } from "electron";
 import { join } from "node:path";
+import { externalUrl } from "../../shared/links.ts";
 import { applyNetwork, describeRoute, testConnection } from "../proxy.ts";
 import { avatar, network, SettingsFile } from "../settings.ts";
 
@@ -48,6 +49,11 @@ export function registerApp(): void {
   ipcMain.handle("app:unseen", (_e, count: number) => {
     if (!Number.isInteger(count) || count < 0) throw new Error(`Unseen count must be a non-negative integer: ${count}`);
     app.setBadgeCount(count);
+  });
+  ipcMain.handle("app:openExternal", async (_e, url: string) => {
+    const safe = typeof url === "string" ? externalUrl(url) : undefined;
+    if (!safe) throw new Error(`Only http, https, and mailto links can be opened: ${String(url)}`);
+    await shell.openExternal(safe);
   });
 
   // Native, so Rename looks like the system's. Chromium also raises `contextmenu` for Shift+F10 and the Menu key.

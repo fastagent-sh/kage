@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
   Plug,
@@ -22,7 +22,8 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { Streamdown } from "streamdown";
-import { MarkdownCode } from "./code.tsx";
+import { stripPathSuffix } from "../shared/links.ts";
+import { MarkdownCode, MarkdownLink, TranscriptActionsContext } from "./code.tsx";
 import { markdownPlugins, normalizeMath } from "./markdown.ts";
 import {
   dayLabel,
@@ -152,6 +153,8 @@ export function Transcript({
   onUsage,
   onSettings,
   onPickModel,
+  onOpenLink,
+  onOpenPath,
   provider,
 }: {
   items: Item[];
@@ -169,8 +172,11 @@ export function Transcript({
   onUsage: (provider: string) => void;
   onSettings: (where: "providers" | "network") => void;
   onPickModel: () => void;
+  onOpenLink?: (url: string) => void;
+  onOpenPath?: (path: string) => void;
   provider?: string;
 }) {
+  const transcriptActions = useMemo(() => ({ onOpenLink, onOpenPath }), [onOpenLink, onOpenPath]);
   // The ways on belong to the latest problem only, and only while nothing runs: an earlier one is history.
   const last = items.at(-1);
   const problem = !busy && last?.kind === "note" && last.title ? last : undefined;
@@ -314,6 +320,7 @@ export function Transcript({
   }, []);
 
   return (
+    <TranscriptActionsContext.Provider value={transcriptActions}>
     <div className="relative flex-1 min-h-0 flex flex-col">
       {away && (
         <Button
@@ -375,6 +382,7 @@ export function Transcript({
       </div>
     </div>
     </div>
+    </TranscriptActionsContext.Provider>
   );
 }
 
@@ -389,10 +397,11 @@ const SettledWork = memo(
     before.work.items.every((item, index) => item === after.work.items[index]),
 );
 
-// Only `code`: Streamdown's own `pre` marks fenced blocks, and replacing it makes every block inline.
-const markdownComponents = { code: MarkdownCode };
+// Only `a` and `code`: Streamdown's own `pre` marks fenced blocks, and replacing it makes every block inline.
+const markdownComponents = { a: MarkdownLink, code: MarkdownCode };
 
 const markdownControls = { table: { download: false } };
+const markdownLinkSafety = { enabled: false };
 
 // Streamdown's table controls are Lucide; match the code block's Phosphor icons.
 const markdownIcons = { CopyIcon: Copy, CheckIcon: Check, Maximize2Icon: ArrowsOut, XIcon: X };
@@ -444,6 +453,7 @@ export function Message({
               controls={markdownControls}
               icons={markdownIcons}
               isAnimating={item.open}
+              linkSafety={markdownLinkSafety}
               parseIncompleteMarkdown={item.open}
               plugins={markdownPlugins}
               tableMaxHeight={TABLE_FULL_HEIGHT}
@@ -566,8 +576,16 @@ function toolState(item: Extract<Item, { kind: "tool" }>): { word: string; tone:
   return undefined;
 }
 
+function toolPath(args: unknown): string | undefined {
+  if (!args || typeof args !== "object") return undefined;
+  const path = (args as { path?: unknown }).path;
+  return typeof path === "string" && path.trim() ? path.trim() : undefined;
+}
+
 export function Tool({ item }: { item: Extract<Item, { kind: "tool" }> }) {
+  const { onOpenPath } = useContext(TranscriptActionsContext);
   const summary = firstArg(item.args);
+  const path = toolPath(item.args);
   const state = toolState(item);
   const elapsed = useElapsed(item.started, item.ended);
   const Icon = toolIcons[item.name] ?? Terminal;
@@ -580,6 +598,21 @@ export function Tool({ item }: { item: Extract<Item, { kind: "tool" }> }) {
         <Icon size={14} className={`shrink-0 ${mark}`} />
         <span className="shrink-0 text-muted">{item.name}</span>
         <span className="font-mono truncate">{summary}</span>
+        {path && onOpenPath && (
+          <button
+            type="button"
+            aria-label={`Show ${stripPathSuffix(path)} in Finder`}
+            title={`Show ${stripPathSuffix(path)} in Finder`}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onOpenPath(path);
+            }}
+            className="ml-auto shrink-0 rounded-[4px] p-1 text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-surface-2 hover:text-text focus-visible:opacity-100"
+          >
+            <FolderOpen size={13} />
+          </button>
+        )}
         {state && (
           <Badge tone={state.tone} pulse={item.status === "running"} className="shrink-0">
             {state.word}

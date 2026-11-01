@@ -339,6 +339,8 @@ export default function App() {
                       setSettings(where === "network" ? { network: true } : where === "providers" && provider ? { reconnect: provider } : {})
                     }
                     onPickModel={store.openPicker}
+                    onOpenLink={(url) => void store.openLink(url)}
+                    onOpenPath={(path) => void store.reveal(c.agentId, path)}
                     provider={providerName}
                     onRetry={
                       view.resend

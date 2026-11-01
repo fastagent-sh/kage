@@ -3,8 +3,18 @@ import { chmod, mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeF
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
 import { openAgent } from "@fastagent-sh/fastagent";
-import { AgentRegistry, createAgentIn, failingConfig, freshConfig, hasAgent, MissingDirError, requireFolder } from "./agent-files.ts";
+import {
+  AgentRegistry,
+  createAgentIn,
+  failingConfig,
+  freshConfig,
+  hasAgent,
+  MissingDirError,
+  requireFolder,
+  resolveAgentPath,
+} from "./agent-files.ts";
 
 test("registry serializes writes in one process, survives restart and deduplicates real paths", async () => {
   const root = await mkdtemp(join(tmpdir(), "duang-registry-"));
@@ -232,6 +242,32 @@ test("only a folder that is not there is missing; one that cannot be looked at s
     );
   } finally {
     await chmod(join(root, "locked"), 0o755).catch(() => {});
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("agent paths resolve relative, home, and file-URL targets with line suffixes, and reject missing files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "duang-path-"));
+  try {
+    const agent = join(root, "agent");
+    const home = join(root, "home");
+    await mkdir(join(agent, "src"), { recursive: true });
+    await mkdir(home, { recursive: true });
+    const file = join(agent, "src", "index.ts");
+    const note = join(home, "notes.md");
+    await writeFile(file, "export {};\n");
+    await writeFile(note, "# Notes\n");
+    const canonicalFile = await realpath(file);
+    const canonicalNote = await realpath(note);
+
+    assert.equal(await resolveAgentPath(agent, "src/index.ts", home), canonicalFile);
+    assert.equal(await resolveAgentPath(agent, "src/index.ts:42:5", home), canonicalFile);
+    assert.equal(await resolveAgentPath(agent, "./src/index.ts#L10-L20", home), canonicalFile);
+    assert.equal(await resolveAgentPath(agent, "~/notes.md:3", home), canonicalNote);
+    assert.equal(await resolveAgentPath(agent, `${pathToFileURL(file).href}#L8`, home), canonicalFile);
+    await assert.rejects(resolveAgentPath(agent, "src/missing.ts:10", home), /ENOENT/);
+    await assert.rejects(resolveAgentPath(agent, "   ", home), /Path cannot be empty/);
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

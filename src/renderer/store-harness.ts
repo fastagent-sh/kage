@@ -73,6 +73,7 @@ export function harness() {
     listCommands: async () => [],
     revealAgent: async () => {},
     revealRegistry: async () => {},
+    openExternal: async () => {},
     listModels: async () => (described(["provider/model"])),
     providerUsage: async (provider) => ({ provider, fetchedAt: 0 }),
     openUsagePage: async () => {},
