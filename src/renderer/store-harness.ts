@@ -57,6 +57,7 @@ export function harness() {
   const closed: string[] = [];
   const opens: string[] = [];
   const api: DuangApi = {
+    homeDir: undefined,
     listAgents: async () => [
       { id: "a", name: "A", dir: "/a", colour: 0 },
       { id: "b", name: "B", dir: "/b", colour: 1 },
@@ -64,6 +65,23 @@ export function harness() {
     pickFolder: async () => undefined,
     createAgent: async (name) => ({ ok: true, agent: { id: "c", name, dir: `/Agents/${name}`, colour: 2 } }),
     openAgent: async () => ready,
+    addAgentFolder: async (_id, folder) => ({
+      ok: true,
+      content: [{ name: folder.split("/").pop() ?? "folder", location: folder }],
+    }),
+    removeAgentFolder: async () => ({ ok: true, content: [] }),
+    setAgentSecret: async (_id, name) => ({
+      ok: true,
+      inspection: {
+        files: [],
+        packages: [],
+        secrets: [{ name, optional: true, declaredIn: [".secrets/.env"], configured: true, fromFile: true }],
+      },
+    }),
+    removeAgentSecret: async () => ({
+      ok: true,
+      inspection: { files: [], packages: [], secrets: [] },
+    }),
     setModel: async () => ({ ok: true }) as Result,
     setThinking: async () => ({ ok: true }) as Result,
     readState: async (_id, session) => sessionOf(session),

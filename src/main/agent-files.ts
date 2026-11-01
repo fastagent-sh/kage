@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { copyFile, lstat, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createAgent, listContent, readContentSource } from "@fastagent-sh/fastagent";
+import { addContent, createAgent, listContent, readContentSource, removeContent } from "@fastagent-sh/fastagent";
 import { stripPathSuffix } from "../shared/links.ts";
 import { readJson, serially, writeJsonAtomic } from "./json-file.ts";
 
@@ -161,6 +161,254 @@ export async function createNewAgent({
     await rm(dir, { recursive: true, force: true }).catch(() => {});
     throw error;
   }
+}
+
+export async function addFolderToAgent(agentDir: string, folder: string): Promise<{ name: string; location: string }[]> {
+  const real = await realpath(folder);
+  const info = await stat(real);
+  if (!info.isDirectory()) throw new Error(`Not a folder: ${folder}`);
+  const { addition } = readContentSource(real, agentDir);
+  const { content } = await addContent(agentDir, addition);
+  return content.map(({ name, location }) => ({ name, location }));
+}
+
+export async function removeFolderFromAgent(agentDir: string, name: string): Promise<{ name: string; location: string }[]> {
+  const { content } = await removeContent(agentDir, name);
+  return content.map(({ name, location }) => ({ name, location }));
+}
+
+export interface AgentSecretStatus {
+  name: string;
+  optional: boolean;
+  description?: string;
+  declaredIn: string[];
+  configured: boolean;
+  fromFile?: boolean;
+  fromEnv?: boolean;
+}
+
+export interface AgentInspection {
+  description?: string;
+  files: string[];
+  packages: { name: string; version: string }[];
+  secrets: AgentSecretStatus[];
+}
+
+const DEFINITION_FILES = ["SYSTEM.md", "APPEND_SYSTEM.md", "AGENTS.md", "fastagent.config.ts", "context.json"];
+const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+async function readTextIfPresent(file: string): Promise<string | undefined> {
+  try {
+    return await readFile(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+function parseDotEnvLine(raw: string): { key: string; value: string } | undefined {
+  const line = raw.trim();
+  if (!line || line.startsWith("#")) return undefined;
+  const eq = line.indexOf("=");
+  if (eq < 1) return undefined;
+  const key = line.slice(0, eq).trim();
+  let value = line.slice(eq + 1).trim();
+  const quote = value[0];
+  if ((quote === '"' || quote === "'") && value.at(-1) === quote) value = value.slice(1, -1);
+  return { key, value };
+}
+
+function parseDotEnvMap(text: string): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const raw of text.split("\n")) {
+    const parsed = parseDotEnvLine(raw);
+    if (!parsed) continue;
+    if (parsed.value.trim()) map.set(parsed.key, parsed.value);
+    else map.delete(parsed.key);
+  }
+  return map;
+}
+
+function formatDotEnvValue(value: string): string {
+  const quote = value[0];
+  if (((quote === '"' || quote === "'") && value.at(-1) === quote) || value !== value.trim()) {
+    return `"${value}"`;
+  }
+  return value;
+}
+
+export async function inspectAgentDir(agentDir: string, description?: string): Promise<AgentInspection> {
+  const [fileChecks, contextRaw, secretsRaw, envRaw] = await Promise.all([
+    Promise.all(
+      DEFINITION_FILES.map((file) =>
+        stat(join(agentDir, file)).then(
+          (info) => (info.isFile() ? file : undefined),
+          (error: NodeJS.ErrnoException) => {
+            if (error.code === "ENOENT") return undefined;
+            throw error;
+          },
+        ),
+      ),
+    ),
+    readTextIfPresent(join(agentDir, "context.json")),
+    readTextIfPresent(join(agentDir, ".fastagent", "secrets.json")),
+    readTextIfPresent(join(agentDir, ".secrets", ".env")),
+  ]);
+
+  const files = fileChecks.filter((file): file is string => file !== undefined);
+  const packages: { name: string; version: string }[] = [];
+  const contextVariables = new Map<string, string | undefined>();
+  const isRecord = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
+  if (contextRaw) {
+    try {
+      const parsed = JSON.parse(contextRaw) as unknown;
+      const env = isRecord(parsed) && isRecord(parsed.environment) ? parsed.environment : undefined;
+      if (env && isRecord(env.packages)) {
+        for (const [name, version] of Object.entries(env.packages)) {
+          if (typeof version === "string") packages.push({ name, version });
+        }
+      }
+      if (env && Array.isArray(env.aptPackages)) {
+        for (const apt of env.aptPackages) {
+          if (typeof apt === "string") packages.push({ name: `apt:${apt}`, version: "system" });
+        }
+      }
+      if (env && isRecord(env.variables)) {
+        for (const [name, variable] of Object.entries(env.variables)) {
+          const desc = isRecord(variable) && typeof variable.description === "string" ? variable.description : undefined;
+          contextVariables.set(name, desc);
+        }
+      }
+    } catch {
+      // Malformed context.json is reported by openAgentResult's listContent check.
+    }
+  }
+
+  const configuredEnv = parseDotEnvMap(envRaw ?? "");
+  const secrets: AgentSecretStatus[] = [];
+  const seenSecrets = new Set<string>();
+  const statusOf = (name: string) => {
+    const fromEnv = name in process.env;
+    const fromFile = configuredEnv.has(name);
+    const configured = fromEnv ? Boolean(process.env[name]?.trim()) : fromFile;
+    return { configured, fromEnv, fromFile };
+  };
+
+  if (secretsRaw !== undefined) {
+    const secretsFile = join(agentDir, ".fastagent", "secrets.json");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(secretsRaw);
+    } catch (error) {
+      throw new Error(`${secretsFile}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+    if (!Array.isArray(parsed)) throw new Error(`${secretsFile}: expected an array of secrets`);
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") continue;
+      const record = item as { name?: unknown; optional?: unknown; description?: unknown; declaredIn?: unknown };
+      if (typeof record.name !== "string") continue;
+      seenSecrets.add(record.name);
+      const { configured, fromEnv, fromFile } = statusOf(record.name);
+      secrets.push({
+        name: record.name,
+        optional: record.optional === true,
+        ...(typeof record.description === "string" && { description: record.description }),
+        declaredIn: Array.isArray(record.declaredIn)
+          ? record.declaredIn.filter((source): source is string => typeof source === "string")
+          : [],
+        configured,
+        ...(fromFile && { fromFile: true }),
+        ...(fromEnv && { fromEnv: true }),
+      });
+    }
+  }
+
+  for (const [name, desc] of contextVariables) {
+    if (seenSecrets.has(name)) continue;
+    seenSecrets.add(name);
+    const { configured, fromEnv, fromFile } = statusOf(name);
+    secrets.push({
+      name,
+      optional: false,
+      ...(desc && { description: desc }),
+      declaredIn: ["context.json"],
+      configured,
+      ...(fromFile && { fromFile: true }),
+      ...(fromEnv && { fromEnv: true }),
+    });
+  }
+
+  for (const name of configuredEnv.keys()) {
+    if (seenSecrets.has(name)) continue;
+    const { configured, fromEnv, fromFile } = statusOf(name);
+    secrets.push({
+      name,
+      optional: true,
+      declaredIn: [".secrets/.env"],
+      configured,
+      ...(fromFile && { fromFile: true }),
+      ...(fromEnv && { fromEnv: true }),
+    });
+  }
+
+  return {
+    ...(description && { description }),
+    files,
+    packages,
+    secrets,
+  };
+}
+
+export async function setAgentSecret(agentDir: string, rawName: string, rawValue: string): Promise<AgentInspection> {
+  await requireFolder(agentDir);
+  const name = rawName.trim();
+  const value = rawValue.trim();
+  if (!ENV_NAME_PATTERN.test(name)) {
+    throw new Error("Variable name must use letters, digits, and underscores (for example GITHUB_TOKEN)");
+  }
+  if (!value) throw new Error("Variable value cannot be empty");
+  if (/[\r\n]/.test(value)) throw new Error("Variable value cannot contain newlines");
+  const secretsDir = join(agentDir, ".secrets");
+  await mkdir(secretsDir, { recursive: true });
+  await writeFile(join(secretsDir, ".gitignore"), "*\n!.gitignore\n", { flag: "wx" }).catch((err: NodeJS.ErrnoException) => {
+    if (err.code !== "EEXIST") throw err;
+  });
+  const envFile = join(secretsDir, ".env");
+  const existing = (await readTextIfPresent(envFile)) ?? "";
+  const formatted = `${name}=${formatDotEnvValue(value)}`;
+  const lines = existing === "" ? [] : existing.replace(/\n$/, "").split("\n");
+  let replaced = false;
+  const nextLines: string[] = [];
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!;
+    if (parseDotEnvLine(line)?.key === name) {
+      if (!replaced) {
+        nextLines.unshift(formatted);
+        replaced = true;
+      }
+    } else {
+      nextLines.unshift(line);
+    }
+  }
+  if (!replaced) nextLines.push(formatted);
+  await writeFile(envFile, `${nextLines.join("\n")}\n`, { mode: 0o600 });
+  return inspectAgentDir(agentDir);
+}
+
+export async function removeAgentSecret(agentDir: string, rawName: string): Promise<AgentInspection> {
+  await requireFolder(agentDir);
+  const name = rawName.trim();
+  const envFile = join(agentDir, ".secrets", ".env");
+  const existing = await readTextIfPresent(envFile);
+  if (existing !== undefined) {
+    const lines = existing
+      .replace(/\n$/, "")
+      .split("\n")
+      .filter((line) => line !== "" && parseDotEnvLine(line)?.key !== name);
+    await writeFile(envFile, lines.length > 0 ? `${lines.join("\n")}\n` : "", { mode: 0o600 });
+  }
+  return inspectAgentDir(agentDir);
 }
 
 const CONFIG_FILE = "fastagent.config.ts";

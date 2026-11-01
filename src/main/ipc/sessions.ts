@@ -34,6 +34,7 @@ const listener = (sender: WebContents): Listener => ({
 export const closeWindow = (senderId: number) => sessions.closeWindow(senderId);
 /** Cutting an agent's subscriptions is invisible to the window unless each one says why it ended. */
 export const endAgent = (agentId: string, reason: string) => sessions.endAgent(agentId, reason);
+export const releaseAgent = (agentId: string) => sessions.releaseAgent(agentId);
 /** From now on a message is refused rather than started and cut. */
 export const quitSends = () => inFlight.quit();
 

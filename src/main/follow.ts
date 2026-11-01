@@ -79,5 +79,9 @@ export function subscriptions(events: EventSource) {
           stop(key);
         }
     },
+    /** Stop listening before closing an agent that the window will immediately reopen. */
+    releaseAgent(agentId: string) {
+      for (const [key, slot] of slots) if (slot.agentId === agentId) stop(key);
+    },
   };
 }

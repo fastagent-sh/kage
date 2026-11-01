@@ -444,3 +444,115 @@ test("a fresh start opens the agent on a new conversation, not the one it was le
   assert.equal(store.getSnapshot().pane, "start");
   store.dispose();
 });
+
+test("opening an agent records its loaded tools and commands, and adding or removing folders updates its content in place", async () => {
+  const { api, store } = harness();
+  let currentContent = [{ name: "tally", location: "/work/tally" }];
+  let hasSecret = true;
+  api.openAgent = async () =>
+    hasSecret
+      ? {
+          ...listed("s1"),
+          content: currentContent,
+          tools: [{ name: "read", description: "Read files" }, { name: "bash" }],
+          commands: [{ name: "skill:review", description: "Review code" }],
+          inspection: {
+            description: "Reviews pull requests",
+            files: ["SYSTEM.md"],
+            packages: [],
+            secrets: [{ name: "GITHUB_TOKEN", optional: false, declaredIn: ["src/tools/gh.ts"], configured: true, fromFile: true }],
+          },
+        }
+      : {
+          ok: false,
+          code: "broken",
+          message: "missing required secrets: GITHUB_TOKEN",
+          content: currentContent,
+          inspection: {
+            files: ["SYSTEM.md"],
+            packages: [],
+            secrets: [{ name: "GITHUB_TOKEN", optional: false, declaredIn: ["src/tools/gh.ts"], configured: false }],
+          },
+        };
+  await store.load();
+  assert.deepEqual(store.getSnapshot().content.a, [{ name: "tally", location: "/work/tally" }]);
+  assert.deepEqual(store.getSnapshot().tools.a, [{ name: "read", description: "Read files" }, { name: "bash" }]);
+  assert.deepEqual(store.getSnapshot().agentCommands.a, [{ name: "skill:review", description: "Review code" }]);
+
+  api.addAgentFolder = async () => ({
+    ok: false,
+    error: { code: "invalid_content", message: 'this agent already has content named "tally"', retryable: false },
+  });
+  assert.equal(await store.addAgentFolder("/other/tally", "a"), 'this agent already has content named "tally"');
+  assert.deepEqual(store.getSnapshot().content.a, [{ name: "tally", location: "/work/tally" }]);
+
+  api.addAgentFolder = async () => {
+    currentContent = [
+      { name: "tally", location: "/work/tally" },
+      { name: "handbook", location: "/work/handbook" },
+    ];
+    return { ok: true, content: currentContent };
+  };
+  assert.equal(await store.addAgentFolder("/work/handbook", "a"), undefined);
+  assert.deepEqual(store.getSnapshot().content.a, [
+    { name: "tally", location: "/work/tally" },
+    { name: "handbook", location: "/work/handbook" },
+  ]);
+
+  api.removeAgentFolder = async () => {
+    currentContent = [{ name: "handbook", location: "/work/handbook" }];
+    return { ok: true, content: currentContent };
+  };
+  assert.equal(await store.removeAgentFolder("tally", "a"), undefined);
+  assert.deepEqual(store.getSnapshot().content.a, [{ name: "handbook", location: "/work/handbook" }]);
+
+  // Removing a required secret transitions the agent to broken while keeping inspection available; setting it recovers to ready.
+  api.removeAgentSecret = async () => {
+    hasSecret = false;
+    return {
+      ok: true,
+      inspection: {
+        files: ["SYSTEM.md"],
+        packages: [],
+        secrets: [{ name: "GITHUB_TOKEN", optional: false, declaredIn: ["src/tools/gh.ts"], configured: false }],
+      },
+    };
+  };
+  await store.removeAgentSecret("GITHUB_TOKEN", "a");
+  await store.listSessions("a");
+  assert.equal(store.getSnapshot().states.a, "broken");
+  assert.equal(store.getSnapshot().sessionsError.a, "missing required secrets: GITHUB_TOKEN");
+  assert.equal(store.getSnapshot().model, undefined);
+  assert.equal(store.getSnapshot().tools.a, undefined);
+  assert.equal(store.getSnapshot().agentCommands.a, undefined);
+  assert.equal(store.getSnapshot().inspection.a?.secrets[0]?.configured, false);
+
+  api.setAgentSecret = async () => {
+    hasSecret = true;
+    return {
+      ok: true,
+      inspection: {
+        files: ["SYSTEM.md"],
+        packages: [],
+        secrets: [{ name: "GITHUB_TOKEN", optional: false, declaredIn: ["src/tools/gh.ts"], configured: true, fromFile: true }],
+      },
+    };
+  };
+  await store.setAgentSecret("GITHUB_TOKEN", "ghp_123", "a");
+  assert.equal(store.getSnapshot().states.a, "ready");
+  assert.equal(store.getSnapshot().sessionsError.a, undefined, "recovering the agent clears its earlier sessionsError");
+  assert.equal(store.getSnapshot().model, "provider/model");
+  assert.deepEqual(store.getSnapshot().tools.a, [{ name: "read", description: "Read files" }, { name: "bash" }]);
+  assert.equal(store.getSnapshot().inspection.a?.description, "Reviews pull requests");
+
+  // A closed model picker stays closed when folders are edited on the same conversation.
+  api.openAgent = async () => ({ ...listed("s1"), model: undefined, content: currentContent });
+  await store.selectAgent("a", "s1");
+  assert.equal(store.getSnapshot().picker, true);
+  store.closePicker();
+  assert.equal(store.getSnapshot().picker, false);
+  await store.addAgentFolder("/work/tally", "a");
+  assert.equal(store.getSnapshot().picker, false, "refreshing the agent does not reopen a dismissed model picker");
+  store.dispose();
+});
+

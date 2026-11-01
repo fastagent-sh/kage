@@ -9,18 +9,25 @@ import { runningSessions, stopRuns } from "./runs.ts";
 import { refuse } from "./send.ts";
 import { summaries, type SessionSummary } from "./session-list.ts";
 import {
+  addFolderToAgent,
   AgentRegistry,
   createNewAgent,
   failingConfig,
   freshConfig,
+  inspectAgentDir,
   MissingDirError,
   previewContentFolder,
+  removeAgentSecret as deleteSecretFromAgent,
+  removeFolderFromAgent,
   requireFolder,
   resolveAgentPath,
+  setAgentSecret as writeSecretToAgent,
+  type AgentInspection,
   type AgentRow,
+  type AgentSecretStatus,
 } from "./agent-files.ts";
 
-export { previewContentFolder, resolveAgentPath };
+export { previewContentFolder, resolveAgentPath, type AgentInspection, type AgentSecretStatus };
 export const registryFile = join(app.getPath("userData"), "agents.json");
 const registry = new AgentRegistry(registryFile);
 export const listAgents = () => registry.list();
@@ -46,17 +53,32 @@ export interface AgentContent {
   location: string;
 }
 
+export interface AgentCapability {
+  name: string;
+  description?: string;
+}
+
 /** What the window's open call answers: the agent's sessions, content and model, or why it could not be opened. */
 export type OpenResult =
   | {
       ok: true;
       sessions: SessionSummary[];
       content?: AgentContent[];
+      commands?: AgentCapability[];
+      tools?: AgentCapability[];
+      inspection?: AgentInspection;
       model?: string;
       staleDefault?: string;
       windows: Record<string, number>;
     }
-  | { ok: false; code: AgentSetup; message: string; inConfig?: true };
+  | {
+      ok: false;
+      code: AgentSetup;
+      message: string;
+      inConfig?: true;
+      content?: AgentContent[];
+      inspection?: AgentInspection;
+    };
 
 // Agent-scoped admission: sends share (a count); removing or changing an agent excludes them, including a send
 // still opening its runtime.
@@ -131,9 +153,11 @@ export async function openedAgents(): Promise<{ id: string; agent: LocalAgent }[
  * beside the runtime's own errors, so the window takes one shape and never classifies a condition itself.
  */
 export async function openAgentResult(agentId: string): Promise<OpenResult> {
+  let dir: string | undefined;
+  let content: AgentContent[] | undefined;
   try {
     const row = await agentRow(agentId);
-    let content: AgentContent[];
+    dir = row.dir;
     try {
       await requireFolder(row.dir);
       content = (await listContent(row.dir)).content.map(({ name, location }) => ({ name, location }));
@@ -142,15 +166,19 @@ export async function openAgentResult(agentId: string): Promise<OpenResult> {
       throw error;
     }
     const agent = await openAgent(row);
-    const info = await agent.info();
+    const [info, sessions] = await Promise.all([agent.info(), summaries(agent)]);
+    const inspection = await inspectAgentDir(row.dir, info.description);
     const models = choicesOf(info);
     // duang's own default for the agent, over the config's; one this computer's providers no longer offer cannot start anything.
     const staleDefault = row.model && !models.some(({ spec }) => spec === row.model) ? row.model : undefined;
     const model = row.model ?? (info.defaultModel && specOf(info.defaultModel));
     return {
       ok: true,
-      sessions: await summaries(agent),
+      sessions,
       content,
+      commands: info.commands.map(({ name, description }) => ({ name, ...(description ? { description } : {}) })),
+      tools: info.tools.map(({ name, description }) => ({ name, ...(description ? { description } : {}) })),
+      inspection,
       windows: Object.fromEntries(models.flatMap(({ spec, contextWindow }) => (contextWindow ? [[spec, contextWindow]] : []))),
       ...(model && { model }),
       ...(staleDefault && { staleDefault }),
@@ -158,7 +186,15 @@ export async function openAgentResult(agentId: string): Promise<OpenResult> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof MissingDirError) return { ok: false, code: "missing_dir", message };
-    return configFailed(agentId) ? { ok: false, code: "broken", message, inConfig: true } : { ok: false, code: "broken", message };
+    const inspection = dir ? await inspectAgentDir(dir).catch(() => undefined) : undefined;
+    return {
+      ok: false,
+      code: "broken",
+      message,
+      ...(configFailed(agentId) && { inConfig: true }),
+      ...(content && { content }),
+      ...(inspection && { inspection }),
+    };
   }
 }
 
@@ -182,7 +218,11 @@ export async function withAgentRun<T>(row: AgentRow, run: (agent: LocalAgent) =>
   }
 }
 
-function change(id: string, apply: () => Promise<Result>, afterClose?: () => Promise<void>): Promise<Result> {
+function change<T = {}>(
+  id: string,
+  apply: () => Promise<Result<T>>,
+  options: { afterClose?: () => Promise<void>; closeFirst?: boolean } = {},
+): Promise<Result<T>> {
   if (changing.has(id)) return Promise.resolve(refuse("agent_changing", "Agent settings are changing; try again."));
   if (sending.has(id))
     return Promise.resolve(
@@ -194,13 +234,19 @@ function change(id: string, apply: () => Promise<Result>, afterClose?: () => Pro
     const agent = await opened.get(id)?.catch(() => undefined);
     if (agent && (await runningSessions([{ id, agent }])).length > 0)
       return refuse("agent_busy", "An agent conversation is running — stop it before changing or removing the agent.");
-    if (agent) {
-      // The instance's storage is held by one opener: release it before changing or removing the agent.
+    if (options.closeFirst && agent) {
       opened.delete(id);
       await agent.close();
     }
     const result = await apply();
-    if (result.ok) await afterClose?.();
+    if (result.ok) {
+      if (!options.closeFirst && agent) {
+        // The instance's storage is held by one opener: release it so the next open reads the new definition.
+        opened.delete(id);
+        await agent.close();
+      }
+      await options.afterClose?.();
+    }
     return result;
   })();
   changing.set(
@@ -211,6 +257,71 @@ function change(id: string, apply: () => Promise<Result>, afterClose?: () => Pro
     ),
   );
   return running.finally(() => changing.delete(id));
+}
+
+export function addAgentFolder(
+  row: AgentRow,
+  folder: string,
+  beforeClose?: () => void,
+): Promise<Result<{ content: AgentContent[] }>> {
+  return change(row.id, async () => {
+    try {
+      const content = await addFolderToAgent(row.dir, folder);
+      beforeClose?.();
+      return { ok: true, content };
+    } catch (error) {
+      return refuse("invalid_content", error instanceof Error ? error.message : String(error));
+    }
+  });
+}
+
+export function removeAgentFolder(
+  row: AgentRow,
+  name: string,
+  beforeClose?: () => void,
+): Promise<Result<{ content: AgentContent[] }>> {
+  return change(row.id, async () => {
+    try {
+      const content = await removeFolderFromAgent(row.dir, name);
+      beforeClose?.();
+      return { ok: true, content };
+    } catch (error) {
+      return refuse("invalid_content", error instanceof Error ? error.message : String(error));
+    }
+  });
+}
+
+export function setAgentSecret(
+  row: AgentRow,
+  name: string,
+  value: string,
+  beforeClose?: () => void,
+): Promise<Result<{ inspection: AgentInspection }>> {
+  return change(row.id, async () => {
+    try {
+      const inspection = await writeSecretToAgent(row.dir, name, value);
+      beforeClose?.();
+      return { ok: true, inspection };
+    } catch (error) {
+      return refuse("invalid_secret", error instanceof Error ? error.message : String(error));
+    }
+  });
+}
+
+export function removeAgentSecret(
+  row: AgentRow,
+  name: string,
+  beforeClose?: () => void,
+): Promise<Result<{ inspection: AgentInspection }>> {
+  return change(row.id, async () => {
+    try {
+      const inspection = await deleteSecretFromAgent(row.dir, name);
+      beforeClose?.();
+      return { ok: true, inspection };
+    } catch (error) {
+      return refuse("invalid_secret", error instanceof Error ? error.message : String(error));
+    }
+  });
 }
 
 /**
@@ -257,7 +368,7 @@ export function removeAgent(
       failedConfigs.delete(id);
       return { ok: true };
     },
-    () => rm(instanceDir(id), { recursive: true, force: true }),
+    { closeFirst: true, afterClose: () => rm(instanceDir(id), { recursive: true, force: true }) },
   );
 }
 

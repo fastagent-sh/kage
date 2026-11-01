@@ -6,13 +6,18 @@ import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { listContent, openAgent } from "@fastagent-sh/fastagent";
 import {
+  addFolderToAgent,
   AgentRegistry,
   createNewAgent,
   failingConfig,
   freshConfig,
+  inspectAgentDir,
   MissingDirError,
+  removeAgentSecret,
+  removeFolderFromAgent,
   requireFolder,
   resolveAgentPath,
+  setAgentSecret,
 } from "./agent-files.ts";
 
 test("registry serializes writes in one process, survives restart and deduplicates real paths", async () => {
@@ -143,9 +148,20 @@ test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers
     await registry.rename(first.id, "Renamed Reviewer");
     assert.equal((await registry.list()).find((row) => row.id === first.id)?.dir, first.dir, "rename leaves the directory");
 
-    // Refused declarations (duplicate folder name, or nesting around the agent directory) leave no directory.
+    // Adding and removing folders on an existing agent updates its bindings and leaves the folders on disk untouched.
     const otherTally = join(root, "other", "tally");
     await mkdir(otherTally, { recursive: true });
+    const added = await addFolderToAgent(second.dir, tally);
+    assert.deepEqual(added, [{ name: "tally", location: await realpath(tally) }]);
+    await assert.rejects(
+      addFolderToAgent(second.dir, otherTally),
+      /already has content named "tally"/,
+    );
+    const afterRemove = await removeFolderFromAgent(second.dir, "tally");
+    assert.deepEqual(afterRemove, []);
+    assert.equal(await readFile(join(tally, "index.ts"), "utf8"), "export const n = 1;\n");
+
+    // Refused declarations (duplicate folder name, or nesting around the agent directory) leave no directory.
     await assert.rejects(
       createNewAgent({ name: "Duplicate", folders: [tally, otherTally], root: agentsDir, registry }),
       /already has content named "tally"/,
@@ -155,6 +171,67 @@ test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers
       /contains the agent directory/,
     );
     assert.deepEqual((await readdir(agentsDir)).sort(), ["Reviewer", "Reviewer-2", "outside"].sort());
+
+    // inspectAgentDir reports definition files, environment packages/variables, and secret status (without values).
+    await mkdir(join(first.dir, ".fastagent"), { recursive: true });
+    await writeFile(
+      join(first.dir, ".fastagent", "secrets.json"),
+      JSON.stringify([
+        { name: "GITHUB_TOKEN", optional: false, description: "GitHub API access", declaredIn: ["src/tools/gh.ts"] },
+        { name: "OPTIONAL_KEY", optional: true, declaredIn: ["src/tools/opt.ts"] },
+      ]),
+    );
+    await mkdir(join(first.dir, ".secrets"), { recursive: true });
+    await writeFile(join(first.dir, ".secrets", ".env"), "# --- fastagent ---\nGITHUB_TOKEN=secret-value\n");
+    await writeFile(
+      join(first.dir, "context.json"),
+      JSON.stringify({
+        environment: {
+          packages: { gh: "2", jq: "latest" },
+          variables: { CONTEXT_VAR: { description: "From context.json" } },
+        },
+      }),
+    );
+    const inspected = await inspectAgentDir(first.dir, "Reviews pull requests");
+    assert.equal(inspected.description, "Reviews pull requests");
+    assert.ok(inspected.files.includes("SYSTEM.md"));
+    assert.ok(inspected.files.includes("fastagent.config.ts"));
+    assert.deepEqual(inspected.packages, [
+      { name: "gh", version: "2" },
+      { name: "jq", version: "latest" },
+    ]);
+    assert.deepEqual(inspected.secrets, [
+      {
+        name: "GITHUB_TOKEN",
+        optional: false,
+        description: "GitHub API access",
+        declaredIn: ["src/tools/gh.ts"],
+        configured: true,
+        fromFile: true,
+      },
+      { name: "OPTIONAL_KEY", optional: true, declaredIn: ["src/tools/opt.ts"], configured: false },
+      {
+        name: "CONTEXT_VAR",
+        optional: false,
+        description: "From context.json",
+        declaredIn: ["context.json"],
+        configured: false,
+      },
+    ]);
+
+    const afterSet = await setAgentSecret(first.dir, "CUSTOM_API_KEY", 'a"b\\c');
+    assert.ok(afterSet.secrets.some((s) => s.name === "CUSTOM_API_KEY" && s.configured && s.fromFile));
+    await setAgentSecret(first.dir, "SINGLE_QUOTE", '"');
+    const rawEnv = await readFile(join(first.dir, ".secrets", ".env"), "utf8");
+    assert.match(rawEnv, /^# --- fastagent ---$/m, "comments and section headers in .secrets/.env are preserved");
+    assert.match(rawEnv, /^CUSTOM_API_KEY=a"b\\c$/m, "values with quotes and backslashes do not accumulate JSON escapes");
+    assert.match(rawEnv, /^SINGLE_QUOTE="""$/m, "a single quote character is wrapped so FastAgent's slice(1, -1) preserves it");
+    const afterDelete = await removeAgentSecret(first.dir, "CUSTOM_API_KEY");
+    assert.ok(!afterDelete.secrets.some((s) => s.name === "CUSTOM_API_KEY"));
+    assert.ok(afterDelete.secrets.some((s) => s.name === "SINGLE_QUOTE" && s.configured));
+
+    await writeFile(join(first.dir, ".fastagent", "secrets.json"), "{not-json");
+    await assert.rejects(inspectAgentDir(first.dir), /secrets\.json/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

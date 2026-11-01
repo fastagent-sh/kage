@@ -125,7 +125,7 @@ export function Sidebar({
     setRenaming(undefined);
   };
   return (
-    <aside className="sidebar-panel w-[clamp(15rem,27vw,20rem)] shrink-0 flex flex-col min-h-0 rounded-float bg-sidebar ring-1 ring-stroke overflow-hidden">
+    <aside className="sidebar-panel w-[clamp(13.5rem,20vw,16.5rem)] shrink-0 flex flex-col min-h-0 rounded-float bg-sidebar ring-1 ring-stroke overflow-hidden">
       {/* The wordmark is centred in the column, not pushed along by the window controls overhanging it. */}
       <div className="relative h-12 shrink-0 flex items-center px-2 drag">
         <span className="sidebar-wordmark absolute left-1/2 -translate-x-1/2 font-medium tracking-[-0.01em]">
@@ -164,8 +164,8 @@ export function Sidebar({
             // A hairline running into a rounded fill reads as a cut.
             <div key={agent.id} className="roster-row" data-filled={filled || undefined}>
               {renaming === agent.id ? (
-                <div className="flex items-center gap-3 px-2 py-2">
-                  <Avatar id={agent.id} name={agent.name} colour={agent.colour} size={48} face={face} />
+                <div className="flex items-center gap-2.5 px-2 py-2">
+                  <Avatar id={agent.id} name={agent.name} colour={agent.colour} size={40} face={face} />
                   <RenameField
                     label="Agent name"
                     value={agent.name}
@@ -201,7 +201,7 @@ export function Sidebar({
                     });
                   }}
                   title={`${agent.name}\n${agent.dir}\n${busy ? "Working" : says[state]}`}
-                  className={`flex w-full items-center gap-3 rounded-card px-2 py-2 text-left transition-colors ${
+                  className={`flex w-full items-center gap-2.5 rounded-card px-2 py-2 text-left transition-colors ${
                     filled ? "bg-accent-weak text-text" : "hover:bg-hover"
                   }`}
                 >
@@ -209,7 +209,7 @@ export function Sidebar({
                     id={agent.id}
                     name={agent.name}
                     colour={agent.colour}
-                    size={48}
+                    size={40}
                     face={face}
                   />
                   <span className="min-w-0 flex-1">

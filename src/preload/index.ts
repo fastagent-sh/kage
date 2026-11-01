@@ -5,8 +5,8 @@ import type { Result, Sent } from "../shared/result.ts";
 
 export type { AgentRow } from "../main/agent-files.ts";
 import type { AgentRow } from "../main/agent-files.ts";
-export type { AgentContent, AgentSetup, OpenResult } from "../main/agents.ts";
-import type { OpenResult } from "../main/agents.ts";
+export type { AgentCapability, AgentContent, AgentInspection, AgentSecretStatus, AgentSetup, OpenResult } from "../main/agents.ts";
+import type { AgentContent, AgentInspection, OpenResult } from "../main/agents.ts";
 export type { ModelChoice, Models } from "../main/models.ts";
 export type { SessionSummary } from "../main/session-list.ts";
 import type { Models } from "../main/models.ts";
@@ -25,11 +25,20 @@ import type { ProviderUsage } from "../main/usage.ts";
 export type SessionFrame = Frame;
 
 const api = {
+  homeDir: process.env.HOME,
   listAgents: (): Promise<AgentRow[]> => ipcRenderer.invoke("agents:list"),
   pickFolder: (): Promise<{ name: string; path: string } | undefined> => ipcRenderer.invoke("agents:pickFolder"),
   createAgent: (name: string, folders: string[]): Promise<Result<{ agent: AgentRow }>> =>
     ipcRenderer.invoke("agents:create", name, folders),
   openAgent: (agentId: string): Promise<OpenResult> => ipcRenderer.invoke("agent:open", agentId),
+  addAgentFolder: (agentId: string, folder: string): Promise<Result<{ content: AgentContent[] }>> =>
+    ipcRenderer.invoke("agent:addFolder", agentId, folder),
+  removeAgentFolder: (agentId: string, name: string): Promise<Result<{ content: AgentContent[] }>> =>
+    ipcRenderer.invoke("agent:removeFolder", agentId, name),
+  setAgentSecret: (agentId: string, name: string, value: string): Promise<Result<{ inspection: AgentInspection }>> =>
+    ipcRenderer.invoke("agent:setSecret", agentId, name, value),
+  removeAgentSecret: (agentId: string, name: string): Promise<Result<{ inspection: AgentInspection }>> =>
+    ipcRenderer.invoke("agent:removeSecret", agentId, name),
   setModel: (agentId: string, model: string, session?: string): Promise<Result> =>
     ipcRenderer.invoke("agent:setModel", agentId, model, session),
   setThinking: (agentId: string, session: string, level: string): Promise<Result> =>

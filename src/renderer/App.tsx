@@ -9,7 +9,7 @@ import { BrokenAgent, CreateAgent, MissingFolder, NewConversation, NoAgents, Unr
 import { Problem } from "./problem.tsx";
 import { ArrowClockwise } from "@phosphor-icons/react";
 import { ConversationList, Sidebar } from "./rows.tsx";
-import { ConversationHeader } from "./header.tsx";
+import { AgentInspector, ConversationHeader } from "./header.tsx";
 import { Transcript } from "./transcript-view.tsx";
 import { Composer } from "./composer.tsx";
 import { Settings } from "./settings.tsx";
@@ -43,6 +43,7 @@ export default function App() {
   })();
   // Mirrors the popover, which owns the fact; it arrives a task later with the `toggle` event.
   const [listOpen, setListOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const rowsFor = (id: string) =>
     rows(
       sessions[id] ?? [],
@@ -284,6 +285,11 @@ export default function App() {
                   }
                   plan={provider ? view.usage[provider] : undefined}
                   queued={c ? waiting.filter(({ listed }) => listed).length : undefined}
+                  details={
+                    agentState === "ready" || agentState === "broken"
+                      ? { open: detailsOpen, onToggle: () => setDetailsOpen((open) => !open) }
+                      : undefined
+                  }
                   list={
                     agentState === "ready"
                       ? { open: listOpen, unseen: Object.keys(view.unseen[agent.id] ?? {}).length }
@@ -397,6 +403,45 @@ export default function App() {
             </>
           )}
         </main>
+        {!settings && !creating && detailsOpen && agent && (agentState === "ready" || agentState === "broken") && (
+          <AgentInspector
+            key={agent.id}
+            id={agent.id}
+            name={agent.name}
+            colour={agent.colour}
+            face={faceOf({
+              state: agentState,
+              doing: view.doing[agent.id],
+              outcomes: Object.values(view.unseen[agent.id] ?? {}),
+              open: false,
+            })}
+            dir={agent.dir}
+            model={view.model}
+            showModel={agentState === "ready"}
+            skillBlocked={view.blocked}
+            content={view.content[agent.id]}
+            commands={view.agentCommands[agent.id]}
+            tools={view.tools[agent.id]}
+            inspection={view.inspection[agent.id]}
+            busy={busy || (view.running[agent.id]?.length ?? 0) > 0}
+            loading={view.loading}
+            onClose={() => setDetailsOpen(false)}
+            onPickFolder={() => store.pickFolder()}
+            onAddFolder={(folder) => store.addAgentFolder(folder, agent.id)}
+            onRemoveFolder={(name) => store.removeAgentFolder(name, agent.id)}
+            onSetSecret={(name, value) => store.setAgentSecret(name, value, agent.id)}
+            onRemoveSecret={(name) => store.removeAgentSecret(name, agent.id)}
+            onReveal={() => void store.reveal()}
+            onRevealPath={(path) => void store.reveal(agent.id, path)}
+            onSelectSkill={(skillName) => {
+              const prefix = `/skill:${skillName} `;
+              const current = c?.draft ?? "";
+              store.setDraft(current.startsWith(prefix) ? current : `${prefix}${current.replace(/^\/skill:\S+\s*/, "")}`);
+              document.querySelector<HTMLTextAreaElement>('main textarea[aria-label="Message"]')?.focus();
+            }}
+            onRemove={remove}
+          />
+        )}
       </div>
     </AvatarStyleContext.Provider>
   );
