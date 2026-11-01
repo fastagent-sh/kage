@@ -11,6 +11,7 @@ import {
   createNewAgent,
   failingConfig,
   freshConfig,
+  inspectAgentDir,
   MissingDirError,
   removeFolderFromAgent,
   requireFolder,
@@ -168,6 +169,40 @@ test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers
       /contains the agent directory/,
     );
     assert.deepEqual((await readdir(agentsDir)).sort(), ["Reviewer", "Reviewer-2", "outside"].sort());
+
+    // inspectAgentDir reports definition files, environment packages, secret status (without values), channels, and schedules.
+    await mkdir(join(first.dir, ".fastagent"), { recursive: true });
+    await writeFile(
+      join(first.dir, ".fastagent", "secrets.json"),
+      JSON.stringify([
+        { name: "GITHUB_TOKEN", optional: false, description: "GitHub API access", declaredIn: ["src/tools/gh.ts"] },
+        { name: "OPTIONAL_KEY", optional: true, declaredIn: ["src/tools/opt.ts"] },
+      ]),
+    );
+    await mkdir(join(first.dir, ".secrets"), { recursive: true });
+    await writeFile(join(first.dir, ".secrets", ".env"), "GITHUB_TOKEN=secret-value\n");
+    await writeFile(
+      join(first.dir, "context.json"),
+      JSON.stringify({ environment: { packages: { gh: "2", jq: "latest" } } }),
+    );
+    await mkdir(join(first.dir, "src", "channels"), { recursive: true });
+    await writeFile(join(first.dir, "src", "channels", "telegram.ts"), "export default {};\n");
+    await mkdir(join(first.dir, "src", "schedules"), { recursive: true });
+    await writeFile(join(first.dir, "src", "schedules", "daily.ts"), "export default {};\n");
+    const inspected = await inspectAgentDir(first.dir, "Reviews pull requests");
+    assert.equal(inspected.description, "Reviews pull requests");
+    assert.ok(inspected.files.includes("SYSTEM.md"));
+    assert.ok(inspected.files.includes("fastagent.config.ts"));
+    assert.deepEqual(inspected.packages, [
+      { name: "gh", version: "2" },
+      { name: "jq", version: "latest" },
+    ]);
+    assert.deepEqual(inspected.secrets, [
+      { name: "GITHUB_TOKEN", optional: false, description: "GitHub API access", declaredIn: ["src/tools/gh.ts"], configured: true },
+      { name: "OPTIONAL_KEY", optional: true, declaredIn: ["src/tools/opt.ts"], configured: false },
+    ]);
+    assert.deepEqual(inspected.channels, ["telegram"]);
+    assert.deepEqual(inspected.schedules, ["daily"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

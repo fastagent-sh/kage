@@ -5,7 +5,7 @@ import type { Result, Sent } from "../shared/result.ts";
 
 export type { AgentRow } from "../main/agent-files.ts";
 import type { AgentRow } from "../main/agent-files.ts";
-export type { AgentCapability, AgentContent, AgentSetup, OpenResult } from "../main/agents.ts";
+export type { AgentCapability, AgentContent, AgentInspection, AgentSecretStatus, AgentSetup, OpenResult } from "../main/agents.ts";
 import type { AgentContent, OpenResult } from "../main/agents.ts";
 export type { ModelChoice, Models } from "../main/models.ts";
 export type { SessionSummary } from "../main/session-list.ts";

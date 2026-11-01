@@ -14,15 +14,18 @@ import {
   createNewAgent,
   failingConfig,
   freshConfig,
+  inspectAgentDir,
   MissingDirError,
   previewContentFolder,
   removeFolderFromAgent,
   requireFolder,
   resolveAgentPath,
+  type AgentInspection,
   type AgentRow,
+  type AgentSecretStatus,
 } from "./agent-files.ts";
 
-export { previewContentFolder, resolveAgentPath };
+export { previewContentFolder, resolveAgentPath, type AgentInspection, type AgentSecretStatus };
 export const registryFile = join(app.getPath("userData"), "agents.json");
 const registry = new AgentRegistry(registryFile);
 export const listAgents = () => registry.list();
@@ -61,6 +64,7 @@ export type OpenResult =
       content?: AgentContent[];
       commands?: AgentCapability[];
       tools?: AgentCapability[];
+      inspection?: AgentInspection;
       model?: string;
       staleDefault?: string;
       windows: Record<string, number>;
@@ -151,17 +155,19 @@ export async function openAgentResult(agentId: string): Promise<OpenResult> {
       throw error;
     }
     const agent = await openAgent(row);
-    const info = await agent.info();
+    const [info, sessions] = await Promise.all([agent.info(), summaries(agent)]);
+    const inspection = await inspectAgentDir(row.dir, info.description);
     const models = choicesOf(info);
     // duang's own default for the agent, over the config's; one this computer's providers no longer offer cannot start anything.
     const staleDefault = row.model && !models.some(({ spec }) => spec === row.model) ? row.model : undefined;
     const model = row.model ?? (info.defaultModel && specOf(info.defaultModel));
     return {
       ok: true,
-      sessions: await summaries(agent),
+      sessions,
       content,
       commands: info.commands.map(({ name, description }) => ({ name, ...(description ? { description } : {}) })),
       tools: info.tools.map(({ name, description }) => ({ name, ...(description ? { description } : {}) })),
+      inspection,
       windows: Object.fromEntries(models.flatMap(({ spec, contextWindow }) => (contextWindow ? [[spec, contextWindow]] : []))),
       ...(model && { model }),
       ...(staleDefault && { staleDefault }),

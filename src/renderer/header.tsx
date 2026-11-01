@@ -1,17 +1,21 @@
 import { Fragment, useEffect, useState } from "react";
 import {
   ArrowSquareOut,
+  Broadcast,
   CaretDown,
+  FileText,
   FolderSimple,
+  Key,
   ListBullets,
   Plus,
   SidebarSimple,
   Sparkle,
+  Trash,
   WarningCircle,
   Wrench,
   X,
 } from "@phosphor-icons/react";
-import type { AgentCapability, AgentContent, ProviderUsage } from "../preload/index.ts";
+import type { AgentCapability, AgentContent, AgentInspection, ProviderUsage } from "../preload/index.ts";
 import { explainContentError } from "./panels.tsx";
 import { home, location } from "./paths.ts";
 import { UsageMeter } from "./plan-usage.tsx";
@@ -183,6 +187,7 @@ export function AgentInspector({
   content = [],
   commands = [],
   tools = [],
+  inspection,
   busy,
   onClose,
   onPickFolder,
@@ -191,6 +196,7 @@ export function AgentInspector({
   onReveal,
   onRevealPath,
   onSelectSkill,
+  onRemove,
 }: {
   id: string;
   name: string;
@@ -200,6 +206,7 @@ export function AgentInspector({
   content?: AgentContent[];
   commands?: AgentCapability[];
   tools?: AgentCapability[];
+  inspection?: AgentInspection;
   busy: boolean;
   onClose: () => void;
   onPickFolder: () => Promise<{ name: string; path: string } | undefined>;
@@ -208,6 +215,7 @@ export function AgentInspector({
   onReveal: () => void;
   onRevealPath: (path: string) => void;
   onSelectSkill?: (skillName: string) => void;
+  onRemove?: () => void;
 }) {
   const [error, setError] = useState<string>();
   const [updating, setUpdating] = useState(false);
@@ -257,6 +265,11 @@ export function AgentInspector({
   const explained = error ? explainContentError(error, "The folders could not be updated") : undefined;
   const skills = commands.filter((cmd) => cmd.name.startsWith("skill:"));
   const visibleSkills = showAllSkills ? skills : skills.slice(0, SKILL_PREVIEW_LIMIT);
+  const files = inspection?.files ?? [];
+  const secrets = inspection?.secrets ?? [];
+  const packages = inspection?.packages ?? [];
+  const channels = inspection?.channels ?? [];
+  const schedules = inspection?.schedules ?? [];
 
   return (
     <aside
@@ -282,6 +295,9 @@ export function AgentInspector({
           <div className="mt-2.5 max-w-full truncate font-prose text-[15px] font-semibold text-text" title={name}>
             {name}
           </div>
+          {inspection?.description && (
+            <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-muted">{inspection.description}</p>
+          )}
           <button
             type="button"
             onClick={onReveal}
@@ -293,6 +309,22 @@ export function AgentInspector({
             <span className="sr-only">Show agent folder in Finder</span>
             <ArrowSquareOut size={11} className="shrink-0 opacity-70" />
           </button>
+          {files.length > 0 && (
+            <div className="mt-2 flex flex-wrap justify-center gap-1">
+              {files.map((file) => (
+                <button
+                  key={file}
+                  type="button"
+                  onClick={() => onRevealPath(file)}
+                  title={`Show ${file} in Finder`}
+                  className="inline-flex items-center gap-1 rounded-[4px] bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-muted transition-colors hover:bg-hover hover:text-text"
+                >
+                  <FileText size={11} className="shrink-0" />
+                  <span>{file}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <section className="space-y-1.5">
@@ -357,6 +389,86 @@ export function AgentInspector({
             </button>
           </div>
         </section>
+
+        {(secrets.length > 0 || packages.length > 0) && (
+          <section className="space-y-1.5">
+            <div className="flex items-center justify-between px-1">
+              <h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
+                <Key size={13} />
+                <span>Environment & secrets</span>
+              </h3>
+              <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted tabular-nums">
+                {secrets.length + packages.length}
+              </span>
+            </div>
+            <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
+              {secrets.map((secret) => (
+                <div
+                  key={secret.name}
+                  title={secret.description ?? secret.declaredIn.join(", ")}
+                  className={`${rowDivider} flex items-center justify-between gap-2 px-3 py-2`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-mono text-[12px] font-medium text-text">{secret.name}</div>
+                    {secret.description && (
+                      <div className="truncate text-[11px] text-muted">{secret.description}</div>
+                    )}
+                  </div>
+                  <Badge tone={secret.configured ? "success" : secret.optional ? "muted" : "danger"}>
+                    {secret.configured ? "set" : secret.optional ? "optional" : "missing"}
+                  </Badge>
+                </div>
+              ))}
+              {packages.length > 0 && (
+                <div className={`${rowDivider} flex flex-wrap gap-1.5 p-2.5`}>
+                  {packages.map((pkg) => (
+                    <span
+                      key={pkg.name}
+                      className="rounded-[4px] bg-surface-2 px-2 py-0.5 font-mono text-[11px] text-text"
+                    >
+                      {pkg.name}
+                      {pkg.version !== "latest" && pkg.version !== "system" ? `@${pkg.version}` : ""}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {(channels.length > 0 || schedules.length > 0) && (
+          <section className="space-y-1.5">
+            <div className="flex items-center justify-between px-1">
+              <h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
+                <Broadcast size={13} />
+                <span>Channels & schedules</span>
+              </h3>
+              <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted tabular-nums">
+                {channels.length + schedules.length}
+              </span>
+            </div>
+            <div className="rounded-card bg-surface p-2.5 ring-1 ring-stroke">
+              <div className="flex flex-wrap gap-1.5">
+                {channels.map((channel) => (
+                  <span
+                    key={`ch:${channel}`}
+                    className="rounded-[4px] bg-accent-weak px-2 py-0.5 font-mono text-[11px] text-accent"
+                  >
+                    {channel}
+                  </span>
+                ))}
+                {schedules.map((schedule) => (
+                  <span
+                    key={`sc:${schedule}`}
+                    className="rounded-[4px] bg-surface-2 px-2 py-0.5 font-mono text-[11px] text-text"
+                  >
+                    {schedule}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="space-y-1.5">
           <div className="flex items-center justify-between px-1">
@@ -433,6 +545,20 @@ export function AgentInspector({
             )}
           </div>
         </section>
+
+        {onRemove && (
+          <div className="flex justify-center pt-1">
+            <Button
+              kind="danger"
+              size={28}
+              disabled={busy && "Stop the running conversation before removing the agent"}
+              icon={<Trash size={13} />}
+              onClick={onRemove}
+            >
+              Remove agent…
+            </Button>
+          </div>
+        )}
       </div>
     </aside>
   );

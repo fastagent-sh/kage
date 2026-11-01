@@ -418,6 +418,7 @@ export default function App() {
             content={view.content[agent.id]}
             commands={view.agentCommands[agent.id]}
             tools={view.tools[agent.id]}
+            inspection={view.inspection[agent.id]}
             busy={busy || (view.running[agent.id]?.length ?? 0) > 0}
             onClose={() => setDetailsOpen(false)}
             onPickFolder={() => store.pickFolder()}
@@ -431,6 +432,7 @@ export default function App() {
               store.setDraft(current.startsWith(prefix) ? current : `${prefix}${current.replace(/^\/skill:\S+\s*/, "")}`);
               document.querySelector<HTMLTextAreaElement>('main textarea[aria-label="Message"]')?.focus();
             }}
+            onRemove={remove}
           />
         )}
       </div>

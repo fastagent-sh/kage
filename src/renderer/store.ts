@@ -1,5 +1,14 @@
 import { MODEL_UNAVAILABLE_CODE, STOPPED_CODE } from "../shared/refusals.ts";
-import type { AgentCapability, AgentContent, AgentRow, AgentSetup, DuangApi, SessionFrame, SessionSummary } from "../preload/index.ts";
+import type {
+  AgentCapability,
+  AgentContent,
+  AgentInspection,
+  AgentRow,
+  AgentSetup,
+  DuangApi,
+  SessionFrame,
+  SessionSummary,
+} from "../preload/index.ts";
 import { foldEntries, itemsOf, noLive } from "./fold.ts";
 import { phase, previewOf, queueView, type Activity, type Place } from "./transcript.ts";
 import {
@@ -88,6 +97,7 @@ export interface View extends SettingsView, AgentResourcesView {
   content: Record<string, AgentContent[]>;
   tools: Record<string, AgentCapability[]>;
   agentCommands: Record<string, AgentCapability[]>;
+  inspection: Record<string, AgentInspection>;
   // The window of each model the open agent offers, in tokens: what the context meter is measured against.
   contextWindows: Record<string, number>;
   // An empty list and a failed one are not the same.
@@ -234,6 +244,7 @@ export function createStore(api: DuangApi) {
     content: {},
     tools: {},
     agentCommands: {},
+    inspection: {},
     contextWindows: {},
     sessionsError: {},
     loading: false,
@@ -519,6 +530,7 @@ export function createStore(api: DuangApi) {
         ...(result.content && { content: { ...view.content, [id]: result.content } }),
         ...(result.tools && { tools: { ...view.tools, [id]: result.tools } }),
         ...(result.commands && { agentCommands: { ...view.agentCommands, [id]: result.commands } }),
+        ...(result.inspection && { inspection: { ...view.inspection, [id]: result.inspection } }),
         ...(listCurrent() ? { sessions: { ...view.sessions, [id]: result.sessions } } : {}),
         states: { ...view.states, [id]: "ready" },
       });
@@ -828,6 +840,7 @@ export function createStore(api: DuangApi) {
         const { [id]: _contentGone, ...restContent } = view.content;
         const { [id]: _toolsGone, ...restTools } = view.tools;
         const { [id]: _commandsGone, ...restCommands } = view.agentCommands;
+        const { [id]: _inspectionGone, ...restInspection } = view.inspection;
         selectResources();
         publish({
           agentId: undefined,
@@ -837,6 +850,7 @@ export function createStore(api: DuangApi) {
           content: restContent,
           tools: restTools,
           agentCommands: restCommands,
+          inspection: restInspection,
         });
         if (view.agents[0]) await selectAgent(view.agents[0].id);
       } catch (error) {
