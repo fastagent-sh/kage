@@ -16,6 +16,8 @@ import {
   thinkingLine,
   opensRun,
   queueView,
+  diffLines,
+  toolDetail,
   toolText,
   type Item,
   type UserItem,
@@ -265,4 +267,49 @@ test("a place names the same line after a conversation is read back without the 
   assert.equal(lineOf(readBack, placeAt(live, 7, 0)), 6, "the last line, which a count from the start would put past the end");
   assert.deepEqual(placeAt(live, 0, 10), { row: 0, offset: 10 }, "a line before the first message is counted from the start");
   assert.equal(lineOf(readBack, { turn: "gone", row: 0, offset: 0 }), undefined, "a place whose message is gone names no line");
+});
+
+test("edit and write tool arguments become structured diff and content views, and unknown shapes fall back to args", () => {
+  assert.deepEqual(diffLines("a\nb\nc", "a\nx\ny\nc"), [
+    { kind: "same", text: "a" },
+    { kind: "remove", text: "b" },
+    { kind: "add", text: "x" },
+    { kind: "add", text: "y" },
+    { kind: "same", text: "c" },
+  ]);
+
+  const editDetail = toolDetail("edit", {
+    path: "src/main/index.ts",
+    edits: [{ oldText: "const a = 1;", newText: "const a = 2;" }],
+  });
+  assert.deepEqual(editDetail, {
+    kind: "edit",
+    path: "src/main/index.ts",
+    hunks: [
+      [
+        { kind: "remove", text: "const a = 1;" },
+        { kind: "add", text: "const a = 2;" },
+      ],
+    ],
+  });
+
+  const legacyEdit = toolDetail("edit", {
+    path: "src/main/index.ts",
+    edits: JSON.stringify({ oldText: "old", newText: "new" }),
+  });
+  assert.equal(legacyEdit.kind, "edit");
+
+  assert.deepEqual(toolDetail("write", { path: "README.md", content: "# Hello\n" }), {
+    kind: "write",
+    path: "README.md",
+    content: "# Hello\n",
+  });
+
+  assert.deepEqual(toolDetail("edit", { path: "src/main/index.ts" }), {
+    kind: "args",
+    path: "src/main/index.ts",
+  });
+  assert.deepEqual(toolDetail("bash", { command: "npm test" }), {
+    kind: "args",
+  });
 });

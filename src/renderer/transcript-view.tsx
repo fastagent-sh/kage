@@ -39,7 +39,9 @@ import {
   stringify,
   summarize,
   thinkingLine,
+  toolDetail,
   toolText,
+  type DiffLine,
   type Item,
   type Line,
   type Place,
@@ -576,20 +578,24 @@ function toolState(item: Extract<Item, { kind: "tool" }>): { word: string; tone:
   return undefined;
 }
 
-function toolPath(args: unknown): string | undefined {
-  if (!args || typeof args !== "object") return undefined;
-  const path = (args as { path?: unknown }).path;
-  return typeof path === "string" && path.trim() ? path.trim() : undefined;
-}
-
 export function Tool({ item }: { item: Extract<Item, { kind: "tool" }> }) {
   const { onOpenPath } = useContext(TranscriptActionsContext);
   const summary = firstArg(item.args);
-  const path = toolPath(item.args);
+  const detail = toolDetail(item.name, item.args);
+  const path = detail.path;
   const state = toolState(item);
   const elapsed = useElapsed(item.started, item.ended);
   const Icon = toolIcons[item.name] ?? Terminal;
   const mark = item.isError ? "text-danger" : item.status === "running" ? "text-accent" : "text-muted";
+  const output = item.result !== undefined ? toolText(item.result) : undefined;
+  const showOutput =
+    output !== undefined &&
+    (item.isError ||
+      (detail.kind === "edit"
+        ? !/^Successfully replaced \d+ block\(s\) in /.test(output)
+        : detail.kind === "write"
+          ? !/^Successfully wrote \d+ bytes to /.test(output)
+          : true));
   return (
     // The negative margin lets the hover highlight extend past the text while the command keeps the left edge.
     <details className="group -mx-2.5 rounded-card open:bg-surface open:ring-1 open:ring-stroke">
@@ -621,14 +627,90 @@ export function Tool({ item }: { item: Extract<Item, { kind: "tool" }> }) {
         {elapsed && <span className="shrink-0 text-muted tabular-nums">{elapsed}</span>}
       </summary>
       <div className="border-t border-stroke px-2.5 py-2.5 space-y-2.5 text-[12px]">
-        <Args args={item.args} summary={summary} />
-        {item.result !== undefined && <Output text={toolText(item.result)} isError={item.isError} />}
+        {detail.kind === "edit" ? (
+          <>
+            {path && path !== summary && <PathHeader path={path} onOpenPath={onOpenPath} />}
+            <DiffHunks hunks={detail.hunks} />
+          </>
+        ) : detail.kind === "write" ? (
+          <>
+            {path && path !== summary && <PathHeader path={path} onOpenPath={onOpenPath} />}
+            <Output text={detail.content} />
+          </>
+        ) : (
+          <Args args={item.args} summary={summary} onOpenPath={onOpenPath} />
+        )}
+        {showOutput && <Output text={output} isError={item.isError} />}
       </div>
     </details>
   );
 }
 
-function Args({ args, summary }: { args: unknown; summary: string }) {
+function PathHeader({ path, onOpenPath }: { path: string; onOpenPath?: (path: string) => void }) {
+  if (!onOpenPath) return <div className="font-mono break-all text-muted">{path}</div>;
+  return (
+    <button
+      type="button"
+      title={`Show ${stripPathSuffix(path)} in Finder`}
+      onClick={() => onOpenPath(path)}
+      className="block max-w-full truncate text-left font-mono text-muted underline decoration-stroke underline-offset-2 transition-colors hover:text-text hover:decoration-accent"
+    >
+      {path}
+    </button>
+  );
+}
+
+const DIFF_FOLD_LINES = 12;
+
+function DiffHunks({ hunks }: { hunks: DiffLine[][] }) {
+  const [open, setOpen] = useState(false);
+  const flat: (DiffLine | { kind: "gap" })[] = [];
+  for (let index = 0; index < hunks.length; index++) {
+    if (index > 0) flat.push({ kind: "gap" });
+    flat.push(...hunks[index]!);
+  }
+  const hidden = flat.length > DIFF_FOLD_LINES ? flat.length - DIFF_FOLD_LINES : 0;
+  const shown = hidden > 0 && !open ? flat.slice(0, DIFF_FOLD_LINES) : flat;
+  return (
+    <div>
+      <div className="overflow-x-auto rounded-card bg-surface-2/50 py-1 font-mono leading-relaxed">
+        {shown.map((line, index) =>
+          line.kind === "gap" ? (
+            <div key={index} className="my-1 border-t border-stroke" />
+          ) : (
+            <div
+              key={index}
+              className={`flex px-2 whitespace-pre ${
+                line.kind === "remove"
+                  ? "bg-danger/10 text-danger"
+                  : line.kind === "add"
+                    ? "bg-success/10 text-success"
+                    : "text-muted"
+              }`}
+            >
+              <span className="w-4 shrink-0 select-none opacity-70">
+                {line.kind === "remove" ? "−" : line.kind === "add" ? "+" : " "}
+              </span>
+              <span className="min-w-0">{line.text || " "}</span>
+            </div>
+          ),
+        )}
+      </div>
+      {hidden > 0 && (
+        <button
+          type="button"
+          className="focus-inset -mx-2.5 -mb-2.5 mt-2 flex h-7 w-[calc(100%+1.25rem)] items-center justify-center gap-1.5 rounded-b-card border-t border-stroke text-[11px] text-muted transition-colors hover:bg-hover hover:text-text"
+          onClick={() => setOpen(!open)}
+        >
+          <CaretDown size={10} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+          {open ? "show less" : `${hidden} more lines`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Args({ args, summary, onOpenPath }: { args: unknown; summary: string; onOpenPath?: (path: string) => void }) {
   if (args === undefined || args === null) return null;
   if (typeof args !== "object") return <pre className="font-mono whitespace-pre-wrap break-all">{stringify(args)}</pre>;
   const entries = Object.entries(args).filter(([, value]) => value !== undefined && value !== null && value !== "");
@@ -638,7 +720,20 @@ function Args({ args, summary }: { args: unknown; summary: string }) {
       {entries.map(([key, value]) => (
         <Fragment key={key}>
           <dt className="text-muted">{key}</dt>
-          <Value text={stringify(value)} />
+          {key === "path" && typeof value === "string" && onOpenPath ? (
+            <dd className="font-mono whitespace-pre-wrap break-all">
+              <button
+                type="button"
+                title={`Show ${stripPathSuffix(value)} in Finder`}
+                onClick={() => onOpenPath(value)}
+                className="text-left underline decoration-stroke underline-offset-2 transition-colors hover:text-text hover:decoration-accent"
+              >
+                {value}
+              </button>
+            </dd>
+          ) : (
+            <Value text={stringify(value)} />
+          )}
         </Fragment>
       ))}
     </dl>
