@@ -288,22 +288,23 @@ if (root) {
       await chooseModel("openai/gpt-4o-mini");
       await until("document.querySelector('dialog') === null", "first model picker closes");
       await evaluate(`document.querySelector('main > header button[aria-label="Agent details"]').click()`);
-      await until("!!document.querySelector('#agent-info:popover-open')", "agent details popover opens");
+      await until("document.querySelector('#agent-info') !== null", "agent details pane opens");
       const infoText = await evaluate("document.querySelector('#agent-info').innerText");
       assert.match(infoText, /Folders it works on/);
-      assert.match(infoText, /Agent folder/);
+      assert.match(infoText, /Show agent folder in Finder/);
       assert.match(infoText, /Tools/);
       assert.match(infoText, /\bread\b/);
       electron.dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [workspace] });
       try {
         await evaluate(`document.querySelector('#agent-info button[aria-label="Remove project"]').click()`);
-        await until("document.querySelector('main > header').innerText.includes('Add folder…')", "removing the folder updates the header");
+        await until("document.querySelectorAll('#agent-info button[aria-label=\"Remove project\"]').length === 0", "removing the folder updates the details pane");
         await evaluate(`[...document.querySelectorAll('#agent-info button')].find((b) => b.textContent.includes('Add folder…')).click()`);
         await until("/works on\\s+project/.test(document.querySelector('main > header').innerText)", "adding the folder back updates the header");
       } finally {
         electron.dialog.showOpenDialog = showOpenDialog;
       }
-      await evaluate(`document.querySelector('#agent-info').hidePopover()`);
+      await evaluate(`document.querySelector('#agent-info button[aria-label="Close agent details"]').click()`);
+      await until("document.querySelector('#agent-info') === null", "agent details pane closes");
       await until(
         "document.querySelector('textarea') && !document.querySelector('textarea').disabled",
         "first model unlocks composer",

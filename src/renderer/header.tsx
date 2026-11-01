@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useRef, useState } from "react";
-import { ArrowSquareOut, FolderSimple, ListBullets, Plus, WarningCircle, X } from "@phosphor-icons/react";
+import { Fragment, useEffect, useState } from "react";
+import { ArrowSquareOut, ListBullets, Plus, SidebarSimple, WarningCircle, X } from "@phosphor-icons/react";
 import type { AgentCapability, AgentContent, ProviderUsage } from "../preload/index.ts";
 import { explainContentError } from "./panels.tsx";
 import { home, location } from "./paths.ts";
@@ -37,7 +37,7 @@ export function ConversationHeader({
   context?: { used: number; window: number };
   plan?: { data?: ProviderUsage; error?: string };
   queued?: number;
-  details?: { open: boolean };
+  details?: { open: boolean; onToggle: () => void };
   list?: { open: boolean; unseen: number };
   onReveal: () => void;
   onRevealPath?: (path: string) => void;
@@ -47,7 +47,7 @@ export function ConversationHeader({
     // Floats over the scroll area, so it lets the wheel through; only interactive parts take the pointer.
     <header className="pointer-events-none absolute inset-x-4 top-2 z-10">
       <div className="flex items-stretch gap-2">
-        <div className="conversation-header flex min-w-0 flex-1 items-center gap-2.5 rounded-composer bg-surface/75 py-1.5 pr-2 pl-2 ring-1 ring-stroke backdrop-blur-xl">
+        <div className="conversation-header flex min-w-0 flex-1 items-center gap-2.5 rounded-composer bg-surface/75 py-1.5 pr-4 pl-2 ring-1 ring-stroke backdrop-blur-xl">
           <Avatar id={id} name={agent} colour={colour} size={30} face={face} />
           <div className="min-w-0 flex-1">
             {/* The name doubles as the window's drag handle, which the frameless title bar needs. */}
@@ -84,12 +84,12 @@ export function ConversationHeader({
                   >
                     {location(dir)}
                   </button>
-                  {details && (
+                  {details && !details.open && (
                     <>
                       <span className="shrink-0">·</span>
                       <button
                         type="button"
-                        popoverTarget="agent-info"
+                        onClick={details.onToggle}
                         className="shrink-0 hover:text-text"
                       >
                         Add folder…
@@ -120,17 +120,6 @@ export function ConversationHeader({
           )}
           <UsageMeter plan={plan} context={context} onPage={onUsagePage} />
           {!!queued && <span className="shrink-0 text-[11px] text-muted">{queued} queued</span>}
-          {details && (
-            <Button
-              kind="ghost"
-              size={28}
-              popoverTarget="agent-info"
-              aria-label="Agent details"
-              title="Agent details and folders"
-              icon={<FolderSimple size={15} />}
-              className={`agent-info-anchor pointer-events-auto shrink-0 ${details.open ? "bg-hover text-text" : ""}`}
-            />
-          )}
         </div>
         {list && (
           <div className="conversation-header grid aspect-square shrink-0 place-items-center rounded-full bg-surface/75 ring-1 ring-stroke backdrop-blur-xl">
@@ -150,30 +139,55 @@ export function ConversationHeader({
             />
           </div>
         )}
+        {details && (
+          <div className="conversation-header grid aspect-square shrink-0 place-items-center rounded-full bg-surface/75 ring-1 ring-stroke backdrop-blur-xl">
+            <Button
+              kind="ghost"
+              size={40}
+              onClick={details.onToggle}
+              aria-label="Agent details"
+              aria-pressed={details.open}
+              title={details.open ? "Hide agent details" : "Agent details"}
+              icon={<SidebarSimple size={18} className=" -scale-x-100" />}
+              className={`pointer-events-auto ${details.open ? "bg-accent-weak text-accent" : ""}`}
+            />
+          </div>
+        )}
       </div>
     </header>
   );
 }
 
-export function AgentDetails({
+const rowDivider =
+  "relative [&+&]:before:content-[''] [&+&]:before:absolute [&+&]:before:top-0 [&+&]:before:right-0 [&+&]:before:left-3 [&+&]:before:h-px [&+&]:before:bg-stroke";
+
+export function AgentInspector({
+  id,
+  name,
+  colour,
+  face,
   dir,
   content = [],
   commands = [],
   tools = [],
   busy,
-  onToggle,
+  onClose,
   onPickFolder,
   onAddFolder,
   onRemoveFolder,
   onReveal,
   onRevealPath,
 }: {
+  id: string;
+  name: string;
+  colour: number;
+  face: Face;
   dir: string;
   content?: AgentContent[];
   commands?: AgentCapability[];
   tools?: AgentCapability[];
   busy: boolean;
-  onToggle: (open: boolean) => void;
+  onClose: () => void;
   onPickFolder: () => Promise<{ name: string; path: string } | undefined>;
   onAddFolder: (folder: string) => Promise<string | undefined>;
   onRemoveFolder: (name: string) => Promise<string | undefined>;
@@ -182,8 +196,6 @@ export function AgentDetails({
 }) {
   const [error, setError] = useState<string>();
   const [updating, setUpdating] = useState(false);
-  const panel = useRef<HTMLDivElement>(null);
-  useEffect(() => () => onToggle(false), [onToggle]);
   useEffect(() => {
     setError(undefined);
   }, [dir]);
@@ -211,12 +223,12 @@ export function AgentDetails({
     }
   };
 
-  const removeFolder = async (name: string) => {
+  const removeFolder = async (folderName: string) => {
     if (disabledReason) return;
     setError(undefined);
     setUpdating(true);
     try {
-      const refusal = await onRemoveFolder(name);
+      const refusal = await onRemoveFolder(folderName);
       if (refusal) setError(refusal);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -229,107 +241,155 @@ export function AgentDetails({
   const skills = commands.filter((cmd) => cmd.name.startsWith("skill:"));
 
   return (
-    <div
-      ref={panel}
+    <aside
       id="agent-info"
-      popover="auto"
       aria-label="Agent details"
-      onToggle={(event) => onToggle(event.newState === "open")}
-      className="popover w-80"
+      className="w-[clamp(16rem,26vw,20rem)] shrink-0 flex flex-col min-h-0 rounded-float bg-sidebar ring-1 ring-stroke overflow-hidden"
     >
-      <div className="flex h-7 items-center px-2.5">
-        <span className="text-[11px] font-medium text-muted">Folders it works on</span>
+      <div className="h-12 shrink-0 flex items-center justify-between border-b border-stroke px-3 drag">
+        <span className="text-[13px] font-semibold text-text">Agent details</span>
+        <Button
+          kind="ghost"
+          size={28}
+          onClick={onClose}
+          aria-label="Close agent details"
+          title="Close"
+          icon={<X size={15} />}
+          className="no-drag"
+        />
       </div>
-      {error && explained && (
-        <div role="alert" className="flex gap-2 px-2.5 pb-1.5 text-[12px]">
-          <WarningCircle size={13} className="mt-0.5 shrink-0 text-danger" />
-          <div className="min-w-0 space-y-0.5 break-words">
-            <p className="font-medium text-text">{explained.title}</p>
-            {explained.advice && <p className="text-muted">{explained.advice}</p>}
-            <p className="font-mono text-[11px] text-muted">{error}</p>
-          </div>
-        </div>
-      )}
-      <div className="max-h-52 overflow-y-auto">
-        {content.map((entry) => (
-          <div key={entry.name} className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => onRevealPath(entry.location)}
-              title={entry.location}
-              className="min-w-0 flex-1 rounded-card px-2.5 py-1.5 text-left transition-colors hover:bg-hover"
-            >
-              <div className="truncate text-[13px] font-medium text-text">{entry.name}</div>
-              <div className="truncate font-mono text-[11px] text-muted">{home(entry.location)}</div>
-            </button>
-            <Button
-              kind="ghost"
-              size={28}
-              onClick={() => void removeFolder(entry.name)}
-              disabled={disabledReason}
-              title={`Remove ${entry.name}`}
-              aria-label={`Remove ${entry.name}`}
-              icon={<X size={13} />}
-            />
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={() => void addFolder()}
-          disabled={!!disabledReason}
-          title={disabledReason || undefined}
-          className="flex w-full items-center gap-2 rounded-card px-2.5 py-1.5 text-left text-[13px] text-accent transition-colors hover:bg-hover disabled:opacity-50"
-        >
-          <Plus size={14} weight="bold" />
-          <span>Add folder…</span>
-        </button>
-      </div>
-      <div className="mt-1.5 border-t border-stroke pt-1.5">
-        <div className="px-2.5 pb-0.5 text-[11px] font-medium text-muted">Agent folder</div>
-        <button
-          type="button"
-          onClick={onReveal}
-          title={dir}
-          className="flex w-full items-center justify-between gap-2 rounded-card px-2.5 py-1.5 text-left transition-colors hover:bg-hover"
-        >
-          <span className="truncate font-mono text-[12px] text-muted">{home(dir)}</span>
-          <ArrowSquareOut size={13} className="shrink-0 text-muted" />
-        </button>
-      </div>
-      <div className="mt-1.5 border-t border-stroke pt-1.5">
-        {skills.length > 0 && (
-          <div className="mb-2.5">
-            <div className="px-2.5 pb-1 text-[11px] font-medium text-muted">Skills</div>
-            <div className="flex flex-wrap gap-1 px-2.5">
-              {skills.map((skill) => (
-                <span
-                  key={skill.name}
-                  title={skill.description}
-                  className="rounded-[4px] bg-raised px-1.5 py-0.5 font-mono text-[11px] text-text"
-                >
-                  {skill.name.slice("skill:".length)}
-                </span>
-              ))}
+
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-5">
+        <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
+          <div className="flex items-center gap-3 px-3 py-3">
+            <Avatar id={id} name={name} colour={colour} size={40} face={face} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-prose text-[15px] font-semibold text-text" title={name}>
+                {name}
+              </div>
+              <div className="truncate font-mono text-[11px] text-muted" title={dir}>
+                {home(dir)}
+              </div>
             </div>
           </div>
-        )}
-        <div className="px-2.5 pb-1 text-[11px] font-medium text-muted">Tools</div>
-        <div className="flex flex-wrap gap-1 px-2.5 pb-1.5">
-          {tools.length > 0 ? (
-            tools.map((tool) => (
-              <span
-                key={tool.name}
-                title={tool.description}
-                className="rounded-[4px] bg-raised px-1.5 py-0.5 font-mono text-[11px] text-muted"
-              >
-                {tool.name}
-              </span>
-            ))
-          ) : (
-            <span className="text-[12px] text-muted">None loaded</span>
-          )}
+          <button
+            type="button"
+            onClick={onReveal}
+            title={dir}
+            className={`${rowDivider} flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[12px] text-muted transition-colors hover:bg-hover hover:text-text`}
+          >
+            <span>Show agent folder in Finder</span>
+            <ArrowSquareOut size={13} className="shrink-0" />
+          </button>
         </div>
+
+        <section className="space-y-1.5">
+          <div className="flex items-baseline justify-between px-1">
+            <h3 className="text-[12px] font-semibold text-text">Folders it works on</h3>
+            <span className="text-[11px] text-muted tabular-nums">{content.length}</span>
+          </div>
+          {error && explained && (
+            <div role="alert" className="rounded-card bg-surface p-2.5 ring-1 ring-stroke">
+              <div className="flex gap-2 text-[12px]">
+                <WarningCircle size={14} className="mt-0.5 shrink-0 text-danger" />
+                <div className="min-w-0 space-y-0.5 break-words">
+                  <p className="font-medium text-text">{explained.title}</p>
+                  {explained.advice && <p className="text-muted">{explained.advice}</p>}
+                  <p className="font-mono text-[11px] text-muted">{error}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
+            {content.map((entry) => (
+              <div key={entry.name} className={`${rowDivider} flex items-center gap-1 pr-1.5`}>
+                <button
+                  type="button"
+                  onClick={() => onRevealPath(entry.location)}
+                  title={entry.location}
+                  className="min-w-0 flex-1 py-2 pl-3 pr-1 text-left transition-colors hover:text-text"
+                >
+                  <div className="truncate text-[13px] font-medium text-text">{entry.name}</div>
+                  <div className="truncate font-mono text-[11px] text-muted">{home(entry.location)}</div>
+                </button>
+                <Button
+                  kind="ghost"
+                  size={28}
+                  onClick={() => void removeFolder(entry.name)}
+                  disabled={disabledReason}
+                  title={`Remove ${entry.name}`}
+                  aria-label={`Remove ${entry.name}`}
+                  icon={<X size={13} />}
+                />
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => void addFolder()}
+              disabled={!!disabledReason}
+              title={disabledReason || undefined}
+              className={`${rowDivider} flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px] font-medium text-accent transition-colors hover:bg-hover disabled:opacity-50`}
+            >
+              <Plus size={14} weight="bold" />
+              <span>Add folder…</span>
+            </button>
+          </div>
+          <p className="px-1 text-[11px] leading-relaxed text-muted">
+            Removing a folder here only detaches it from {name}; your files stay on disk.
+          </p>
+        </section>
+
+        <section className="space-y-1.5">
+          <div className="flex items-baseline justify-between px-1">
+            <h3 className="text-[12px] font-semibold text-text">Tools</h3>
+            <span className="text-[11px] text-muted tabular-nums">{tools.length}</span>
+          </div>
+          <div className="rounded-card bg-surface p-2.5 ring-1 ring-stroke">
+            {tools.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {tools.map((tool) => (
+                  <span
+                    key={tool.name}
+                    title={tool.description}
+                    className="rounded-[4px] bg-raised px-2 py-0.5 font-mono text-[11px] text-muted"
+                  >
+                    {tool.name}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="text-[12px] text-muted">None loaded</span>
+            )}
+          </div>
+        </section>
+
+        <section className="space-y-1.5">
+          <div className="flex items-baseline justify-between px-1">
+            <h3 className="text-[12px] font-semibold text-text">Skills</h3>
+            <span className="text-[11px] text-muted tabular-nums">{skills.length}</span>
+          </div>
+          {skills.length > 0 ? (
+            <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
+              {skills.map((skill) => (
+                <div key={skill.name} className={`${rowDivider} px-3 py-2`}>
+                  <div className="font-mono text-[12.5px] font-medium text-text">
+                    {skill.name.slice("skill:".length)}
+                  </div>
+                  {skill.description && (
+                    <div className="mt-0.5 text-[12px] leading-snug text-muted line-clamp-2">
+                      {skill.description}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-card bg-surface px-3 py-2.5 text-[12px] text-muted ring-1 ring-stroke">
+              No skills in <span className="font-mono text-[11px]">skills/</span> yet.
+            </div>
+          )}
+        </section>
       </div>
-    </div>
+    </aside>
   );
 }

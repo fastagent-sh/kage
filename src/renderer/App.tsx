@@ -9,7 +9,7 @@ import { BrokenAgent, CreateAgent, MissingFolder, NewConversation, NoAgents, Unr
 import { Problem } from "./problem.tsx";
 import { ArrowClockwise } from "@phosphor-icons/react";
 import { ConversationList, Sidebar } from "./rows.tsx";
-import { AgentDetails, ConversationHeader } from "./header.tsx";
+import { AgentInspector, ConversationHeader } from "./header.tsx";
 import { Transcript } from "./transcript-view.tsx";
 import { Composer } from "./composer.tsx";
 import { Settings } from "./settings.tsx";
@@ -92,10 +92,8 @@ export default function App() {
         return;
       }
       // Asked of the popover, not `listOpen`: an Escape right after it opens arrives before that mirror and would stop the run.
-      const popoverShowing =
-        document.getElementById("conversations")?.matches(":popover-open") ||
-        document.getElementById("agent-info")?.matches(":popover-open");
-      if (event.key === "Escape" && busy && !popoverShowing) void store.abort();
+      const listShowing = document.getElementById("conversations")?.matches(":popover-open");
+      if (event.key === "Escape" && busy && !listShowing) void store.abort();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -287,7 +285,11 @@ export default function App() {
                   }
                   plan={provider ? view.usage[provider] : undefined}
                   queued={c ? waiting.filter(({ listed }) => listed).length : undefined}
-                  details={agentState === "ready" ? { open: detailsOpen } : undefined}
+                  details={
+                    agentState === "ready"
+                      ? { open: detailsOpen, onToggle: () => setDetailsOpen((open) => !open) }
+                      : undefined
+                  }
                   list={
                     agentState === "ready"
                       ? { open: listOpen, unseen: Object.keys(view.unseen[agent.id] ?? {}).length }
@@ -299,30 +301,15 @@ export default function App() {
                 />
               )}
               {agent && agentState === "ready" && (
-                <>
-                  <AgentDetails
-                    dir={agent.dir}
-                    content={view.content[agent.id]}
-                    commands={view.agentCommands[agent.id]}
-                    tools={view.tools[agent.id]}
-                    busy={busy || (view.running[agent.id]?.length ?? 0) > 0}
-                    onToggle={setDetailsOpen}
-                    onPickFolder={() => store.pickFolder()}
-                    onAddFolder={(folder) => store.addAgentFolder(folder)}
-                    onRemoveFolder={(name) => store.removeAgentFolder(name)}
-                    onReveal={() => void store.reveal()}
-                    onRevealPath={(path) => void store.reveal(agent.id, path)}
-                  />
-                  <ConversationList
-                    rows={sessionRows}
-                    session={c?.session}
-                    error={view.sessionsError[agent.id]}
-                    disabled={held}
-                    onToggle={setListOpen}
-                    onOpen={(session) => void store.open(session)}
-                    onNew={newConversation}
-                  />
-                </>
+                <ConversationList
+                  rows={sessionRows}
+                  session={c?.session}
+                  error={view.sessionsError[agent.id]}
+                  disabled={held}
+                  onToggle={setListOpen}
+                  onOpen={(session) => void store.open(session)}
+                  onNew={newConversation}
+                />
               )}
               {pane === "unreadable-registry" ? (
                 // Not an empty registry: "create your first agent" would deny the failure.
@@ -416,6 +403,30 @@ export default function App() {
             </>
           )}
         </main>
+        {!settings && !creating && detailsOpen && agent && agentState === "ready" && (
+          <AgentInspector
+            id={agent.id}
+            name={agent.name}
+            colour={agent.colour}
+            face={faceOf({
+              state: agentState,
+              doing: view.doing[agent.id],
+              outcomes: Object.values(view.unseen[agent.id] ?? {}),
+              open: false,
+            })}
+            dir={agent.dir}
+            content={view.content[agent.id]}
+            commands={view.agentCommands[agent.id]}
+            tools={view.tools[agent.id]}
+            busy={busy || (view.running[agent.id]?.length ?? 0) > 0}
+            onClose={() => setDetailsOpen(false)}
+            onPickFolder={() => store.pickFolder()}
+            onAddFolder={(folder) => store.addAgentFolder(folder)}
+            onRemoveFolder={(name) => store.removeAgentFolder(name)}
+            onReveal={() => void store.reveal()}
+            onRevealPath={(path) => void store.reveal(agent.id, path)}
+          />
+        )}
       </div>
     </AvatarStyleContext.Provider>
   );

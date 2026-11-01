@@ -426,19 +426,6 @@ summary:focus-visible,
   color: var(--color-text);
 }
 
-.agent-info-anchor {
-  anchor-name: --agent-info;
-}
-#agent-info {
-  position-anchor: --agent-info;
-  inset: auto;
-  top: anchor(bottom);
-  right: anchor(right);
-  margin: 8px 0 0;
-  border: 0;
-  color: var(--color-text);
-}
-
 .drag {
   -webkit-app-region: drag;
 }

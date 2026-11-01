@@ -217,9 +217,9 @@ if (root) {
     await capture("app-conversations");
     await evaluate(`document.querySelector('#conversations').hidePopover()`);
     await evaluate(`document.querySelector('main > header button[aria-label="Agent details"]').click()`);
-    await until(`document.querySelector('#agent-info:popover-open')`, "agent details");
+    await until(`document.querySelector('#agent-info') !== null`, "agent details");
     await capture("agent-details");
-    await evaluate(`document.querySelector('#agent-info').hidePopover()`);
+    await evaluate(`document.querySelector('#agent-info button[aria-label="Close agent details"]').click()`);
     await evaluate(`document.querySelector('button[title^="Model for this agent"]').click()`);
     await until(`document.querySelector('dialog[open]')`, "model picker");
     await capture("models");
