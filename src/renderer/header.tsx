@@ -178,7 +178,7 @@ export function ConversationHeader({
 const rowDivider =
   "relative [&+&]:before:content-[''] [&+&]:before:absolute [&+&]:before:top-0 [&+&]:before:right-0 [&+&]:before:left-3 [&+&]:before:h-px [&+&]:before:bg-stroke";
 
-const SKILL_PREVIEW_LIMIT = 4;
+const SKILL_PREVIEW_LIMIT = 3;
 
 export function AgentInspector({
   id,
@@ -319,7 +319,7 @@ export function AgentInspector({
     <aside
       id="agent-info"
       aria-label="Agent details"
-      className="w-[clamp(16.5rem,24vw,19.5rem)] shrink-0 flex flex-col min-h-0 rounded-float bg-sidebar ring-1 ring-stroke overflow-hidden"
+      className="w-[clamp(19rem,28vw,23rem)] shrink-0 flex flex-col min-h-0 rounded-float bg-sidebar ring-1 ring-stroke overflow-hidden"
     >
       <div className="h-10 shrink-0 flex items-center justify-end px-2.5 pt-1 drag">
         <Button
@@ -333,35 +333,35 @@ export function AgentInspector({
         />
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-4 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto px-3.5 pb-4 space-y-4">
         <div className="flex flex-col items-center px-2 pb-1 text-center">
           <Avatar id={id} name={name} colour={colour} size={52} face={face} />
-          <div className="mt-2 max-w-full truncate font-prose text-[15px] font-semibold text-text" title={name}>
+          <div className="mt-2 max-w-full break-words font-prose text-[15px] font-semibold text-text">
             {name}
           </div>
           {inspection?.description && (
-            <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-muted">{inspection.description}</p>
+            <p className="mt-0.5 text-[12px] leading-snug text-muted">{inspection.description}</p>
           )}
           <button
             type="button"
             onClick={onReveal}
             title={`Show agent folder in Finder (${dir})`}
-            className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[11px] text-muted ring-1 ring-stroke transition-colors hover:bg-hover hover:text-text"
+            className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-card bg-surface px-2.5 py-1 text-[11px] text-muted ring-1 ring-stroke transition-colors hover:bg-hover hover:text-text"
           >
             <FolderSimple size={12} className="shrink-0" />
-            <span className="truncate font-mono">{location(dir)}</span>
+            <span className="break-all text-left font-mono leading-snug">{home(dir)}</span>
             <span className="sr-only">Show agent folder in Finder</span>
             <ArrowSquareOut size={11} className="shrink-0 opacity-70" />
           </button>
           {files.length > 0 && (
-            <div className="mt-2 flex flex-wrap justify-center gap-1">
+            <div className="mt-2 flex flex-wrap justify-center gap-1.5">
               {files.map((file) => (
                 <button
                   key={file}
                   type="button"
                   onClick={() => onRevealPath(file)}
                   title={`Show ${file} in Finder`}
-                  className="inline-flex items-center gap-1 rounded-[4px] bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-muted transition-colors hover:bg-hover hover:text-text"
+                  className="inline-flex items-center gap-1 rounded-[4px] bg-surface-2 px-2 py-0.5 font-mono text-[11px] text-muted transition-colors hover:bg-hover hover:text-text"
                 >
                   <FileText size={11} className="shrink-0" />
                   <span>{file}</span>
@@ -372,22 +372,26 @@ export function AgentInspector({
         </div>
 
         {onPickModel && (
-          <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
-            <button
-              type="button"
-              onClick={onPickModel}
-              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-hover"
-            >
-              <span className="flex shrink-0 items-center gap-2 text-[12px] font-medium text-muted">
-                <Cpu size={14} className="shrink-0" />
+          <section className="space-y-1.5">
+            <div className="flex items-center justify-between px-1">
+              <h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
+                <Cpu size={13} />
                 <span>Default model</span>
-              </span>
-              <span className="flex min-w-0 items-center gap-1 font-mono text-[11px] text-text">
-                <span className="truncate">{model ?? "Choose model…"}</span>
-                <CaretRight size={12} className="shrink-0 text-muted" />
-              </span>
-            </button>
-          </div>
+              </h3>
+            </div>
+            <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
+              <button
+                type="button"
+                onClick={onPickModel}
+                className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-hover"
+              >
+                <span className="min-w-0 flex-1 break-all font-mono text-[12.5px] font-medium text-text">
+                  {model ?? "Choose model…"}
+                </span>
+                <CaretRight size={13} className="shrink-0 text-muted" />
+              </button>
+            </div>
+          </section>
         )}
 
         <section className="space-y-1.5">
@@ -419,14 +423,16 @@ export function AgentInspector({
                   type="button"
                   onClick={() => onRevealPath(entry.location)}
                   title={`Show in Finder (${entry.location})`}
-                  className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pl-2.5 pr-1 text-left transition-colors hover:text-text"
+                  className="flex min-w-0 flex-1 items-start gap-2.5 py-2.5 pl-2.5 pr-1 text-left transition-colors hover:text-text"
                 >
-                  <span className="grid size-7 shrink-0 place-items-center rounded-[4px] bg-accent-weak text-accent">
+                  <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[4px] bg-accent-weak text-accent">
                     <FolderSimple size={14} />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-medium text-text">{entry.name}</div>
-                    <div className="truncate font-mono text-[11px] text-muted">{home(entry.location)}</div>
+                    <div className="break-words text-[13px] font-medium text-text">{entry.name}</div>
+                    <div className="mt-0.5 break-all font-mono text-[11px] leading-snug text-muted">
+                      {home(entry.location)}
+                    </div>
                   </div>
                 </button>
                 <Button
@@ -481,9 +487,9 @@ export function AgentInspector({
                   onClick={() => setEditingSecret({ name: secret.name, value: "", fixedName: true })}
                   className="min-w-0 flex-1 text-left"
                 >
-                  <div className="truncate font-mono text-[12px] font-medium text-text">{secret.name}</div>
+                  <div className="break-all font-mono text-[12px] font-medium text-text">{secret.name}</div>
                   {secret.description && (
-                    <div className="truncate text-[11px] text-muted">{secret.description}</div>
+                    <div className="mt-0.5 text-[11px] leading-snug text-muted">{secret.description}</div>
                   )}
                 </button>
                 <Badge tone={secret.configured ? "success" : secret.optional ? "muted" : "danger"}>
@@ -632,12 +638,12 @@ export function AgentInspector({
                     key={skill.name}
                     type="button"
                     onClick={() => onSelectSkill?.(skillName)}
-                    title={skill.description ? `${skill.description}\n\nClick to use /skill:${skillName}` : `/skill:${skillName}`}
-                    className={`${rowDivider} flex w-full items-baseline gap-2 px-3 py-2 text-left transition-colors hover:bg-hover`}
+                    title={`Click to use /skill:${skillName}`}
+                    className={`${rowDivider} block w-full px-3 py-2 text-left transition-colors hover:bg-hover`}
                   >
-                    <span className="shrink-0 font-mono text-[12.5px] font-medium text-accent">/{skillName}</span>
+                    <div className="font-mono text-[12.5px] font-medium text-accent">/{skillName}</div>
                     {skill.description && (
-                      <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{skill.description}</span>
+                      <div className="mt-0.5 text-[12px] leading-snug text-muted">{skill.description}</div>
                     )}
                   </button>
                 );

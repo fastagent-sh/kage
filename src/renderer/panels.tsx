@@ -244,8 +244,8 @@ export function CreateAgent({
                 <div key={`${folder.path}-${index}`} className={`${row} flex items-center gap-3 px-4 py-2.5`}>
                   <FolderOpen size={15} className="shrink-0 text-muted" aria-hidden />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-medium">{folder.name}</div>
-                    <div className="truncate font-mono text-[12.5px] text-muted" title={folder.path}>
+                    <div className="break-words text-[13px] font-medium">{folder.name}</div>
+                    <div className="break-all font-mono text-[12.5px] leading-snug text-muted" title={folder.path}>
                       {home(folder.path)}
                     </div>
                   </div>

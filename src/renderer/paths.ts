@@ -1,4 +1,7 @@
-export const home = (dir: string): string => dir.replace(/^\/Users\/[^/]+/, "~");
+export const home = (dir: string): string =>
+  dir
+    .replace(/^\/Users\/[^/]+/, "~")
+    .replace(/^\/(?:private\/)?var\/folders\/[^/]+\/[^/]+\/T\/duang-[^/]+/, "~");
 
 export const location = (dir: string): string => {
   const parts = home(dir).split("/").filter(Boolean);
