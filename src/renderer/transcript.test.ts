@@ -19,6 +19,7 @@ import {
   diffLines,
   toolDetail,
   toolText,
+  visibleArgs,
   type Item,
   type UserItem,
 } from "./transcript.ts";
@@ -312,4 +313,14 @@ test("edit and write tool arguments become structured diff and content views, an
   assert.deepEqual(toolDetail("bash", { command: "npm test" }), {
     kind: "args",
   });
+
+  // Short single-line commands and shortened paths already shown in the summary are omitted, while truncated or multi-line commands stay visible.
+  assert.deepEqual(visibleArgs({ command: "npm test" }, firstArg({ command: "npm test" })), []);
+  assert.deepEqual(visibleArgs({ path: "/tmp/project/hello.txt", offset: 1 }, firstArg({ path: "/tmp/project/hello.txt", offset: 1 })), [
+    ["offset", 1],
+  ]);
+  const longCommand = `curl https://example.com/api/v1/start --header ${"x".repeat(80)}`;
+  assert.deepEqual(visibleArgs({ command: longCommand }, firstArg({ command: longCommand })), [["command", longCommand]]);
+  const multilineCommand = "echo one\necho two";
+  assert.deepEqual(visibleArgs({ command: multilineCommand }, firstArg({ command: multilineCommand })), [["command", multilineCommand]]);
 });

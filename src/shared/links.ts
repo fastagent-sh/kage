@@ -94,8 +94,8 @@ export function classifyLink(href: string | undefined): LinkTarget {
 export function isFilePath(raw: string): boolean {
   const trimmed = raw.trim();
   if (!trimmed || trimmed.length > 240 || /[\r\n\t"'`()[\]{}<>;,=!?*|$&]/.test(trimmed)) return false;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return /^file:\/\//i.test(trimmed);
   const clean = stripPathSuffix(trimmed);
+  if (/^[a-z][a-z0-9+.-]*:/i.test(clean)) return /^file:\/\//i.test(clean);
   if (!clean || clean === "/" || clean === "~" || clean === "." || clean === "..") return false;
   if (/\s/.test(clean) && !/^(~\/|\/(Users|tmp|var|opt|etc|Volumes)\/)/.test(clean)) return false;
   if (/^(~\/|\.\.?\/)/.test(clean)) return true;

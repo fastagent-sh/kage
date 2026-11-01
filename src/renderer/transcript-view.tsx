@@ -41,6 +41,7 @@ import {
   thinkingLine,
   toolDetail,
   toolText,
+  visibleArgs,
   type DiffLine,
   type Item,
   type Line,
@@ -178,7 +179,17 @@ export function Transcript({
   onOpenPath?: (path: string) => void;
   provider?: string;
 }) {
-  const transcriptActions = useMemo(() => ({ onOpenLink, onOpenPath }), [onOpenLink, onOpenPath]);
+  const actionsRef = useRef({ onOpenLink, onOpenPath });
+  actionsRef.current = { onOpenLink, onOpenPath };
+  const hasOpenLink = Boolean(onOpenLink);
+  const hasOpenPath = Boolean(onOpenPath);
+  const transcriptActions = useMemo(
+    () => ({
+      ...(hasOpenLink && { onOpenLink: (url: string) => actionsRef.current.onOpenLink?.(url) }),
+      ...(hasOpenPath && { onOpenPath: (path: string) => actionsRef.current.onOpenPath?.(path) }),
+    }),
+    [hasOpenLink, hasOpenPath],
+  );
   // The ways on belong to the latest problem only, and only while nothing runs: an earlier one is history.
   const last = items.at(-1);
   const problem = !busy && last?.kind === "note" && last.title ? last : undefined;
@@ -582,7 +593,7 @@ function toolState(item: Extract<Item, { kind: "tool" }>): { word: string; tone:
 export function Tool({ item }: { item: Extract<Item, { kind: "tool" }> }) {
   const { onOpenPath } = useContext(TranscriptActionsContext);
   const summary = firstArg(item.args);
-  const detail = toolDetail(item.name, item.args);
+  const detail = useMemo(() => toolDetail(item.name, item.args), [item.name, item.args]);
   const path = detail.path;
   const state = toolState(item);
   const elapsed = useElapsed(item.started, item.ended);
@@ -697,10 +708,9 @@ function DiffHunks({ hunks }: { hunks: DiffLine[][] }) {
 
 function Args({ args, summary, onOpenPath }: { args: unknown; summary: string; onOpenPath?: (path: string) => void }) {
   if (args === undefined || args === null) return null;
-  if (typeof args !== "object") return <pre className="font-mono whitespace-pre-wrap break-all">{stringify(args)}</pre>;
-  const entries = Object.entries(args).filter(
-    ([key, value]) => value !== undefined && value !== null && value !== "" && firstArg({ [key]: value }) !== summary,
-  );
+  if (typeof args !== "object" || Array.isArray(args))
+    return <pre className="font-mono whitespace-pre-wrap break-all">{stringify(args)}</pre>;
+  const entries = visibleArgs(args, summary);
   if (entries.length === 0) return null;
   const compact = entries.every(
     ([key, value]) => key !== "path" && (typeof value === "number" || typeof value === "boolean" || (typeof value === "string" && value.length <= 24 && !value.includes("\n"))),

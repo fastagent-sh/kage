@@ -76,7 +76,11 @@ test("file paths are distinguished from model specs, slash commands, and code ex
     "~/Library/Application Support/duang/agents.json",
     "/Users/someone/research/video-research",
     "fastagent.config.ts",
+    "fastagent.config.ts:12",
     "README.md",
+    "README.md:10",
+    "package.json:5:2",
+    "Dockerfile:3",
     ".gitignore",
   ]) {
     assert.equal(isFilePath(path), true, `expected ${path} to be recognised as a file path`);

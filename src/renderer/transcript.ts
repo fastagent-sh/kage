@@ -364,7 +364,9 @@ function parseEdits(args: Record<string, unknown>): { oldText: string; newText: 
       if (Array.isArray(parsed)) {
         for (const item of parsed) if (isEditPair(item)) list.push(item);
       } else if (isEditPair(parsed)) list.push(parsed);
-    } catch {}
+    } catch {
+      // Malformed JSON in a tool call's raw `edits` string falls back to showing the raw arguments table.
+    }
   } else if (isEditPair(raw)) {
     list.push(raw);
   }
@@ -384,6 +386,17 @@ export function toolDetail(name: string, args: unknown): ToolDetail {
     return { kind: "write", ...(path && { path }), content: record.content };
   }
   return { kind: "args", ...(path && { path }) };
+}
+
+export function visibleArgs(args: unknown, summary: string): [string, unknown][] {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return [];
+  return Object.entries(args).filter(
+    ([key, value]) =>
+      value !== undefined &&
+      value !== null &&
+      value !== "" &&
+      !(key === "path" ? firstArg({ path: value }) === summary : value === summary && !value.includes("\n")),
+  );
 }
 
 // Settled thinking is not output and is passed over. While calls run, the newest still running is quoted,
