@@ -417,18 +417,21 @@ export default function App() {
             })}
             dir={agent.dir}
             model={view.model}
-            modelBlocked={view.modelBlocked ?? (!c ? "Open a conversation to choose a model" : undefined)}
+            modelBlocked={
+              view.modelBlocked ??
+              (!c
+                ? "Open a conversation to choose a model"
+                : c.state?.model && c.state.model !== view.model
+                  ? `This conversation uses ${c.state.model}; start a new conversation to change the default model`
+                  : undefined)
+            }
             content={view.content[agent.id]}
             commands={view.agentCommands[agent.id]}
             tools={view.tools[agent.id]}
             inspection={view.inspection[agent.id]}
             busy={busy || (view.running[agent.id]?.length ?? 0) > 0}
             onClose={() => setDetailsOpen(false)}
-            onPickModel={
-              agentState === "ready" && (!c?.state?.model || c.state.model === view.model)
-                ? store.openPicker
-                : undefined
-            }
+            onPickModel={agentState === "ready" ? store.openPicker : undefined}
             onPickFolder={() => store.pickFolder()}
             onAddFolder={(folder) => store.addAgentFolder(folder, agent.id)}
             onRemoveFolder={(name) => store.removeAgentFolder(name, agent.id)}

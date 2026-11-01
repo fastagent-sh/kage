@@ -353,7 +353,7 @@ export function createStore(api: DuangApi) {
   const leave = () => publish({ conversation: undefined });
   // A provider disconnected here leaves a plan's numbers behind, which this store owns: it drops them, so the
   // settings sub-store never reaches into state it does not own.
-  const { select: selectResources, closeModels, resetCommands, ...resources } = createAgentResources(api, publish);
+  const { select: selectResources, closeModels, ...resources } = createAgentResources(api, publish);
   const { forget: forgetUsage, ...usage } = createProviderUsage(api, publish);
   const { onStep, ...settings } = createSettings(api, () => view, publish, forgetUsage);
 
@@ -502,31 +502,47 @@ export function createStore(api: DuangApi) {
     return known.find((s) => s.updatedAt === undefined)?.session ?? api.createSession(id);
   }
 
-  async function selectAgent(id: string, session?: string) {
+  async function selectAgent(
+    id: string,
+    session?: string,
+    fallback: { content?: AgentContent[]; inspection?: AgentInspection } = {},
+  ) {
     const request = ++navigation;
     const listCurrent = listTicket(id);
     const left = view.agentId;
+    const prevDescription = view.inspection[id]?.description;
+    const withDesc = (insp?: AgentInspection) =>
+      insp && prevDescription && !insp.description ? { ...insp, description: prevDescription } : insp;
     leave();
     if (left && left !== id) void readPreview(left);
     selectResources(id);
+    const { [id]: _reopening, ...restStates } = view.states;
     publish({
       agentId: id,
       model: undefined,
       error: undefined,
       errorInConfig: undefined,
       loading: true,
+      states: restStates,
     });
     try {
       const result = await api.openAgent(id);
       if (request !== navigation) return;
+      const nextContent = result.content ?? fallback.content;
+      const nextInspection = withDesc(result.inspection ?? fallback.inspection);
       if (!result.ok) {
+        const { [id]: _staleTools, ...restTools } = view.tools;
+        const { [id]: _staleCommands, ...restCommands } = view.agentCommands;
         publish({
           loading: false,
+          model: undefined,
+          tools: restTools,
+          agentCommands: restCommands,
           states: { ...view.states, [id]: result.code },
           error: result.message,
           errorInConfig: result.inConfig,
-          ...(result.content && { content: { ...view.content, [id]: result.content } }),
-          ...(result.inspection && { inspection: { ...view.inspection, [id]: result.inspection } }),
+          ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
+          ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
         });
         return;
       }
@@ -534,10 +550,10 @@ export function createStore(api: DuangApi) {
         loading: false,
         model: result.model,
         contextWindows: result.windows,
-        ...(result.content && { content: { ...view.content, [id]: result.content } }),
+        ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
         ...(result.tools && { tools: { ...view.tools, [id]: result.tools } }),
         ...(result.commands && { agentCommands: { ...view.agentCommands, [id]: result.commands } }),
-        ...(result.inspection && { inspection: { ...view.inspection, [id]: result.inspection } }),
+        ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
         ...(listCurrent() ? { sessions: { ...view.sessions, [id]: result.sessions } } : {}),
         states: { ...view.states, [id]: "ready" },
       });
@@ -549,8 +565,18 @@ export function createStore(api: DuangApi) {
       // After the conversation opened: opening one is what sets the ask, by what it can run.
       if (request === navigation) publish();
     } catch (error) {
-      if (request === navigation)
-        publish({ loading: false, error: message(error), states: { ...view.states, [id]: "broken" } });
+      if (request === navigation) {
+        const { [id]: _staleTools, ...restTools } = view.tools;
+        const { [id]: _staleCommands, ...restCommands } = view.agentCommands;
+        publish({
+          loading: false,
+          model: undefined,
+          tools: restTools,
+          agentCommands: restCommands,
+          error: message(error),
+          states: { ...view.states, [id]: "broken" },
+        });
+      }
     }
   }
 
@@ -569,51 +595,9 @@ export function createStore(api: DuangApi) {
       void listSessions(id);
       return;
     }
-    const request = ++navigation;
     const currentSession = view.conversation?.agentId === id ? view.conversation.session : undefined;
     if (view.conversation?.agentId === id) close(view.conversation);
-    leave();
-    resetCommands();
-    publish({ loading: true, error: undefined, errorInConfig: undefined });
-    try {
-      const opened = await api.openAgent(id);
-      if (request !== navigation || view.agentId !== id) return;
-      const nextContent = opened.content ?? fallback.content;
-      const nextInspection = withDesc(opened.inspection ?? fallback.inspection);
-      if (!opened.ok) {
-        publish({
-          loading: false,
-          states: { ...view.states, [id]: opened.code },
-          error: opened.message,
-          errorInConfig: opened.inConfig,
-          ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
-          ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
-        });
-        return;
-      }
-      publish({
-        loading: false,
-        error: undefined,
-        errorInConfig: undefined,
-        model: opened.model,
-        contextWindows: opened.windows,
-        ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
-        ...(opened.tools && { tools: { ...view.tools, [id]: opened.tools } }),
-        ...(opened.commands && { agentCommands: { ...view.agentCommands, [id]: opened.commands } }),
-        ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
-        sessions: { ...view.sessions, [id]: opened.sessions },
-        states: { ...view.states, [id]: "ready" },
-      });
-      staleDefault = opened.staleDefault ? { agentId: id, model: opened.staleDefault } : undefined;
-      const nextSession = currentSession ?? openable(id, opened.sessions) ?? (await begin(id, opened.sessions));
-      if (request !== navigation || view.agentId !== id) return;
-      await open(nextSession);
-      if (request === navigation && view.agentId === id) publish();
-    } catch (error) {
-      if (request === navigation && view.agentId === id) {
-        publish({ loading: false, error: message(error), states: { ...view.states, [id]: "broken" } });
-      }
-    }
+    await selectAgent(id, currentSession, fallback);
   }
 
   // Read again after a model change, which the session's own events may not have reported before it was subscribed.

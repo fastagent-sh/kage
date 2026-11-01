@@ -520,6 +520,9 @@ test("opening an agent records its loaded tools and commands, and adding or remo
   };
   await store.removeAgentSecret("GITHUB_TOKEN", "a");
   assert.equal(store.getSnapshot().states.a, "broken");
+  assert.equal(store.getSnapshot().model, undefined);
+  assert.equal(store.getSnapshot().tools.a, undefined);
+  assert.equal(store.getSnapshot().agentCommands.a, undefined);
   assert.equal(store.getSnapshot().inspection.a?.secrets[0]?.configured, false);
 
   api.setAgentSecret = async () => {
@@ -535,6 +538,8 @@ test("opening an agent records its loaded tools and commands, and adding or remo
   };
   await store.setAgentSecret("GITHUB_TOKEN", "ghp_123", "a");
   assert.equal(store.getSnapshot().states.a, "ready");
+  assert.equal(store.getSnapshot().model, "provider/model");
+  assert.deepEqual(store.getSnapshot().tools.a, [{ name: "read", description: "Read files" }, { name: "bash" }]);
   assert.equal(store.getSnapshot().inspection.a?.description, "Reviews pull requests");
   store.dispose();
 });

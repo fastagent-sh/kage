@@ -380,7 +380,7 @@ export function AgentInspector({
           )}
         </div>
 
-        {(model || onPickModel) && (
+        {onPickModel && (
           <section className="space-y-1.5">
             <div className="flex items-center justify-between px-1">
               <h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
@@ -389,27 +389,21 @@ export function AgentInspector({
               </h3>
             </div>
             <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
-              {onPickModel ? (
-                <button
-                  type="button"
-                  aria-disabled={Boolean(modelBlocked || disabledReason) || undefined}
-                  title={modelBlocked || disabledReason || undefined}
-                  onClick={() => {
-                    if (modelBlocked || disabledReason) return;
-                    onPickModel();
-                  }}
-                  className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-hover aria-disabled:opacity-50"
-                >
-                  <span className="min-w-0 flex-1 break-all font-mono text-[12.5px] font-medium text-text">
-                    {model ?? "Choose model…"}
-                  </span>
-                  <CaretRight size={13} className="shrink-0 text-muted" />
-                </button>
-              ) : (
-                <div className="px-3 py-2.5">
-                  <span className="break-all font-mono text-[12.5px] font-medium text-text">{model}</span>
-                </div>
-              )}
+              <button
+                type="button"
+                aria-disabled={Boolean(modelBlocked || disabledReason) || undefined}
+                title={modelBlocked || disabledReason || undefined}
+                onClick={() => {
+                  if (modelBlocked || disabledReason) return;
+                  onPickModel();
+                }}
+                className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-hover aria-disabled:opacity-50"
+              >
+                <span className="min-w-0 flex-1 break-all font-mono text-[12.5px] font-medium text-text">
+                  {model ?? "Choose model…"}
+                </span>
+                <CaretRight size={13} className="shrink-0 text-muted" />
+              </button>
             </div>
           </section>
         )}
@@ -566,7 +560,7 @@ export function AgentInspector({
                       </Badge>
                     )
                   )}
-                  {secret.fromFile && !secret.fromEnv && onRemoveSecret && (
+                  {secret.fromFile && onRemoveSecret && (
                     <Button
                       kind="ghost"
                       size={28}

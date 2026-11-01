@@ -287,7 +287,7 @@ export async function inspectAgentDir(agentDir: string, description?: string): P
   const seenSecrets = new Set<string>();
   const statusOf = (name: string) => {
     const fromEnv = name in process.env;
-    const fromFile = !fromEnv && configuredEnv.has(name);
+    const fromFile = configuredEnv.has(name);
     const configured = fromEnv ? Boolean(process.env[name]?.trim()) : fromFile;
     return { configured, fromEnv, fromFile };
   };

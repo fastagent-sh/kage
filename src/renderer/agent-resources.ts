@@ -21,10 +21,6 @@ export function createAgentResources(api: DuangApi, publish: (patch: Partial<Age
     closeModels() {
       modelRead = undefined;
     },
-    resetCommands() {
-      commandsFor = undefined;
-      publish({ commands: [], commandsError: undefined });
-    },
     async loadModels() {
       const origin = selected;
       const request = (modelRead = {});
