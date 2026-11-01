@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { ArrowSquareOut, ListBullets, Plus, SidebarSimple, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowSquareOut, FolderSimple, ListBullets, Plus, SidebarSimple, WarningCircle, X } from "@phosphor-icons/react";
 import type { AgentCapability, AgentContent, ProviderUsage } from "../preload/index.ts";
 import { explainContentError } from "./panels.tsx";
 import { home, location } from "./paths.ts";
@@ -44,10 +44,10 @@ export function ConversationHeader({
   onUsagePage: (provider: string) => void;
 }) {
   return (
-    // Floats over the scroll area, so it lets the wheel through; only interactive parts take the pointer.
-    <header className="pointer-events-none absolute inset-x-4 top-2 z-10">
-      <div className="flex items-stretch gap-2">
-        <div className="conversation-header flex min-w-0 flex-1 items-center gap-2.5 rounded-composer bg-surface/75 py-1.5 pr-4 pl-2 ring-1 ring-stroke backdrop-blur-xl">
+    // Floats over the scroll area, aligned to the reading column; only interactive parts take the pointer.
+    <header className="pointer-events-none absolute inset-x-0 top-2 z-10 px-6">
+      <div className="column">
+        <div className="conversation-header flex min-w-0 items-center gap-2.5 rounded-composer bg-surface/85 py-1.5 pr-1.5 pl-2 ring-1 ring-stroke backdrop-blur-xl">
           <Avatar id={id} name={agent} colour={colour} size={30} face={face} />
           <div className="min-w-0 flex-1">
             {/* The name doubles as the window's drag handle, which the frameless title bar needs. */}
@@ -120,39 +120,39 @@ export function ConversationHeader({
           )}
           <UsageMeter plan={plan} context={context} onPage={onUsagePage} />
           {!!queued && <span className="shrink-0 text-[11px] text-muted">{queued} queued</span>}
+          {(list || details) && (
+            <div className="pointer-events-auto flex shrink-0 items-center gap-0.5 border-l border-stroke pl-1.5">
+              {list && (
+                <Button
+                  kind="ghost"
+                  size={32}
+                  popoverTarget="conversations"
+                  aria-label={list.unseen ? `Conversations, ${list.unseen} unseen` : "Conversations"}
+                  title="Conversations"
+                  icon={
+                    <span className="relative">
+                      <ListBullets size={17} />
+                      {list.unseen > 0 && <span className="absolute -top-0.5 -right-1 size-2 rounded-full bg-accent" />}
+                    </span>
+                  }
+                  className={`conversations-anchor ${list.open ? "bg-hover text-text" : ""}`}
+                />
+              )}
+              {details && (
+                <Button
+                  kind="ghost"
+                  size={32}
+                  onClick={details.onToggle}
+                  aria-label="Agent details"
+                  aria-pressed={details.open}
+                  title={details.open ? "Hide agent details" : "Agent details"}
+                  icon={<SidebarSimple size={17} className="-scale-x-100" />}
+                  className={details.open ? "bg-accent-weak text-accent" : ""}
+                />
+              )}
+            </div>
+          )}
         </div>
-        {list && (
-          <div className="conversation-header grid aspect-square shrink-0 place-items-center rounded-full bg-surface/75 ring-1 ring-stroke backdrop-blur-xl">
-            <Button
-              kind="ghost"
-              size={40}
-              popoverTarget="conversations"
-              aria-label={list.unseen ? `Conversations, ${list.unseen} unseen` : "Conversations"}
-              title="Conversations"
-              icon={
-                <span className="relative">
-                  <ListBullets size={18} />
-                  {list.unseen > 0 && <span className="absolute -top-0.5 -right-1 size-2 rounded-full bg-accent" />}
-                </span>
-              }
-              className={`conversations-anchor pointer-events-auto ${list.open ? "bg-hover" : ""}`}
-            />
-          </div>
-        )}
-        {details && (
-          <div className="conversation-header grid aspect-square shrink-0 place-items-center rounded-full bg-surface/75 ring-1 ring-stroke backdrop-blur-xl">
-            <Button
-              kind="ghost"
-              size={40}
-              onClick={details.onToggle}
-              aria-label="Agent details"
-              aria-pressed={details.open}
-              title={details.open ? "Hide agent details" : "Agent details"}
-              icon={<SidebarSimple size={18} className=" -scale-x-100" />}
-              className={`pointer-events-auto ${details.open ? "bg-accent-weak text-accent" : ""}`}
-            />
-          </div>
-        )}
       </div>
     </header>
   );
@@ -244,10 +244,13 @@ export function AgentInspector({
     <aside
       id="agent-info"
       aria-label="Agent details"
-      className="w-[clamp(16rem,26vw,20rem)] shrink-0 flex flex-col min-h-0 rounded-float bg-sidebar ring-1 ring-stroke overflow-hidden"
+      className="w-[clamp(16.5rem,24vw,19.5rem)] shrink-0 flex flex-col min-h-0 rounded-float bg-sidebar ring-1 ring-stroke overflow-hidden"
     >
-      <div className="h-12 shrink-0 flex items-center justify-between border-b border-stroke px-3 drag">
-        <span className="text-[13px] font-semibold text-text">Agent details</span>
+      <div className="h-12 shrink-0 flex items-center gap-2.5 border-b border-stroke px-3 drag">
+        <Avatar id={id} name={name} colour={colour} size={24} face={face} />
+        <span className="min-w-0 flex-1 truncate font-prose text-[15px] font-semibold text-text" title={name}>
+          {name}
+        </span>
         <Button
           kind="ghost"
           size={28}
@@ -259,30 +262,7 @@ export function AgentInspector({
         />
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-5">
-        <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
-          <div className="flex items-center gap-3 px-3 py-3">
-            <Avatar id={id} name={name} colour={colour} size={40} face={face} />
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-prose text-[15px] font-semibold text-text" title={name}>
-                {name}
-              </div>
-              <div className="truncate font-mono text-[11px] text-muted" title={dir}>
-                {home(dir)}
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onReveal}
-            title={dir}
-            className={`${rowDivider} flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[12px] text-muted transition-colors hover:bg-hover hover:text-text`}
-          >
-            <span>Show agent folder in Finder</span>
-            <ArrowSquareOut size={13} className="shrink-0" />
-          </button>
-        </div>
-
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4">
         <section className="space-y-1.5">
           <div className="flex items-baseline justify-between px-1">
             <h3 className="text-[12px] font-semibold text-text">Folders it works on</h3>
@@ -307,10 +287,13 @@ export function AgentInspector({
                   type="button"
                   onClick={() => onRevealPath(entry.location)}
                   title={entry.location}
-                  className="min-w-0 flex-1 py-2 pl-3 pr-1 text-left transition-colors hover:text-text"
+                  className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pl-3 pr-1 text-left transition-colors hover:text-text"
                 >
-                  <div className="truncate text-[13px] font-medium text-text">{entry.name}</div>
-                  <div className="truncate font-mono text-[11px] text-muted">{home(entry.location)}</div>
+                  <FolderSimple size={15} className="shrink-0 text-muted" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-medium text-text">{entry.name}</div>
+                    <div className="truncate font-mono text-[11px] text-muted">{home(entry.location)}</div>
+                  </div>
                 </button>
                 <Button
                   kind="ghost"
@@ -328,15 +311,33 @@ export function AgentInspector({
               onClick={() => void addFolder()}
               disabled={!!disabledReason}
               title={disabledReason || undefined}
-              className={`${rowDivider} flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px] font-medium text-accent transition-colors hover:bg-hover disabled:opacity-50`}
+              className={`${rowDivider} flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[13px] font-medium text-accent transition-colors hover:bg-hover disabled:opacity-50`}
             >
-              <Plus size={14} weight="bold" />
+              <Plus size={15} weight="bold" />
               <span>Add folder…</span>
             </button>
           </div>
           <p className="px-1 text-[11px] leading-relaxed text-muted">
-            Removing a folder here only detaches it from {name}; your files stay on disk.
+            Removing a folder here only detaches it; your files stay on disk.
           </p>
+        </section>
+
+        <section className="space-y-1.5">
+          <div className="px-1">
+            <h3 className="text-[12px] font-semibold text-text">Agent folder</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onReveal}
+            title={dir}
+            className="flex w-full items-center justify-between gap-2.5 rounded-card bg-surface px-3 py-2.5 text-left ring-1 ring-stroke transition-colors hover:bg-hover"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-mono text-[12px] text-text">{home(dir)}</div>
+              <div className="mt-0.5 text-[11px] text-muted">Show agent folder in Finder</div>
+            </div>
+            <ArrowSquareOut size={14} className="shrink-0 text-muted" />
+          </button>
         </section>
 
         <section className="space-y-1.5">
