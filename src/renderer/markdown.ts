@@ -28,7 +28,7 @@ export function normalizeMath(markdown: string): string {
       if (index % 2 === 1) return segment;
       return segment
         .replace(/\\\[([\s\S]+?)\\\]/g, (_, body: string) => `\n$$\n${body.trim()}\n$$\n`)
-        .replace(/^[ \t]*\$\$([^\n$]+?)\$\$[ \t]*$/gm, (_, body: string) => `$$\n${body.trim()}\n$$`)
+        .replace(/^[ \t]*\$\$([^$]+?)\$\$[ \t]*$/gm, (_, body: string) => `$$\n${body.trim()}\n$$`)
         .replace(/^[ \t]*\$\$([^\n$]+)$/gm, (_, body: string) => `$$\n${body.trim()}`)
         .replace(/\\\(([^\n]+?)\\\)/g, (_, body: string) => `$$${body.trim()}$$`)
         .replace(

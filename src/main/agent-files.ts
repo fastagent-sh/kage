@@ -164,8 +164,7 @@ export const createAgentIn = (dir: string) => createAgent(dir);
 export async function resolveAgentPath(agentDir: string, rawPath: string, homeDir = homedir()): Promise<string> {
   const trimmed = rawPath.trim();
   if (!trimmed) throw new Error("Path cannot be empty");
-  const withoutHash = trimmed.replace(/#L\d+(?:C\d+)?(?:-L?\d+(?:C\d+)?)?$/i, "");
-  const fromUrl = /^file:\/\//i.test(withoutHash) ? fileURLToPath(new URL(withoutHash)) : withoutHash;
+  const fromUrl = /^file:\/\//i.test(trimmed) ? fileURLToPath(new URL(trimmed)) : trimmed;
   const clean = stripPathSuffix(fromUrl);
   if (!clean) throw new Error(`Invalid path: ${rawPath}`);
   const expanded =

@@ -68,11 +68,11 @@ export function externalUrl(raw: string): string | undefined {
   }
 }
 
-/** Strips trailing `#L10` line anchors and `:line(:col)` suffixes from a file reference. */
+/** Strips trailing `#...` anchors and `:line(:col)` suffixes from a file reference. */
 export function stripPathSuffix(raw: string): string {
   return raw
     .trim()
-    .replace(/#L\d+(?:C\d+)?(?:-L?\d+(?:C\d+)?)?$/i, "")
+    .replace(/#[^\s#]+$/, "")
     .replace(/:\d+(?::\d+)?$/, "");
 }
 

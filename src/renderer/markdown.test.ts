@@ -26,11 +26,14 @@ function renderMarkdown(text: string, open = false): string {
 }
 
 test("inline and display math render through KaTeX in both dollar and LaTeX notations", () => {
-  const html = renderMarkdown("Inline $E = mc^2$ and \\(a^2 + b^2 = c^2\\).\n\n$$\\sum_{i=1}^n i$$\n\n\\[\\int_0^1 x^2 dx\\]");
+  const html = renderMarkdown(
+    "Inline $E = mc^2$ and \\(a^2 + b^2 = c^2\\).\n\n$$\\sum_{i=1}^n i$$\n\n$$\\begin{aligned}\na &= 1 \\\\\nb &= 2\n\\end{aligned}$$\n\n\\[\\int_0^1 x^2 dx\\]",
+  );
+  assert.doesNotMatch(html, /katex-error/);
   assert.match(html, /<span class="katex">/);
   assert.match(html, /E = mc\^2/);
   assert.match(html, /a\^2 \+ b\^2 = c\^2/);
-  assert.equal((html.match(/class="katex-display"/g) ?? []).length, 2);
+  assert.equal((html.match(/class="katex-display"/g) ?? []).length, 3);
 });
 
 test("currency amounts, shell variables, and code spans are not mistaken for math", () => {
@@ -72,6 +75,8 @@ test("file paths are distinguished from model specs, slash commands, and code ex
     "src/main/index.ts",
     "src/main/index.ts:61:5",
     "src/renderer/App.tsx#L120-L135",
+    "docs/design.md#the-workbench",
+    "./README.md#known-limitations",
     "./package.json",
     "~/Library/Application Support/duang/agents.json",
     "/Users/someone/research/video-research",
@@ -100,6 +105,7 @@ test("file paths are distinguished from model specs, slash commands, and code ex
   }
   assert.equal(stripPathSuffix("src/main/index.ts:61:5"), "src/main/index.ts");
   assert.equal(stripPathSuffix("src/renderer/App.tsx#L12-L20"), "src/renderer/App.tsx");
+  assert.equal(stripPathSuffix("docs/design.md#the-workbench"), "docs/design.md");
 });
 
 test("markdown links classify into external URLs, local paths, and incomplete streaming targets", () => {

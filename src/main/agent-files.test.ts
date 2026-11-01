@@ -263,6 +263,7 @@ test("agent paths resolve relative, home, and file-URL targets with line suffixe
     assert.equal(await resolveAgentPath(agent, "src/index.ts", home), canonicalFile);
     assert.equal(await resolveAgentPath(agent, "src/index.ts:42:5", home), canonicalFile);
     assert.equal(await resolveAgentPath(agent, "./src/index.ts#L10-L20", home), canonicalFile);
+    assert.equal(await resolveAgentPath(agent, "./src/index.ts#the-workbench", home), canonicalFile);
     assert.equal(await resolveAgentPath(agent, "~/notes.md:3", home), canonicalNote);
     assert.equal(await resolveAgentPath(agent, `${pathToFileURL(file).href}#L8`, home), canonicalFile);
     await assert.rejects(resolveAgentPath(agent, "src/missing.ts:10", home), /ENOENT/);

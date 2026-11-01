@@ -615,9 +615,15 @@ export function Tool({ item }: { item: Extract<Item, { kind: "tool" }> }) {
         <CaretRight size={11} className="shrink-0 text-muted transition-transform group-open:rotate-90" />
         <Icon size={14} className={`shrink-0 ${mark}`} />
         <span className="shrink-0 text-muted">{item.name}</span>
-        <span className="font-mono truncate" title={path ?? summary}>
+        <span className="font-mono truncate" title={path && firstArg({ path }) === summary ? path : summary}>
           {summary}
         </span>
+        {state && (
+          <Badge tone={state.tone} pulse={item.status === "running"} className="shrink-0">
+            {state.word}
+          </Badge>
+        )}
+        {elapsed && <span className="shrink-0 text-muted tabular-nums">{elapsed}</span>}
         {path && onOpenPath && (
           <button
             type="button"
@@ -633,12 +639,6 @@ export function Tool({ item }: { item: Extract<Item, { kind: "tool" }> }) {
             <FolderOpen size={13} />
           </button>
         )}
-        {state && (
-          <Badge tone={state.tone} pulse={item.status === "running"} className="shrink-0">
-            {state.word}
-          </Badge>
-        )}
-        {elapsed && <span className="shrink-0 text-muted tabular-nums">{elapsed}</span>}
       </summary>
       <div className="px-2.5 pt-1 pb-2.5 space-y-2 text-[12px]">
         {detail.kind === "edit" ? (
