@@ -81,11 +81,8 @@ test("an unreadable agent list is its own pane; a refused create returns its rea
   api.pickFolder = async () => {
     throw new Error("ENOENT: no such file or directory, realpath '/gone'");
   };
-  await store.pickFolder();
-  assert.equal(store.getSnapshot().failure?.title, "The folder could not be added");
-  assert.match(store.getSnapshot().failure?.reason ?? "", /realpath/);
-  store.dismissFailure();
-  assert.equal(store.getSnapshot().failure, undefined);
+  await assert.rejects(store.pickFolder(), /realpath/);
+  assert.equal(store.getSnapshot().failure, undefined, "pickFolder rejects to the Create agent form without leaking to the strip");
   store.dispose();
 });
 

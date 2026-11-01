@@ -683,14 +683,7 @@ export function createStore(api: DuangApi) {
         publish();
       }
     },
-    async pickFolder(): Promise<{ name: string; path: string } | undefined> {
-      try {
-        return await api.pickFolder();
-      } catch (error) {
-        fail("The folder could not be added", error);
-        return undefined;
-      }
-    },
+    pickFolder: (): Promise<{ name: string; path: string } | undefined> => api.pickFolder(),
     async createAgent(name: string, folders: string[]): Promise<string | undefined> {
       try {
         const result = await api.createAgent(name, folders);

@@ -169,9 +169,13 @@ export function CreateAgent({
 
   const addFolder = async () => {
     setError(undefined);
-    const picked = await onPickFolder();
-    if (!picked) return;
-    setFolders((current) => [...current, picked]);
+    try {
+      const picked = await onPickFolder();
+      if (!picked) return;
+      setFolders((current) => [...current, picked]);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const removeFolder = (index: number) => {

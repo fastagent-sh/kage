@@ -68,18 +68,24 @@ const changing = new Map<string, Promise<void>>();
 const failedConfigs = new Map<string, string>();
 
 async function evictAgent(id: string): Promise<void> {
+  while (changing.has(id)) await changing.get(id);
   const existing = opened.get(id);
   if (!existing) return;
-  opened.delete(id);
-  const agent = await existing.catch(() => undefined);
-  await agent?.close().catch(() => undefined);
+  const closing = (async () => {
+    const agent = await existing.catch(() => undefined);
+    if (opened.get(id) === existing) opened.delete(id);
+    await agent?.close().catch(() => undefined);
+  })();
+  changing.set(id, closing);
+  await closing.finally(() => {
+    if (changing.get(id) === closing) changing.delete(id);
+  });
 }
 
 async function build(row: AgentRow): Promise<LocalAgent> {
   // Before anything can fail: a failure that is not the config's must not offer to replace it.
   failedConfigs.delete(row.id);
   await requireFolder(row.dir);
-  await listContent(row.dir);
   try {
     return await openFastAgent(row.dir, { credentials, stateDir: instanceDir(row.id) });
   } catch (error) {
@@ -103,16 +109,7 @@ export async function openAgent(row: AgentRow): Promise<LocalAgent> {
     if (!(await registry.list()).some((a) => a.id === row.id)) throw new Error(`unknown agent ${row.id}`);
   }
   const cached = opened.get(row.id);
-  if (cached) {
-    try {
-      await requireFolder(row.dir);
-      await listContent(row.dir);
-    } catch (error) {
-      await evictAgent(row.id);
-      throw error;
-    }
-    return cached;
-  }
+  if (cached) return cached;
   const promise = build(row);
   opened.set(row.id, promise);
   void promise.catch(() => {
@@ -136,8 +133,16 @@ export async function openedAgents(): Promise<{ id: string; agent: LocalAgent }[
 export async function openAgentResult(agentId: string): Promise<OpenResult> {
   try {
     const row = await agentRow(agentId);
+    let content: AgentContent[];
+    try {
+      await requireFolder(row.dir);
+      content = (await listContent(row.dir)).content.map(({ name, location }) => ({ name, location }));
+    } catch (error) {
+      await evictAgent(row.id);
+      throw error;
+    }
     const agent = await openAgent(row);
-    const [info, { content }] = await Promise.all([agent.info(), listContent(row.dir)]);
+    const info = await agent.info();
     const models = choicesOf(info);
     // duang's own default for the agent, over the config's; one this computer's providers no longer offer cannot start anything.
     const staleDefault = row.model && !models.some(({ spec }) => spec === row.model) ? row.model : undefined;
@@ -145,7 +150,7 @@ export async function openAgentResult(agentId: string): Promise<OpenResult> {
     return {
       ok: true,
       sessions: await summaries(agent),
-      content: content.map(({ name, location }) => ({ name, location })),
+      content,
       windows: Object.fromEntries(models.flatMap(({ spec, contextWindow }) => (contextWindow ? [[spec, contextWindow]] : []))),
       ...(model && { model }),
       ...(staleDefault && { staleDefault }),
@@ -189,13 +194,13 @@ function change(id: string, apply: () => Promise<Result>, afterClose?: () => Pro
     const agent = await opened.get(id)?.catch(() => undefined);
     if (agent && (await runningSessions([{ id, agent }])).length > 0)
       return refuse("agent_busy", "An agent conversation is running — stop it before changing or removing the agent.");
-    const result = await apply();
-    if (result.ok) {
-      // The instance's storage is held by one opener: it must be released for the agent to open again.
+    if (agent) {
+      // The instance's storage is held by one opener: release it before changing or removing the agent.
       opened.delete(id);
-      await agent?.close();
-      await afterClose?.();
+      await agent.close();
     }
+    const result = await apply();
+    if (result.ok) await afterClose?.();
     return result;
   })();
   changing.set(
@@ -240,7 +245,6 @@ export function removeAgent(
     id,
     async () => {
       const { dir } = await agentRow(id);
-      await evictAgent(id);
       const exists = await stat(dir).then(
         () => true,
         (error: NodeJS.ErrnoException) => {
