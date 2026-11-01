@@ -193,6 +193,7 @@ export function AgentInspector({
   tools = [],
   inspection,
   busy,
+  loading,
   onClose,
   onPickModel,
   onPickFolder,
@@ -217,6 +218,7 @@ export function AgentInspector({
   tools?: AgentCapability[];
   inspection?: AgentInspection;
   busy: boolean;
+  loading?: boolean;
   onClose: () => void;
   onPickModel?: () => void;
   onPickFolder: () => Promise<{ name: string; path: string } | undefined>;
@@ -253,6 +255,7 @@ export function AgentInspector({
   const disabledReason =
     (busy && "Stop the running conversation before changing agent settings") ||
     (updating && "Updating agent…") ||
+    (loading && "Opening the agent…") ||
     false;
 
   const addFolder = async () => {

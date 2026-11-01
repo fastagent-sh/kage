@@ -286,7 +286,7 @@ export default function App() {
                   plan={provider ? view.usage[provider] : undefined}
                   queued={c ? waiting.filter(({ listed }) => listed).length : undefined}
                   details={
-                    agentState === "ready" || agentState === "broken"
+                    agentState !== "missing_dir"
                       ? { open: detailsOpen, onToggle: () => setDetailsOpen((open) => !open) }
                       : undefined
                   }
@@ -403,14 +403,14 @@ export default function App() {
             </>
           )}
         </main>
-        {!settings && !creating && detailsOpen && agent && (agentState === "ready" || agentState === "broken") && (
+        {!settings && !creating && detailsOpen && agent && agentState !== "missing_dir" && (
           <AgentInspector
             key={agent.id}
             id={agent.id}
             name={agent.name}
             colour={agent.colour}
             face={faceOf({
-              state: agentState,
+              state: agentState ?? "ready",
               doing: view.doing[agent.id],
               outcomes: Object.values(view.unseen[agent.id] ?? {}),
               open: false,
@@ -430,6 +430,7 @@ export default function App() {
             tools={view.tools[agent.id]}
             inspection={view.inspection[agent.id]}
             busy={busy || (view.running[agent.id]?.length ?? 0) > 0}
+            loading={view.loading}
             onClose={() => setDetailsOpen(false)}
             onPickModel={agentState === "ready" ? store.openPicker : undefined}
             onPickFolder={() => store.pickFolder()}

@@ -324,12 +324,18 @@ export function createStore(api: DuangApi) {
     view = derive(view, [...conversations.values()], unsent, unseen, refusal, staleDefault);
     // A picker the person closed stays closed: it opens when the ask becomes a different one, and closes when
     // there is nothing to ask. A refusal opened it where it happened, so a return does not open it again.
-    const question = view.modelAsk
-      ? `${view.conversation?.agentId}/${view.conversation?.session}/${view.modelAsk.reason}/${view.modelAsk.reason === "needs" ? "" : view.modelAsk.model}`
-      : "";
-    if (question !== asked) {
-      asked = question;
-      if (view.modelAsk?.reason !== "refused") view.picker = !!view.modelAsk;
+    const settlingConversation =
+      view.loading ||
+      Boolean(view.conversation?.loading) ||
+      Boolean(view.agentId && view.states[view.agentId] === "ready" && !view.conversation);
+    if (!settlingConversation) {
+      const question = view.modelAsk
+        ? `${view.conversation?.agentId}/${view.conversation?.session}/${view.modelAsk.reason}/${view.modelAsk.reason === "needs" ? "" : view.modelAsk.model}`
+        : "";
+      if (question !== asked) {
+        asked = question;
+        if (view.modelAsk?.reason !== "refused") view.picker = !!view.modelAsk;
+      }
     }
     for (const listener of listeners) listener();
   };
@@ -546,15 +552,14 @@ export function createStore(api: DuangApi) {
         });
         return;
       }
+      const { [id]: _cleared, ...sessionsError } = view.sessionsError;
       publish({
         loading: false,
         model: result.model,
         contextWindows: result.windows,
-        ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
         ...(result.tools && { tools: { ...view.tools, [id]: result.tools } }),
         ...(result.commands && { agentCommands: { ...view.agentCommands, [id]: result.commands } }),
-        ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
-        ...(listCurrent() ? { sessions: { ...view.sessions, [id]: result.sessions } } : {}),
+        ...(listCurrent() ? { sessions: { ...view.sessions, [id]: result.sessions }, sessionsError } : {}),
         states: { ...view.states, [id]: "ready" },
       });
       staleDefault = result.staleDefault ? { agentId: id, model: result.staleDefault } : undefined;
@@ -563,7 +568,10 @@ export function createStore(api: DuangApi) {
       await open(session ?? openable(id, result.sessions) ?? (await begin(id, result.sessions)));
       if (request !== navigation) return;
       // After the conversation opened: opening one is what sets the ask, by what it can run.
-      if (request === navigation) publish();
+      publish({
+        ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
+        ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
+      });
     } catch (error) {
       if (request === navigation) {
         const { [id]: _staleTools, ...restTools } = view.tools;

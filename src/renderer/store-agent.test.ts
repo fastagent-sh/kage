@@ -519,7 +519,9 @@ test("opening an agent records its loaded tools and commands, and adding or remo
     };
   };
   await store.removeAgentSecret("GITHUB_TOKEN", "a");
+  await store.listSessions("a");
   assert.equal(store.getSnapshot().states.a, "broken");
+  assert.equal(store.getSnapshot().sessionsError.a, "missing required secrets: GITHUB_TOKEN");
   assert.equal(store.getSnapshot().model, undefined);
   assert.equal(store.getSnapshot().tools.a, undefined);
   assert.equal(store.getSnapshot().agentCommands.a, undefined);
@@ -538,9 +540,19 @@ test("opening an agent records its loaded tools and commands, and adding or remo
   };
   await store.setAgentSecret("GITHUB_TOKEN", "ghp_123", "a");
   assert.equal(store.getSnapshot().states.a, "ready");
+  assert.equal(store.getSnapshot().sessionsError.a, undefined, "recovering the agent clears its earlier sessionsError");
   assert.equal(store.getSnapshot().model, "provider/model");
   assert.deepEqual(store.getSnapshot().tools.a, [{ name: "read", description: "Read files" }, { name: "bash" }]);
   assert.equal(store.getSnapshot().inspection.a?.description, "Reviews pull requests");
+
+  // A closed model picker stays closed when folders are edited on the same conversation.
+  api.openAgent = async () => ({ ...listed("s1"), model: undefined, content: currentContent });
+  await store.selectAgent("a", "s1");
+  assert.equal(store.getSnapshot().picker, true);
+  store.closePicker();
+  assert.equal(store.getSnapshot().picker, false);
+  await store.addAgentFolder("/work/tally", "a");
+  assert.equal(store.getSnapshot().picker, false, "refreshing the agent does not reopen a dismissed model picker");
   store.dispose();
 });
 
