@@ -7,7 +7,7 @@ import { queueView } from "./transcript.ts";
 import { providerOf } from "./catalog.ts";
 import { BrokenAgent, CreateAgent, MissingFolder, NewConversation, NoAgents, UnreadableRegistry } from "./panels.tsx";
 import { Problem } from "./problem.tsx";
-import { ArrowClockwise } from "@phosphor-icons/react";
+import { ArrowClockwise, SidebarSimple } from "@phosphor-icons/react";
 import { ConversationList, Sidebar } from "./rows.tsx";
 import { AgentInspector, ConversationHeader } from "./header.tsx";
 import { Transcript } from "./transcript-view.tsx";
@@ -16,6 +16,7 @@ import { Settings } from "./settings.tsx";
 import { AvatarStyleContext } from "./avatar.tsx";
 import { faceOf } from "./face.ts";
 import { Boundary, Button } from "./ui.tsx";
+import { useNarrowWindow } from "./responsive-panel.tsx";
 
 const duang = (window as unknown as { duang: DuangApi }).duang;
 
@@ -31,7 +32,11 @@ export default function App() {
   // row opens, and a connection returns to the conversation. In one state so every way out drops them.
   const [settings, setSettings] = useState<false | { fromPicker?: true; reconnect?: string; network?: true }>(false);
   const [creating, setCreating] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const compact = useNarrowWindow(640);
+  const overlayDetails = useNarrowWindow(1080);
   const openSettings = () => {
+    setSidebarOpen(false);
     setCreating(false);
     setSettings((open) => open || {});
   };
@@ -81,19 +86,19 @@ export default function App() {
       if (event.defaultPrevented || event.isComposing) return;
       if ((event.metaKey || event.ctrlKey) && event.key === "n" && agentState === "ready" && !held) {
         event.preventDefault();
+        setSidebarOpen(false);
         setSettings(false);
         setCreating(false);
         newConversation();
       }
-      // Escape leaves Settings or Create agent first: stopping work you cannot see is a surprise.
+      // The native popover changes before React receives its toggle event.
+      if (event.key === "Escape" && document.querySelector(":popover-open")) return;
       if (event.key === "Escape" && (settings || creating)) {
         setSettings(false);
         setCreating(false);
         return;
       }
-      // Asked of the popover, not `listOpen`: an Escape right after it opens arrives before that mirror and would stop the run.
-      const listShowing = document.getElementById("conversations")?.matches(":popover-open");
-      if (event.key === "Escape" && busy && !listShowing) void store.abort();
+      if (event.key === "Escape" && busy) void store.abort();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -144,10 +149,29 @@ export default function App() {
   const providerName = provider && (view.providers?.find((row) => row.id === provider)?.name ?? provider);
 
   return (
-    // Floating panels with a gap make the sidebar read as its own surface.
     <AvatarStyleContext.Provider value={view.avatar}>
-      <div className="flex h-full gap-2 p-2">
+      <div className="workbench relative flex h-full gap-2 p-2" data-compact={compact || undefined}>
+        {compact && (
+          <div className="absolute inset-x-0 top-0 h-8 flex items-center pl-[88px] pr-2 drag">
+            <Button
+              kind="ghost"
+              size={28}
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Show agents"
+              aria-haspopup="dialog"
+              aria-controls="agent-roster"
+              aria-expanded={sidebarOpen}
+              className="no-drag"
+              icon={<SidebarSimple size={15} />}
+            >
+              Agents
+            </Button>
+          </div>
+        )}
         <Sidebar
+          overlay={compact}
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
           agents={agents}
           agentId={agentId}
           states={states}
@@ -165,6 +189,7 @@ export default function App() {
             if (id !== agentId) void store.selectAgent(id);
           }}
           onAdd={() => {
+            setSidebarOpen(false);
             setSettings(false);
             setCreating(true);
           }}
@@ -362,7 +387,7 @@ export default function App() {
                     status={c.state?.status}
                     started={c.started}
                     heard={c.heard}
-                    bottomGap={composerHeight + 64}
+                    bottomGap={compact ? 8 : composerHeight + 64}
                     resume={store.scrollOf(c.agentId, c.session)}
                     onRest={(place) => store.rememberScroll(c.agentId, c.session, place)}
                     onUsage={(provider) => void store.openUsagePage(provider)}
@@ -392,7 +417,7 @@ export default function App() {
                 <>
                   {/* Veiled, not painted over: passing text stays faintly visible rather than cut off (#58, #62). */}
                   <div className="veil pointer-events-none absolute inset-x-0 top-0 z-[5] h-12 [mask-image:linear-gradient(to_bottom,black,transparent)]" />
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 px-6 pb-4">
+                  <div className="composer-dock pointer-events-none absolute inset-x-0 bottom-0 px-6 pb-4">
                     <div className="veil absolute inset-x-0 bottom-0 h-28 [mask-image:linear-gradient(to_top,black_50%,transparent)]" />
                     <div ref={composerBox} className="column pointer-events-auto">
                       {composer}
@@ -406,6 +431,7 @@ export default function App() {
         {!settings && !creating && detailsOpen && agent && (agentState === "ready" || agentState === "broken") && (
           <AgentInspector
             key={agent.id}
+            overlay={overlayDetails}
             id={agent.id}
             name={agent.name}
             colour={agent.colour}

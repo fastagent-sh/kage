@@ -74,7 +74,7 @@ export function UsageDetail({ plan, context, now = Date.now(), onPage }: Usage) 
   const data = plan?.data;
   const windows = data?.windows ?? [];
   return (
-    <div className="grid grid-cols-[auto_auto_auto_auto] items-center gap-x-2 gap-y-1.5 px-2 py-1.5 text-[11px] whitespace-nowrap text-muted tabular-nums">
+    <div className="usage-detail grid grid-cols-[auto_auto_auto_auto] items-center gap-x-2 gap-y-1.5 px-2 py-1.5 text-[11px] whitespace-nowrap text-muted tabular-nums">
       {windows.map((w) => {
         const reset = resetLabel(w);
         const diff = pace(w, now);
@@ -122,7 +122,7 @@ export function UsageMeter({ plan, context, now, onPage }: Usage) {
     <div
       tabIndex={hasTable ? 0 : undefined}
       aria-label="Usage"
-      className="group pointer-events-auto relative shrink-0 text-[11px] text-muted tabular-nums"
+      className="usage-meter group pointer-events-auto relative shrink-0 text-[11px] text-muted tabular-nums"
     >
       <span className="flex items-center gap-1.5">
         context
@@ -132,7 +132,7 @@ export function UsageMeter({ plan, context, now, onPage }: Usage) {
       {hasTable && (
         // Padding, not margin, so the pointer can reach the link. Opacity, not `display: none`: a link in a hidden
         // box cannot take focus when Tab leaves the meter.
-        <div className="pointer-events-none absolute top-full right-0 pt-3 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-visible:opacity-100 group-has-[:focus-visible]:opacity-100">
+        <div className="usage-details pointer-events-none absolute top-full right-0 pt-3 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-visible:opacity-100 group-has-[:focus-visible]:opacity-100">
           <div className="popover">
             <UsageDetail plan={plan} context={context} now={now} onPage={onPage} />
           </div>

@@ -55,6 +55,15 @@ jobs:
       - name: Electron quit with a run in progress (isolated fake model endpoint)
         run: node tests/quit.mjs
 
+      - name: Keep failed smoke screenshot
+        if: ${{ failure() && hashFiles('out/smoke-failure.png') != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-smoke-failure
+          path: out/smoke-failure.png
+          if-no-files-found: error
+          retention-days: 7
+
   package:
     # The installed app, checked as someone gets it: built, copied out of the checkout, run. Unsigned (ad-hoc) until
     # there is an Apple Developer ID; the dmg is kept as an artifact.

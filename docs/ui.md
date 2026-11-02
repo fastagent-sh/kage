@@ -56,8 +56,12 @@ holds here.
 
 ## 3. Structure
 
-Two columns: a sidebar of agents, and the open agent's conversation. Future contact and detail
-surfaces are specified in [design.md](design.md#the-workbench), not reserved as chrome here.
+The sidebar lists agents beside the open agent's conversation. Agent details joins them as a column
+when it fits, otherwise as a native popover. At very narrow layout widths, including increased zoom,
+the roster opens from an **Agents** button. Changing a panel's presentation keeps its form state.
+Escape or Close returns focus to the opener; moving focus outside dismisses the overlay without
+stealing it back. Future contact surfaces are specified in [design.md](design.md#the-workbench),
+not reserved as chrome here.
 
 **Sidebar rows are agents, and only agents.** Listing each agent's conversations under it made the
 column a tree of folders, and an agent read as a directory of chats rather than as someone you work
@@ -85,11 +89,15 @@ under reduced motion each face keeps its pose so the states stay apart.
 
 **Panels float on the window's canvas.** The sidebar is a card inset from the window's edges, and the
 header and composer float over the transcript, which passes beneath them. The strips past them are
-veiled, not painted over: text passing there reads as moving on rather than as cut at a line.
+veiled, not painted over: text passing there reads as moving on rather than as cut at a line. In the
+compact layout the header and composer take their own rows instead, leaving the transcript a scrollable
+reading area rather than covering it as the window gets shorter.
 
-**The composer is one row**: the field, with what belongs to the next message (the model chip) inside
-its right end, and one round button that is the next action. There is no attach or voice button
-until either works: a control that can only say it is not there yet is furniture.
+**The composer starts as one row**: the field, with what belongs to the next message (the model chip)
+inside its right end, and one round button that is the next action. The model moves below the text
+before it leaves too little writing space. In the compact layout a long draft scrolls inside a
+viewport-bounded field, rounded down to complete text lines, so the reading area and action stay reachable.
+There is no attach or voice button until either works: a control that can only say it is not there yet is furniture.
 
 Not included until a real roster stops being readable: pinning, hiding, archiving, folders, a global
 activity row, a permanent third column. Removal is offered where a problem explains it, not one slip

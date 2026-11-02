@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import electron from "electron";
 import { isolated, withoutCredentials, writeMockAgent } from "./harness.mjs";
 import { open, windowDriver } from "./window.mjs";
+import { checkCompactSettings, checkPanelEscapeDuringRun, checkPanelLayout, checkUsagePopoverLayout } from "./layout.mjs";
 
 const root = await isolated(import.meta.url, { name: "smoke", timeout: 150000 });
 if (root) {
@@ -298,6 +299,7 @@ if (root) {
       try {
         await evaluate(`document.querySelector('#agent-info button[aria-label="Remove project"]').click()`);
         await until("document.querySelectorAll('#agent-info button[aria-label=\"Remove project\"]').length === 0", "removing the folder updates the details pane");
+        await until("[...document.querySelectorAll('#agent-info button')].some((button) => button.textContent.includes('Add folder…') && !button.disabled)", "folder refresh enables Add folder");
         await evaluate(`[...document.querySelectorAll('#agent-info button')].find((b) => b.textContent.includes('Add folder…')).click()`);
         await until("/works on\\s+project/.test(document.querySelector('main > header').innerText)", "adding the folder back updates the header");
       } finally {
@@ -314,6 +316,7 @@ if (root) {
         "document.querySelector('main').innerText.includes('Smoke answer') && !document.querySelector('main .bounce')",
         "stream settles",
       );
+      await checkPanelLayout(win, { evaluate, until, type });
       // Chromium once skipped the Latin face when the Latin and Chinese faces declared different weights.
       await until(
         "[...document.fonts].some((f) => f.family === 'Prose' && f.unicodeRange.startsWith('U+0-FF') && f.style === 'normal' && f.status === 'loaded')",
@@ -536,6 +539,7 @@ if (root) {
       await until(`!${listOpen}`, "Escape closes the list over a running turn");
       await new Promise((resolve) => setTimeout(resolve, 200));
       assert.ok(await evaluate("!!document.querySelector('button[aria-label=\"Stop the run\"]')"), "and the run keeps going");
+      await checkPanelEscapeDuringRun(win, { evaluate, until });
       await evaluate("document.querySelector('button[title^=\"New conversation\"]').click()");
       await until("document.body.innerText.includes('What should we work on')", "background run keeps going");
       await clickListed("Hold this turn so I can stop it.");
@@ -688,6 +692,7 @@ if (root) {
       assert.equal(await evaluate(table), "0", "the plan's windows wait for a hover");
       assert.match(await evaluate("document.querySelector('header [aria-label=Usage]').textContent"), /5h[\s\S]*4%[\s\S]*7d[\s\S]*18%/, "the hover table lists every window");
       assert.equal(usageRequests, 1, "the run ending inside the gap reuses the answer instead of asking again");
+      await checkUsagePopoverLayout(win, { evaluate, until });
 
       // A new conversation says `–`, and the plan's windows are still one hover away.
       await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true, cancelable: true }))`);
@@ -968,9 +973,18 @@ if (root) {
       await press("Home");
       await until("document.activeElement.getAttribute('aria-label') === 'Smoke'", "Home reaches the first");
 
-      // A way back to the live turn: absent at the bottom, offered once the tail is not followed,
-      // and gone again after it takes you back.
+      // A restored anchor can already be at the physical bottom; the button also resumes following.
       const backToLatest = "document.querySelector('button[aria-label=\"Back to the latest\"]')";
+      const atBottom = `(() => {
+        const el = document.querySelector('[aria-label="Transcript"]');
+        el.scrollTop = el.scrollHeight;
+        return el.scrollHeight - el.scrollTop - el.clientHeight < 40 && ${backToLatest} === null;
+      })()`;
+      await evaluate(`(() => {
+        const button = ${backToLatest};
+        if (button) button.click();
+      })()`);
+      await until(atBottom, "the scroll scenario starts at the latest line");
       assert.equal(await evaluate(`${backToLatest} === null`), true, "nothing to offer while at the bottom");
       // Small enough for the short conversation to overflow.
       const size = win.getSize();
@@ -988,11 +1002,6 @@ if (root) {
         const el = document.querySelector('[aria-label="Transcript"]');
         el.scrollTop = 0;
         return ${backToLatest} !== null;
-      })()`;
-      const atBottom = `(() => {
-        const el = document.querySelector('[aria-label="Transcript"]');
-        el.scrollTop = el.scrollHeight;
-        return ${backToLatest} === null;
       })()`;
       // A resize makes it scrollable with no scroll event, so settle at the bottom first.
       await until(atBottom, "still nothing to offer at the bottom of a small window");
@@ -1140,6 +1149,7 @@ if (root) {
       // The chosen row checks its own connection on arrival; there is no button to find first.
       await until("document.querySelector('#network-heading') && /connected · \\d+ ms/.test(document.body.innerText)", "Settings… opens Settings and checks the route");
       assert.ok(await evaluate(`!!document.querySelector('button[aria-label="Configured"]')`), "the sidebar stays in view");
+      await checkCompactSettings(win, { evaluate, until });
       assert.deepEqual(
         await evaluate(`[...document.querySelectorAll('aside [aria-current]')].map((el) => el.textContent.trim())`),
         ["Settings"],

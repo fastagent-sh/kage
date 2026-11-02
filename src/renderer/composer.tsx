@@ -324,7 +324,7 @@ export function Composer({
     // 12px margin so a line that only just fits does not wrap.
     const room = box.clientWidth - parseFloat(padding.paddingLeft) - parseFloat(padding.paddingRight) - side.offsetWidth - 8 - 12;
     ruler.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    setStacked(value.includes("\n") || ruler.measureText(value).width > room);
+    setStacked(room < 160 || value.includes("\n") || ruler.measureText(value).width > room);
   }, [value, fieldWidth, model, thinking?.level]);
   useEffect(() => {
     const el = input.current;
@@ -434,8 +434,8 @@ export function Composer({
             }}
             placeholder={view.blocked ?? (busy ? "steer the run…" : "Ask, build, / for commands…")}
             disabled={disabled}
-            // Same leading as the bubble it becomes, so a long message does not reflow on send. 1px keeps one line 28 tall.
-            className={`bubble min-h-7 min-w-0 resize-none bg-transparent py-px outline-none ${stacked ? "basis-full" : "flex-1"}  placeholder:text-muted disabled:opacity-40`}
+            // Match the sent bubble so sending a long draft does not reflow it.
+            className={`bubble min-h-7 min-w-0 resize-none bg-transparent py-[var(--composer-input-padding)] outline-none ${stacked ? "basis-full" : "flex-1"}  placeholder:text-muted disabled:opacity-40`}
           />
           <div ref={chip} className="relative ml-auto min-w-0 max-w-[45%]">
             <Button

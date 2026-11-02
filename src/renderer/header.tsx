@@ -23,6 +23,7 @@ import { UsageMeter } from "./plan-usage.tsx";
 import { Avatar } from "./avatar.tsx";
 import type { Face } from "./face.ts";
 import { Badge, Button } from "./ui.tsx";
+import { ResponsivePanel } from "./responsive-panel.tsx";
 
 export function ConversationHeader({
   id,
@@ -60,8 +61,7 @@ export function ConversationHeader({
   onUsagePage: (provider: string) => void;
 }) {
   return (
-    // Floats over the scroll area, aligned to the reading column; only interactive parts take the pointer.
-    <header className="pointer-events-none absolute inset-x-0 top-2 z-10 px-6">
+    <header className="conversation-topbar pointer-events-none absolute inset-x-0 top-2 z-10 px-6">
       <div className="column">
         <div className="conversation-header flex min-w-0 items-center gap-2.5 rounded-composer bg-surface/85 py-1.5 pr-1.5 pl-2 ring-1 ring-stroke backdrop-blur-xl">
           <Avatar id={id} name={agent} colour={colour} size={30} face={face} />
@@ -116,26 +116,28 @@ export function ConversationHeader({
               )
             )}
           </div>
-          {working ? (
-            <Badge tone="accent" pulse>
-              working
-            </Badge>
-          ) : (
-            others && (
-              <button
-                onClick={others.open}
-                popoverTarget={others.open ? undefined : "conversations"}
-                title={others.open ? "Open the conversation that is working" : "Show the conversations that are working"}
-                className="pointer-events-auto shrink-0 rounded-full px-1.5 py-0.5 hover:bg-hover"
-              >
-                <Badge tone="accent" pulse>
-                  {others.count} other working
-                </Badge>
-              </button>
-            )
-          )}
-          <UsageMeter plan={plan} context={context} onPage={onUsagePage} />
-          {!!queued && <span className="shrink-0 text-[11px] text-muted">{queued} queued</span>}
+          <div className="conversation-meta flex shrink-0 items-center gap-2.5">
+            {working ? (
+              <Badge tone="accent" pulse>
+                working
+              </Badge>
+            ) : (
+              others && (
+                <button
+                  onClick={others.open}
+                  popoverTarget={others.open ? undefined : "conversations"}
+                  title={others.open ? "Open the conversation that is working" : "Show the conversations that are working"}
+                  className="pointer-events-auto shrink-0 rounded-full px-1.5 py-0.5 hover:bg-hover"
+                >
+                  <Badge tone="accent" pulse>
+                    {others.count} other working
+                  </Badge>
+                </button>
+              )
+            )}
+            <UsageMeter plan={plan} context={context} onPage={onUsagePage} />
+            {!!queued && <span className="shrink-0 text-[11px] text-muted">{queued} queued</span>}
+          </div>
           {(list || details) && (
             <div className="pointer-events-auto flex shrink-0 items-center gap-0.5 border-l border-stroke pl-1.5">
               {list && (
@@ -180,6 +182,7 @@ const rowDivider =
 const SKILL_PREVIEW_LIMIT = 3;
 
 export function AgentInspector({
+  overlay,
   id,
   name,
   colour,
@@ -205,6 +208,7 @@ export function AgentInspector({
   onSelectSkill,
   onRemove,
 }: {
+  overlay: boolean;
   id: string;
   name: string;
   colour: number;
@@ -327,10 +331,12 @@ export function AgentInspector({
   const packages = inspection?.packages ?? [];
 
   return (
-    <aside
+    <ResponsivePanel
+      overlay={overlay}
+      onClose={onClose}
       id="agent-info"
       aria-label="Agent details"
-      className="w-[clamp(19rem,28vw,23rem)] shrink-0 flex flex-col min-h-0 rounded-float bg-sidebar ring-1 ring-stroke overflow-hidden"
+      className="agent-inspector w-[clamp(19rem,28vw,23rem)] shrink-0 flex flex-col min-h-0 rounded-float bg-sidebar ring-1 ring-stroke overflow-hidden"
     >
       <div className="h-10 shrink-0 flex items-center justify-end px-2.5 pt-1 drag">
         <Button
@@ -497,6 +503,7 @@ export function AgentInspector({
                     onKeyDown={(e) => {
                       if (e.key === "Enter") void saveSecret();
                       if (e.key === "Escape") {
+                        e.preventDefault();
                         e.stopPropagation();
                         setSecretError(undefined);
                         setEditingSecret(undefined);
@@ -615,6 +622,7 @@ export function AgentInspector({
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && editingSecret.name.trim() && editingSecret.value.trim()) void saveSecret();
                     if (e.key === "Escape") {
+                      e.preventDefault();
                       e.stopPropagation();
                       setSecretError(undefined);
                       setEditingSecret(undefined);
@@ -633,6 +641,7 @@ export function AgentInspector({
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && editingSecret.name.trim() && editingSecret.value.trim()) void saveSecret();
                     if (e.key === "Escape") {
+                      e.preventDefault();
                       e.stopPropagation();
                       setSecretError(undefined);
                       setEditingSecret(undefined);
@@ -780,6 +789,6 @@ export function AgentInspector({
           </div>
         )}
       </div>
-    </aside>
+    </ResponsivePanel>
   );
 }
