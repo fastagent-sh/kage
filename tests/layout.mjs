@@ -232,11 +232,9 @@ export async function checkUsagePopoverLayout(win, { evaluate, until }) {
   }
 }
 
-export async function checkAgentPointerRename(win, { evaluate, until, type }) {
+export async function checkAgentPointerRename(win, { evaluate, until, type }, names) {
   const initialSize = win.getSize();
   const initialZoom = win.webContents.getZoomFactor();
-  const initialAgent = await evaluate("document.querySelector('.sidebar-panel button[aria-current=true]').getAttribute('aria-label')");
-  const initialTabStop = await evaluate("document.querySelector('.sidebar-panel [aria-label=Agents] button[tabindex=\"0\"]').getAttribute('aria-label')");
   try {
     win.setSize(800, 540);
     for (const zoom of [1, 2]) {
@@ -246,7 +244,7 @@ export async function checkAgentPointerRename(win, { evaluate, until, type }) {
         await evaluate(`document.querySelector('button[aria-label="Show agents"]').click()`);
         await until("document.querySelector('.sidebar-panel').matches(':popover-open')", "Agent roster opens for pointer rename");
       }
-      for (const name of ["Smoke", "Configured"]) {
+      for (const name of names) {
         const point = await evaluate(`(() => {
           const row = document.querySelector('aside button[aria-label="${name}"]');
           const rect = row.getBoundingClientRect();
@@ -280,9 +278,7 @@ export async function checkAgentPointerRename(win, { evaluate, until, type }) {
   } finally {
     win.setSize(...initialSize);
     win.webContents.setZoomFactor(initialZoom);
-    await evaluate(`delete window.__renameClicks; document.querySelector('aside button[aria-label=${JSON.stringify(initialAgent)}]').click()`);
-    await until("!!document.querySelector('textarea') && !document.querySelector('textarea').disabled", "original Agent restored after pointer checks");
-    await evaluate(`document.querySelector('aside button[aria-label=${JSON.stringify(initialTabStop)}]').focus()`);
+    await evaluate("delete window.__renameClicks");
   }
 }
 

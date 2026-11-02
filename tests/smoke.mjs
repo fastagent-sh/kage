@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import electron from "electron";
 import { isolated, withoutCredentials, writeMockAgent } from "./harness.mjs";
 import { open, windowDriver } from "./window.mjs";
-import { checkAgentPointerRename, checkCompactSettings, checkPanelEscapeDuringRun, checkPanelLayout, checkUsagePopoverLayout } from "./layout.mjs";
+import { checkCompactSettings, checkPanelEscapeDuringRun, checkPanelLayout, checkUsagePopoverLayout } from "./layout.mjs";
 
 const root = await isolated(import.meta.url, { name: "smoke", timeout: 150000 });
 if (root) {
@@ -906,7 +906,6 @@ if (root) {
       );
       await evaluate("document.querySelector('button[aria-label=\"Smoke\"]').click()");
       await until("document.querySelector('main').innerText.includes('Smoke answer')", "the other agents are unaffected");
-      await checkAgentPointerRename(win, { evaluate, until, type });
 
       // The picker's own states: named for assistive technology, and honest when nothing matches.
       await click("openai/gpt-4o-mini");
@@ -974,14 +973,17 @@ if (root) {
       await press("Home");
       await until("document.activeElement.getAttribute('aria-label') === 'Smoke'", "Home reaches the first");
 
-      // Earlier viewport/navigation checks can leave a restored reading position, not a following view.
+      // A restored anchor can already be at the physical bottom; the button also resumes following.
       const backToLatest = "document.querySelector('button[aria-label=\"Back to the latest\"]')";
       const atBottom = `(() => {
         const el = document.querySelector('[aria-label="Transcript"]');
         el.scrollTop = el.scrollHeight;
         return el.scrollHeight - el.scrollTop - el.clientHeight < 40 && ${backToLatest} === null;
       })()`;
-      await evaluate(`document.querySelector('[aria-label="Transcript"]').dispatchEvent(new WheelEvent('wheel', { deltaY: 1, bubbles: true }))`);
+      await evaluate(`(() => {
+        const button = ${backToLatest};
+        if (button) button.click();
+      })()`);
       await until(atBottom, "the scroll scenario starts at the latest line");
       assert.equal(await evaluate(`${backToLatest} === null`), true, "nothing to offer while at the bottom");
       // Small enough for the short conversation to overflow.

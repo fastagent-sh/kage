@@ -7,6 +7,7 @@ import { join } from "node:path";
 import electron from "electron";
 import { chunk, isolated, withoutCredentials, writeMockAgent } from "./harness.mjs";
 import { open, windowDriver } from "./window.mjs";
+import { checkAgentPointerRename } from "./layout.mjs";
 
 const root = await isolated(import.meta.url, { name: "transcript", timeout: 120000 });
 if (root) {
@@ -362,7 +363,12 @@ if (root) {
     await evaluate(`document.querySelector('[aria-label="Transcript"] button[title="Show src/missing.ts in Finder"]').click()`);
     await until(`document.body.innerText.includes('It could not be shown in Finder')`, "missing file path surfaces in the problem strip");
 
+    // Pointer navigation owns the final selection/focus state, after all reading-position checks.
+    win.webContents.debugger.attach();
+    await win.webContents.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true });
+    await checkAgentPointerRename(win, { evaluate, until, type }, ["Live", "Long"]);
     assert.equal(script.length, 0, "every scripted answer was asked for");
+    console.log("Pointer rename passed: consecutive clicks at 100/200%, edit cancellation and roster dismissal.");
     console.log("Transcript live end passed: calls, a lone call, a thought, an answer and a retry each one line; a long conversation opens at its end and fills in above it.");
   }
 
