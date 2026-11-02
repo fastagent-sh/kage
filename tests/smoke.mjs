@@ -974,9 +974,15 @@ if (root) {
       await press("Home");
       await until("document.activeElement.getAttribute('aria-label') === 'Smoke'", "Home reaches the first");
 
-      // A way back to the live turn: absent at the bottom, offered once the tail is not followed,
-      // and gone again after it takes you back.
+      // Earlier viewport/navigation checks can leave a restored reading position, not a following view.
       const backToLatest = "document.querySelector('button[aria-label=\"Back to the latest\"]')";
+      const atBottom = `(() => {
+        const el = document.querySelector('[aria-label="Transcript"]');
+        el.scrollTop = el.scrollHeight;
+        return el.scrollHeight - el.scrollTop - el.clientHeight < 40 && ${backToLatest} === null;
+      })()`;
+      await evaluate(`document.querySelector('[aria-label="Transcript"]').dispatchEvent(new WheelEvent('wheel', { deltaY: 1, bubbles: true }))`);
+      await until(atBottom, "the scroll scenario starts at the latest line");
       assert.equal(await evaluate(`${backToLatest} === null`), true, "nothing to offer while at the bottom");
       // Small enough for the short conversation to overflow.
       const size = win.getSize();
@@ -994,11 +1000,6 @@ if (root) {
         const el = document.querySelector('[aria-label="Transcript"]');
         el.scrollTop = 0;
         return ${backToLatest} !== null;
-      })()`;
-      const atBottom = `(() => {
-        const el = document.querySelector('[aria-label="Transcript"]');
-        el.scrollTop = el.scrollHeight;
-        return ${backToLatest} === null;
       })()`;
       // A resize makes it scrollable with no scroll event, so settle at the bottom first.
       await until(atBottom, "still nothing to offer at the bottom of a small window");
