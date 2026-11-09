@@ -30,18 +30,18 @@ the header's list button, a round disc beside its info pill, shows and hides; it
 Escape (without stopping a run), and closes when a conversation is chosen or started. Running and
 drafted work stays attached to its originating agent and conversation when navigating.
 
-Creating an agent asks for its name and any folders on this computer it should work on, and creates the agent in `~/Agents/<slug>/` (FastAgent's starter files, `context.json` / `context.local.json`, and a git repository). A refused declaration (duplicate folder name, nesting) is shown in FastAgent's words and creates nothing. An agent whose
+Creating an agent asks for its name and any folders on this computer it should work on, and creates the agent in `~/Agents/<slug>/` (`fastagent.json`, `AGENTS.md`, empty `skills/` and `prompts/`, and a git repository). A refused declaration (duplicate folder name, nesting) is said in words and creates nothing. An agent whose
 directory is no longer there (moved, deleted, a drive not mounted) says so, with Retry and Remove from kage:
 its row says `folder not found`. A folder that cannot be looked at (no
 permission, macOS privacy controls) is not missing: it is a broken agent, in the system's own words.
-An agent whose config does not load (FastAgent names the
-config for a mistake in it, in a file it imports, or a package it needs) offers **Start a fresh config**: a
-copy of the old file is kept beside it (`fastagent.config.ts.broken-20261003-144000`, which nothing loads, and
-never written over an earlier copy), a new `export default {};` takes its place, and the agent opens asking
+An agent whose `fastagent.json` does not load (FastAgent names the
+file for a mistake in it) offers **Start a fresh config**: a
+copy of the old file is kept beside it (`fastagent.json.broken-20261003-144000`, which nothing loads, and
+never written over an earlier copy), a new one with the agent's name and its instruction, skill and prompt paths takes its place (the folders it worked on are in the copy), and the agent opens asking
 for a model. Main replaces only the config FastAgent said failed, inside the agent's folder; the window does
 not name the file. Any other failure offers Retry and Reveal in Finder. A
 broken agent shows its original failure with a way to retry, reveal or remove it; any agent's row menu
-has Reveal in Finder, and the header shows the folders the agent works on (`works on app · handbook`, or its own folder with `Add folder…` when none are attached), a click on which reveals that folder. The header's Agent details button opens a right-hand inspector column when it fits, otherwise a native popover that does not squeeze the conversation. Both show the agent's own folder in `~/Agents/`, the folders it works on (with Add folder and per-folder Remove, which writes through FastAgent's `addContent` / `removeContent` and reopens the instance while no conversation is running), and the skills and tools the runtime loaded. Removal moves the agent's directory in `~/Agents/` and kage's conversations with the agent (its instance) to the Trash, after asking, and leaves the folders it works on untouched. Removing an agent, changing its folders, or replacing its config
+has Reveal in Finder, and the header shows the folders the agent works on (`works on app · handbook`, or its own folder with `Add folder…` when none are attached), a click on which reveals that folder. The header's Agent details button opens a right-hand inspector column when it fits, otherwise a native popover that does not squeeze the conversation. Both show the agent's own folder in `~/Agents/`, the folders it works on (with Add folder and per-folder Remove, which edits `content` in the agent's `fastagent.json` and reopens the instance while no conversation is running), the skills and tools the runtime loaded, and, when the program declares variables, whether each is set. Removal moves the agent's directory in `~/Agents/`, its conversations included, to the Trash, after asking, and leaves the folders it works on untouched. Removing an agent, changing its folders, or replacing its config
 is refused while one of its conversations is at work, including a send still being recorded; changing its model is not, since nothing is rebuilt.
 A default model kage keeps for an agent that this computer's providers no longer offer (its provider was
 disconnected, or its config no longer declares the model) does not stop the agent opening: the chip names it, the picker

@@ -5,11 +5,11 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import electron from "electron";
-import { chunk, isolated, withoutCredentials, writeMockAgent } from "./harness.mjs";
+import { chunk, isolated, openInstance, withoutCredentials, writeInstance } from "./harness.mjs";
 import { open, windowDriver } from "./window.mjs";
 import { checkAgentPointerRename } from "./layout.mjs";
 
-const root = await isolated(import.meta.url, { name: "transcript", timeout: 120000 });
+const root = await isolated(import.meta.url, { name: "transcript", timeout: 120000, program: { model: { reasoning: true } } });
 if (root) {
   const { app } = electron;
   withoutCredentials(process.env);
@@ -47,14 +47,14 @@ if (root) {
     });
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  writeMockAgent(dir, server.address().port, { model: { reasoning: true } });
-  // A second agent whose one conversation is already long: made by FastAgent itself, in the instance kage will open.
+  process.env.KAGE_MOCK_MODEL_URL = `http://127.0.0.1:${server.address().port}/v1`;
+  writeInstance(dir, { model: "mock/mock" });
+  // A second agent whose one conversation is already long: made by FastAgent itself, in the folder kage will open.
   const long = join(root, "long");
-  writeMockAgent(long, server.address().port, { model: { reasoning: true } });
+  writeInstance(long, { model: "mock/mock" });
   const LONG_TURNS = 40;
   {
-    const { openAgent } = await import("@fastagent-sh/fastagent");
-    const agent = await openAgent(long, { stateDir: join(data, "instances", "l") });
+    const agent = await openInstance(long);
     const { id } = await agent.sessions.create();
     for (let n = 1; n <= LONG_TURNS; n++) {
       script.push({ text: `Answer ${n}.` });

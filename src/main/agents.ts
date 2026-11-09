@@ -1,27 +1,31 @@
 import { app } from "electron";
 import { rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { listContent, openAgent as openFastAgent, type LocalAgent } from "@fastagent-sh/fastagent";
+import { baseEnv, openAgent as openFastAgent, type LocalAgent } from "@fastagent-sh/fastagent";
 import type { Result } from "../shared/result.ts";
 import { credentials } from "./credential-file.ts";
 import { changesForModel, choicesOf, offered, refOf, specOf } from "./models.ts";
+import { loadProgram } from "./program.ts";
 import { runningSessions, stopRuns } from "./runs.ts";
+import { SecretStore } from "./secrets.ts";
 import { refuse } from "./send.ts";
 import { summaries, type SessionSummary } from "./session-list.ts";
 import {
   addFolderToAgent,
   AgentRegistry,
+  checkSecret,
   createNewAgent,
   failingConfig,
   freshConfig,
   inspectAgentDir,
+  instanceConfigPath,
+  listFolders,
   MissingDirError,
   previewContentFolder,
-  removeAgentSecret as deleteSecretFromAgent,
   removeFolderFromAgent,
   requireFolder,
   resolveAgentPath,
-  setAgentSecret as writeSecretToAgent,
+  type AgentFolder,
   type AgentInspection,
   type AgentRow,
   type AgentSecretStatus,
@@ -30,6 +34,7 @@ import {
 export { previewContentFolder, resolveAgentPath, type AgentInspection, type AgentSecretStatus };
 export const registryFile = join(app.getPath("userData"), "agents.json");
 const registry = new AgentRegistry(registryFile);
+const secrets = new SecretStore(join(app.getPath("userData"), "secrets.json"));
 export const listAgents = () => registry.list();
 export const renameAgent = (id: string, name: string) => registry.rename(id, name);
 
@@ -42,16 +47,10 @@ export async function createAgentWithFolders(name: string, folders: string[]): P
   }
 }
 
-// One instance of the agent per kage, kept apart from the one `fastagent dev` opens in the same folder.
-const instanceDir = (id: string) => join(app.getPath("userData"), "instances", id);
-
 /** Why an agent is not ready: its folder is gone, or its definition does not load. */
 export type AgentSetup = "missing_dir" | "broken";
 
-export interface AgentContent {
-  name: string;
-  location: string;
-}
+export type AgentContent = AgentFolder;
 
 export interface AgentCapability {
   name: string;
@@ -104,18 +103,30 @@ async function evictAgent(id: string): Promise<void> {
   });
 }
 
+function noteConfigFailure(row: AgentRow, error: unknown): void {
+  const config = failingConfig(row.dir, error instanceof Error ? error.message : String(error));
+  if (config) failedConfigs.set(row.id, config);
+}
+
 async function build(row: AgentRow): Promise<LocalAgent> {
   // Before anything can fail: a failure that is not the config's must not offer to replace it.
   failedConfigs.delete(row.id);
   await requireFolder(row.dir);
   try {
-    return await openFastAgent(row.dir, { credentials, stateDir: instanceDir(row.id) });
+    return await openFastAgent(await loadProgram(), {
+      root: row.dir,
+      config: instanceConfigPath(row.dir),
+      credentials,
+      secrets: { ...process.env, ...(await secrets.get(row.id)) },
+      env: baseEnv(process.env),
+      offline: process.env.FASTAGENT_OFFLINE === "1",
+    });
   } catch (error) {
-    const config = failingConfig(row.dir, error instanceof Error ? error.message : String(error));
-    if (config) failedConfigs.set(row.id, config);
+    noteConfigFailure(row, error);
     throw error;
   }
 }
+
 
 /** An agent's row in the registry. An unknown id is a bug in this app, so this throws rather than refusing. */
 export async function agentRow(agentId: string): Promise<AgentRow> {
@@ -153,25 +164,26 @@ export async function openedAgents(): Promise<{ id: string; agent: LocalAgent }[
  * beside the runtime's own errors, so the window takes one shape and never classifies a condition itself.
  */
 export async function openAgentResult(agentId: string): Promise<OpenResult> {
-  let dir: string | undefined;
   let content: AgentContent[] | undefined;
+  let row: AgentRow | undefined;
   try {
-    const row = await agentRow(agentId);
-    dir = row.dir;
+    const found = await agentRow(agentId);
+    row = found;
     try {
-      await requireFolder(row.dir);
-      content = (await listContent(row.dir)).content.map(({ name, location }) => ({ name, location }));
+      await requireFolder(found.dir);
+      content = await listFolders(found.dir);
     } catch (error) {
-      await evictAgent(row.id);
+      await evictAgent(found.id);
+      noteConfigFailure(found, error);
       throw error;
     }
-    const agent = await openAgent(row);
+    const agent = await openAgent(found);
     const [info, sessions] = await Promise.all([agent.info(), summaries(agent)]);
-    const inspection = await inspectAgentDir(row.dir, info.description);
+    const inspection = await inspect(found, info.description);
     const models = choicesOf(info);
     // kage's own default for the agent, over the config's; one this computer's providers no longer offer cannot start anything.
-    const staleDefault = row.model && !models.some(({ spec }) => spec === row.model) ? row.model : undefined;
-    const model = row.model ?? (info.defaultModel && specOf(info.defaultModel));
+    const staleDefault = found.model && !models.some(({ spec }) => spec === found.model) ? found.model : undefined;
+    const model = found.model ?? (info.defaultModel && specOf(info.defaultModel));
     return {
       ok: true,
       sessions,
@@ -186,7 +198,7 @@ export async function openAgentResult(agentId: string): Promise<OpenResult> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof MissingDirError) return { ok: false, code: "missing_dir", message };
-    const inspection = dir ? await inspectAgentDir(dir).catch(() => undefined) : undefined;
+    const inspection = row ? await inspect(row).catch(() => undefined) : undefined;
     return {
       ok: false,
       code: "broken",
@@ -196,6 +208,11 @@ export async function openAgentResult(agentId: string): Promise<OpenResult> {
       ...(inspection && { inspection }),
     };
   }
+}
+
+async function inspect(row: AgentRow, description?: string): Promise<AgentInspection> {
+  const [program, stored] = await Promise.all([loadProgram(), secrets.get(row.id)]);
+  return inspectAgentDir(row.dir, program.inputs.secrets, Object.keys(stored), description);
 }
 
 /** A conversation to start in: on the agent's default for new ones when this computer can still run it. */
@@ -299,7 +316,9 @@ export function setAgentSecret(
 ): Promise<Result<{ inspection: AgentInspection }>> {
   return change(row.id, async () => {
     try {
-      const inspection = await writeSecretToAgent(row.dir, name, value);
+      const secret = checkSecret(name, value, (await loadProgram()).inputs.secrets);
+      await secrets.set(row.id, secret.name, secret.value);
+      const inspection = await inspect(row);
       beforeClose?.();
       return { ok: true, inspection };
     } catch (error) {
@@ -315,7 +334,8 @@ export function removeAgentSecret(
 ): Promise<Result<{ inspection: AgentInspection }>> {
   return change(row.id, async () => {
     try {
-      const inspection = await deleteSecretFromAgent(row.dir, name);
+      await secrets.remove(row.id, name.trim());
+      const inspection = await inspect(row);
       beforeClose?.();
       return { ok: true, inspection };
     } catch (error) {
@@ -368,7 +388,7 @@ export function removeAgent(
       failedConfigs.delete(id);
       return { ok: true };
     },
-    { closeFirst: true, afterClose: () => rm(instanceDir(id), { recursive: true, force: true }) },
+    { closeFirst: true, afterClose: () => secrets.removeAgent(id) },
   );
 }
 

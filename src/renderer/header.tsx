@@ -237,7 +237,7 @@ export function AgentInspector({
   const [error, setError] = useState<string>();
   const [updating, setUpdating] = useState(false);
   const [showAllSkills, setShowAllSkills] = useState(false);
-  const [editingSecret, setEditingSecret] = useState<{ name: string; value: string; fixedName?: boolean }>();
+  const [editingSecret, setEditingSecret] = useState<{ name: string; value: string }>();
   const [secretError, setSecretError] = useState<string>();
   const mounted = useRef(true);
 
@@ -328,7 +328,6 @@ export function AgentInspector({
   const visibleSkills = showAllSkills ? skills : skills.slice(0, SKILL_PREVIEW_LIMIT);
   const files = inspection?.files ?? [];
   const secrets = inspection?.secrets ?? [];
-  const packages = inspection?.packages ?? [];
 
   return (
     <ResponsivePanel
@@ -473,226 +472,105 @@ export function AgentInspector({
           </div>
         </section>
 
-        <section className="space-y-1.5">
-          <div className="flex items-center justify-between px-1">
-            <h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
-              <Key size={13} />
-              <span>Environment & secrets</span>
-            </h3>
-            <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted tabular-nums">
-              {secrets.length + packages.length}
-            </span>
-          </div>
-          {secretError && (
-            <div role="alert" className="rounded-card bg-surface p-2.5 text-[12px] text-danger ring-1 ring-stroke">
-              {secretError}
+        {secrets.length > 0 && (
+          <section className="space-y-1.5">
+            <div className="flex items-center justify-between px-1">
+              <h3 className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
+                <Key size={13} />
+                <span>Environment & secrets</span>
+              </h3>
+              <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted tabular-nums">
+                {secrets.length}
+              </span>
             </div>
-          )}
-          <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
-            {secrets.map((secret) =>
-              editingSecret?.fixedName && editingSecret.name === secret.name ? (
-                <div key={secret.name} className={`${rowDivider} flex items-center gap-1.5 py-1.5 pr-1.5 pl-3`}>
-                  <span className="shrink-0 font-mono text-[12px] font-medium text-text">{secret.name}</span>
-                  <span className="font-mono text-[12px] text-muted">=</span>
-                  <input
-                    type="password"
-                    aria-label="Variable value"
-                    placeholder="value"
-                    value={editingSecret.value}
-                    onChange={(e) => setEditingSecret({ ...editingSecret, value: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void saveSecret();
-                      if (e.key === "Escape") {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setSecretError(undefined);
-                        setEditingSecret(undefined);
-                      }
-                    }}
-                    className="min-w-0 flex-1 rounded-[4px] bg-surface-2 px-2 py-1 font-mono text-[12px] text-text placeholder:text-muted/50 outline-none focus:ring-1 focus:ring-accent"
-                    autoFocus
-                  />
-                  <Button
-                    kind="ghost"
-                    size={28}
-                    aria-label="Save variable"
-                    title="Save (Enter)"
-                    disabled={disabledReason || (!editingSecret.value.trim() && "Enter a value")}
-                    onClick={() => void saveSecret()}
-                    icon={<Check size={14} className="text-accent" />}
-                  />
-                  <Button
-                    kind="ghost"
-                    size={28}
-                    aria-label="Cancel"
-                    title="Cancel (Esc)"
-                    onClick={() => {
-                      setSecretError(undefined);
-                      setEditingSecret(undefined);
-                    }}
-                    icon={<X size={13} />}
-                  />
-                </div>
-              ) : (
-                <div
-                  key={secret.name}
-                  title={
-                    secret.fromEnv
-                      ? `${secret.name} is set in the process environment and overrides .secrets/.env`
-                      : (secret.description ?? secret.declaredIn.join(", "))
-                  }
-                  className={`${rowDivider} flex items-center justify-between gap-2 py-2 pr-1.5 pl-3`}
-                >
-                  <button
-                    type="button"
-                    disabled={!!disabledReason || secret.fromEnv}
-                    onClick={() => {
-                      if (secret.fromEnv) return;
-                      setSecretError(undefined);
-                      setEditingSecret({ name: secret.name, value: "", fixedName: true });
-                    }}
-                    className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left disabled:cursor-default"
-                  >
-                    <span className="break-all font-mono text-[12px] font-medium text-text">{secret.name}</span>
-                    {secret.configured && !secret.fromEnv && (
-                      <span className="shrink-0 font-mono text-[11px] text-muted">••••••</span>
-                    )}
-                  </button>
-                  {secret.fromEnv ? (
-                    <Badge tone={secret.configured ? "muted" : "danger"}>
-                      {secret.configured ? "from env" : "empty in env"}
-                    </Badge>
-                  ) : (
-                    !secret.configured && (
-                      <Badge tone={secret.optional ? "muted" : "danger"}>
-                        {secret.optional ? "optional" : "missing"}
-                      </Badge>
-                    )
-                  )}
-                  {secret.fromFile && onRemoveSecret && (
+            {secretError && (
+              <div role="alert" className="rounded-card bg-surface p-2.5 text-[12px] text-danger ring-1 ring-stroke">
+                {secretError}
+              </div>
+            )}
+            <div className="rounded-card bg-surface ring-1 ring-stroke overflow-hidden">
+              {secrets.map((secret) =>
+                editingSecret?.name === secret.name ? (
+                  <div key={secret.name} className={`${rowDivider} flex items-center gap-1.5 py-1.5 pr-1.5 pl-3`}>
+                    <span className="shrink-0 font-mono text-[12px] font-medium text-text">{secret.name}</span>
+                    <span className="font-mono text-[12px] text-muted">=</span>
+                    <input
+                      type="password"
+                      aria-label="Variable value"
+                      placeholder="value"
+                      value={editingSecret.value}
+                      onChange={(e) => setEditingSecret({ ...editingSecret, value: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void saveSecret();
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setSecretError(undefined);
+                          setEditingSecret(undefined);
+                        }
+                      }}
+                      className="min-w-0 flex-1 rounded-[4px] bg-surface-2 px-2 py-1 font-mono text-[12px] text-text placeholder:text-muted/50 outline-none focus:ring-1 focus:ring-accent"
+                      autoFocus
+                    />
                     <Button
                       kind="ghost"
                       size={28}
-                      onClick={() => void deleteSecret(secret.name)}
-                      disabled={disabledReason}
-                      title={`Remove ${secret.name}`}
-                      aria-label={`Remove ${secret.name}`}
+                      aria-label="Save variable"
+                      title="Save (Enter)"
+                      disabled={disabledReason || (!editingSecret.value.trim() && "Enter a value")}
+                      onClick={() => void saveSecret()}
+                      icon={<Check size={14} className="text-accent" />}
+                    />
+                    <Button
+                      kind="ghost"
+                      size={28}
+                      aria-label="Cancel"
+                      title="Cancel (Esc)"
+                      onClick={() => {
+                        setSecretError(undefined);
+                        setEditingSecret(undefined);
+                      }}
                       icon={<X size={13} />}
                     />
-                  )}
-                </div>
-              ),
-            )}
-            {packages.length > 0 && (
-              <div className={`${rowDivider} flex flex-wrap items-center gap-1.5 px-3 py-2`}>
-                <span className="text-[11px] text-muted">Packages:</span>
-                {packages.map((pkg) => (
-                  <span
-                    key={pkg.name}
-                    className="rounded-[4px] bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-text"
+                  </div>
+                ) : (
+                  <div
+                    key={secret.name}
+                    title={secret.description ?? secret.declaredIn.join(", ")}
+                    className={`${rowDivider} flex items-center justify-between gap-2 py-2 pr-1.5 pl-3`}
                   >
-                    {pkg.name}
-                    {pkg.version !== "latest" && pkg.version !== "system" ? `@${pkg.version}` : ""}
-                  </span>
-                ))}
-              </div>
-            )}
-            {editingSecret && !editingSecret.fixedName ? (
-              <div className={`${rowDivider} flex items-center gap-1.5 py-1.5 pr-1.5 pl-2.5`}>
-                <input
-                  type="text"
-                  aria-label="Variable name"
-                  placeholder="KEY"
-                  value={editingSecret.name}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    const eq = raw.indexOf("=");
-                    if (eq > 0 && !editingSecret.value) {
-                      let val = raw.slice(eq + 1).trim();
-                      const quote = val[0];
-                      if (val.length >= 2 && (quote === '"' || quote === "'") && val.at(-1) === quote) val = val.slice(1, -1);
-                      setEditingSecret({
-                        name: raw.slice(0, eq).trim(),
-                        value: val,
-                      });
-                    } else {
-                      setEditingSecret({ ...editingSecret, name: raw });
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && editingSecret.name.trim() && editingSecret.value.trim()) void saveSecret();
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setSecretError(undefined);
-                      setEditingSecret(undefined);
-                    }
-                  }}
-                  className="w-[42%] shrink-0 rounded-[4px] bg-surface-2 px-2 py-1 font-mono text-[12px] text-text placeholder:text-muted/50 outline-none focus:ring-1 focus:ring-accent"
-                  autoFocus
-                />
-                <span className="font-mono text-[12px] text-muted">=</span>
-                <input
-                  type="password"
-                  aria-label="Variable value"
-                  placeholder="value"
-                  value={editingSecret.value}
-                  onChange={(e) => setEditingSecret({ ...editingSecret, value: e.target.value })}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && editingSecret.name.trim() && editingSecret.value.trim()) void saveSecret();
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setSecretError(undefined);
-                      setEditingSecret(undefined);
-                    }
-                  }}
-                  className="min-w-0 flex-1 rounded-[4px] bg-surface-2 px-2 py-1 font-mono text-[12px] text-text placeholder:text-muted/50 outline-none focus:ring-1 focus:ring-accent"
-                />
-                <Button
-                  kind="ghost"
-                  size={28}
-                  aria-label="Save variable"
-                  title="Save (Enter)"
-                  disabled={
-                    disabledReason ||
-                    (!editingSecret.name.trim() && "Enter a variable name") ||
-                    (!editingSecret.value.trim() && "Enter a value")
-                  }
-                  onClick={() => void saveSecret()}
-                  icon={<Check size={14} className="text-accent" />}
-                />
-                <Button
-                  kind="ghost"
-                  size={28}
-                  aria-label="Cancel"
-                  title="Cancel (Esc)"
-                  onClick={() => {
-                    setSecretError(undefined);
-                    setEditingSecret(undefined);
-                  }}
-                  icon={<X size={13} />}
-                />
-              </div>
-            ) : (
-              onSetSecret && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSecretError(undefined);
-                    setEditingSecret({ name: "", value: "" });
-                  }}
-                  disabled={!!disabledReason}
-                  title={disabledReason || undefined}
-                  className={`${rowDivider} flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium text-accent transition-colors hover:bg-hover disabled:opacity-50`}
-                >
-                  <Plus size={14} weight="bold" />
-                  <span>Add variable…</span>
-                </button>
-              )
-            )}
-          </div>
-        </section>
+                    <button
+                      type="button"
+                      disabled={!!disabledReason}
+                      onClick={() => {
+                        setSecretError(undefined);
+                        setEditingSecret({ name: secret.name, value: "" });
+                      }}
+                      className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left disabled:cursor-default"
+                    >
+                      <span className="break-all font-mono text-[12px] font-medium text-text">{secret.name}</span>
+                      {secret.configured && <span className="shrink-0 font-mono text-[11px] text-muted">••••••</span>}
+                    </button>
+                    {!secret.configured && (
+                      <Badge tone={secret.optional ? "muted" : "danger"}>{secret.optional ? "optional" : "missing"}</Badge>
+                    )}
+                    {secret.configured && onRemoveSecret && (
+                      <Button
+                        kind="ghost"
+                        size={28}
+                        onClick={() => void deleteSecret(secret.name)}
+                        disabled={disabledReason}
+                        title={`Remove ${secret.name}`}
+                        aria-label={`Remove ${secret.name}`}
+                        icon={<X size={13} />}
+                      />
+                    )}
+                  </div>
+                ),
+              )}
+            </div>
+          </section>
+        )}
 
         <section className="space-y-1.5">
           <div className="flex items-center justify-between px-1">

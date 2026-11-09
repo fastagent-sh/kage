@@ -60,11 +60,12 @@ context is and, for a Claude subscription, the plan's usage windows.
 **Problems that say what to do.** A failure keeps the provider's original words and adds what they
 mean and the way on: **Sign in again** for a rejected login, **Use another model** for an overloaded
 provider, **Network settings** for a connection error,
-**Start a fresh config** for an agent whose config no longer loads (the old file is kept beside it).
+**Start a fresh config** for an agent whose `fastagent.json` no longer loads (the old file is kept beside it).
 
 **Works behind a proxy.** Every model and sign-in request follows the system proxy as it is at that
 moment, including PAC rules and a VPN switched on later; Settings → Network can fix a proxy or turn
-it off, and checks the route. The agent's own commands (`git`, `npm`) get the proxy too.
+it off, and checks the route. The agent's own commands (`git`, `npm`) get the proxy as it was when the
+agent was opened; a route that changes later reaches them after kage is restarted.
 
 Also: `/` completes the agent's skills, extension commands and prompt templates; light and dark
 follow the system; seven avatar styles; the sidebar and transcript work from the keyboard.
@@ -90,8 +91,9 @@ download the new release and replace the app; there are no automatic updates unt
 ## Getting started
 
 1. **Create an agent.** Click **+** at the top of the sidebar, name the agent and attach any folders on
-   this computer it should work on. kage creates the agent in `~/Agents/<name>/` with FastAgent's starter
-   files and a git repository.
+   this computer it should work on. kage creates the agent in `~/Agents/<name>/`: a `fastagent.json`
+   naming the folders, an `AGENTS.md` for its standing instructions, `skills/` and `prompts/` for what it
+   learns, and a git repository.
 2. **Connect a provider.** Settings (`⌘,`) → Model providers, or **Connect a provider** in the model
    picker.
 3. **Pick a model and send.** A new agent has no default model, so its first conversation asks for
@@ -103,16 +105,17 @@ download the new release and replace the app; there are no automatic updates unt
 renderer (React) ── typed preload API ── Electron main ── FastAgent, in-process
 ```
 
-- **Main owns the runtime.** Each agent is opened with FastAgent's public `openAgent`, inside
-  Electron main, without opening a local port, as its own instance in kage's data directory. The renderer runs with
+- **Main owns the runtime.** Every agent is an instance of one program that ships with kage
+  (`program/`: the system prompt and a skill on writing skills, built by `fastagent build`). Main opens
+  each instance with FastAgent's public `openAgent`, without opening a local port, in the agent's own
+  folder under `~/Agents/`; its conversations are in `.state/` there. The renderer runs with
   context isolation and no Node access; it gets named operations, never the filesystem, a shell or
   credentials.
-- **No second transcript.** Conversations live in kage's instance of each agent (FastAgent's own
-  storage). kage reads history and live events through the Agent API; it stores only presentation state (drafts, the open
+- **No second transcript.** Conversations live in each agent's own storage (FastAgent's). kage reads history and live events through the Agent API; it stores only presentation state (drafts, the open
   conversation, where you were reading).
 - **kage's own files** live in its data directory, `~/Library/Application Support/kage/`:
-  `agents.json` (the agents you added), `settings.json` (network and avatar style) and `auth.json`
-  (provider credentials). Writes are atomic, and a file that cannot be read is reported with its
+  `agents.json` (the agents you added), `settings.json` (network and avatar style), `auth.json`
+  (provider credentials) and `secrets.json` (values for the variables a program declares). Writes are atomic, and a file that cannot be read is reported with its
   original error, never treated as empty or overwritten.
 - **One credential file.** kage reads only its own `auth.json`, not the `fastagent` CLI's, pi's or a
   project's: one OAuth login kept in two files is invalidated by whichever refreshes first. A login
@@ -133,8 +136,10 @@ More: [architecture](docs/architecture.md) (processes, state ownership, network 
 - The app uses `~/Library/Application Support/kage/`. It does not import the former app's registry,
   credentials, conversations or drafts; its old data directory is left untouched. Reconnect providers
   in kage rather than copying OAuth credentials between stores.
-- Sessions of earlier versions are not read: this version keeps its own instance of each agent.
-- Removing an agent moves its directory in `~/Agents/` and kage's conversations with it to the Trash; the folders it works on stay on disk.
+- Agents made by earlier versions (a folder with `SYSTEM.md` and `fastagent.config.ts`) do not open, and
+  their conversations are not read: create the agent again. An agent's instructions, skills and
+  prompts are its own; its system prompt and tools are the program's, and kage has no editor for them.
+- Removing an agent moves its directory in `~/Agents/`, conversations included, to the Trash; the folders it works on stay on disk.
 - Credentials are a plain JSON file (mode `0600`), as FastAgent writes it, not the macOS Keychain
   ([fastagent#652](https://github.com/fastagent-sh/fastagent/issues/652)).
 - A proxy that needs a user name and password is not supported.

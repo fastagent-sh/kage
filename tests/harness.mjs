@@ -1,9 +1,9 @@
 // Keeps the developer's credentials and proxy out of every end-to-end run.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import electron from "electron";
 
 const PRIVATE = /API_KEY|TOKEN|SECRET|^FASTAGENT_|^AWS_|^GOOGLE_|^AZURE_|^PI_|PROXY$/i;
@@ -51,7 +51,7 @@ export function withoutCredentials(env) {
 }
 
 // The root goes only after Electron exited, so Chromium has stopped writing its caches into it.
-export async function isolated(script, { name, timeout, home = true, prepare, after }) {
+export async function isolated(script, { name, timeout, home = true, program, prepare, after }) {
   if (process.versions.electron) {
     const root = process.env.KAGE_TEST_ROOT;
     if (!root) throw new Error(`Run with node tests/${name}.mjs so the fixture is isolated`);
@@ -61,6 +61,7 @@ export async function isolated(script, { name, timeout, home = true, prepare, af
   try {
     // Before the fixture, so a stale build fails in a second rather than after a launch and a fake run.
     requireFreshBuild();
+    if (program) process.env.KAGE_PROGRAM_DIR = buildMockProgram(root, program);
     await prepare?.(root);
     const child = spawnSync(electron, [fileURLToPath(script)], {
       stdio: "inherit",
@@ -80,23 +81,29 @@ export const chunk = (delta, finish = null) =>
   `data: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", created: 0, model: "mock", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
 
 /**
- * An agent directory whose only model, `mock/mock`, is an OpenAI-compatible endpoint on `port`. The config imports
- * pi-ai, so the directory gets `modules` (the repository's, or an extracted app's) the way `npm install` would.
+ * A program like kage's own, with one more provider: `mock/mock`, an OpenAI-compatible endpoint at
+ * `KAGE_MOCK_MODEL_URL`, read when the program loads. Built into `<root>/mock-program/dist`, which the scripts
+ * hand to kage as `KAGE_PROGRAM_DIR`. Its modules are the repository's; `useModules` points them elsewhere.
  */
-export function writeMockAgent(dir, port, { provider = "mock", modelId = "mock", extraModels = 0, defaultModel, model = {}, config = "", modules = join(ROOT, "node_modules") } = {}) {
+export function buildMockProgram(root, { provider = "mock", modelId = "mock", extraModels = 0, model = {}, needsCredential = false } = {}) {
+  const dir = join(root, "mock-program");
   mkdirSync(dir, { recursive: true });
-  if (!existsSync(join(dir, "node_modules"))) symlinkSync(modules, join(dir, "node_modules"));
+  symlinkSync(join(ROOT, "node_modules"), join(dir, "node_modules"));
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "mock-agent", private: true, type: "module", version: "0.0.0" }));
+  writeFileSync(join(dir, "SYSTEM.md"), "You are a test agent.\n");
+  cpSync(join(ROOT, "program", "skills"), join(dir, "skills"), { recursive: true });
   writeFileSync(
     join(dir, "fastagent.config.ts"),
     `import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 
-const baseUrl = "http://127.0.0.1:${port}/v1";
+const baseUrl = process.env.KAGE_MOCK_MODEL_URL;
+if (!baseUrl) throw new Error("KAGE_MOCK_MODEL_URL names the endpoint the mock program talks to");
 const mock = createProvider({
   id: ${JSON.stringify(provider)},
   name: ${JSON.stringify(provider)},
   baseUrl,
-  auth: { apiKey: { name: "Mock", resolve: async () => ({ auth: { apiKey: "mock" } }) } },
+  auth: { apiKey: { name: "Mock", resolve: async ({ credential }) => (${needsCredential} && !credential?.key ? undefined : { auth: { apiKey: credential?.key ?? "mock" } }) } },
   models: ${JSON.stringify(
     Array.from({ length: extraModels + 1 }, (_, n) => {
       const id = n === 0 ? modelId : `${modelId}-extra-${n}`;
@@ -110,7 +117,42 @@ const mock = createProvider({
   api: openAICompletionsApi(),
 });
 
-export default { model: ${JSON.stringify(defaultModel ?? `${provider}/${modelId}`)}, providers: [mock]${config ? `, ${config}` : ""} };
+export default { name: "mock-agent", providers: [mock] };
 `,
   );
+  const build = spawnSync(join(ROOT, "node_modules", ".bin", "fastagent"), ["build", dir], {
+    encoding: "utf8",
+    env: { ...process.env, KAGE_MOCK_MODEL_URL: "http://127.0.0.1:9/v1" },
+  });
+  if (build.status !== 0) throw new Error(`the mock program did not build:\n${build.stderr}${build.stdout}`);
+  return join(dir, "dist");
+}
+
+/** The mock program's modules from `modules` instead: an extracted app's, so it runs on the copy the app holds. */
+export function useModules(root, modules) {
+  const link = join(root, "mock-program", "node_modules");
+  rmSync(link);
+  symlinkSync(modules, link);
+}
+
+/** An agent's folder as kage creates it, with the model it starts on and the skills it already has. */
+export function writeInstance(dir, { model, skills = {}, content } = {}) {
+  mkdirSync(join(dir, "prompts"), { recursive: true });
+  writeFileSync(join(dir, "AGENTS.md"), "# Agent\n");
+  writeFileSync(
+    join(dir, "fastagent.json"),
+    JSON.stringify({ name: basename(dir), ...(model && { model }), ...(content && { content }), instructions: ["./AGENTS.md"], skills: ["./skills"], prompts: ["./prompts"] }),
+  );
+  mkdirSync(join(dir, "skills"), { recursive: true });
+  for (const [name, description] of Object.entries(skills)) {
+    mkdirSync(join(dir, "skills", name), { recursive: true });
+    writeFileSync(join(dir, "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n---\n\nDo ${name}.\n`);
+  }
+}
+
+/** Opens an instance in a script's own process, for the conversation a test starts from. Close it before kage opens it. */
+export async function openInstance(dir) {
+  const { openAgent, baseEnv } = await import("@fastagent-sh/fastagent");
+  const program = (await import(pathToFileURL(join(process.env.KAGE_PROGRAM_DIR, "index.js")).href)).default;
+  return openAgent(program, { root: dir, config: join(dir, "fastagent.json"), secrets: {}, env: baseEnv(process.env), offline: true });
 }

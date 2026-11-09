@@ -75,7 +75,7 @@ export async function describeRoute(): Promise<Route> {
   };
 }
 
-// Agent tools copy main's environment at each spawn, so this runs before every send.
+// An agent's commands get main's environment as it was when the agent opened, so this runs before a send can open it.
 export async function syncCommandProxy(): Promise<void> {
   if (launchUrl) return;
   const route = tryRoute(await session.defaultSession.resolveProxy(COMMAND_HOST));

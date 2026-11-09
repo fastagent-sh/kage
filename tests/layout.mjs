@@ -145,22 +145,12 @@ export async function checkPanelLayout(win, { evaluate, until, type }) {
     await type("");
     await settle();
     await openDetails();
-    await evaluate(`[...document.querySelectorAll('#agent-info button')].find(button => button.textContent.trim() === 'Add variable…').click()`);
-    await until("!!document.querySelector('input[aria-label=\"Variable value\"]')", "variable editor opens");
-    await type("LAYOUT_TEST", 'input[aria-label="Variable name"]');
-    await type("synthetic-unsaved-value", 'input[aria-label="Variable value"]');
     win.webContents.setZoomFactor(1.5);
     await until("document.querySelector('#agent-info').matches(':popover-open')", "existing inspector becomes an overlay");
-    assert.equal(await evaluate("document.querySelector('input[aria-label=\"Variable value\"]').value"), "synthetic-unsaved-value", "changing presentation preserves an unsaved form");
-    assert.equal(await evaluate("document.activeElement.getAttribute('aria-label')"), "Variable value", "resize preserves the field being edited");
     win.webContents.setZoomFactor(1);
     await until("!document.querySelector('#agent-info').hasAttribute('popover')", "inspector returns to its column");
-    assert.equal(await evaluate("document.querySelector('input[aria-label=\"Variable value\"]').value"), "synthetic-unsaved-value");
     win.webContents.setZoomFactor(1.5);
     await until("document.querySelector('#agent-info').matches(':popover-open')", "inspector overlays again");
-    press("Escape");
-    await until("!document.querySelector('input[aria-label=\"Variable value\"]')", "Escape cancels the unsaved variable");
-    assert.ok(await evaluate("document.querySelector('#agent-info').matches(':popover-open')"), "canceling an edit does not dismiss its panel");
     await evaluate(`document.querySelector('#agent-info button[aria-label="Close agent details"]').click()`);
     await until("!document.querySelector('#agent-info')", "inspector closes after resize");
   } finally {
