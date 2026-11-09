@@ -191,6 +191,18 @@ described in [SECURITY.md](SECURITY.md), never in a public issue.
 
 ## License
 
-[MIT](LICENSE). Bundled fonts are under the SIL Open Font License (`src/renderer/fonts/OFL-*.txt`);
+The community client is licensed under the [GNU Affero General Public License, version 3 only](LICENSE)
+(`AGPL-3.0-only`). Commercial use is permitted subject to that license. This license does not grant
+rights to use the project name or logo as a trademark.
+
+Code previously distributed under MIT remains available under that license; its original notice is
+preserved in [LICENSE-MIT](LICENSE-MIT). This does not grant MIT rights to subsequent AGPL-only additions.
+Third-party components retain their own licenses.
+
+Separate commercial licensing is planned, not currently offered. It requires sufficient rights to
+contributions and compatible third-party dependencies; the community license grants no exemption
+from AGPL obligations. Cloud service terms and server-side licensing are separate decisions.
+
+Bundled fonts are under the SIL Open Font License (`src/renderer/fonts/OFL-*.txt`);
 provider logos are LobeHub's, under their license (`src/renderer/provider-logos/LICENSE`); avatar
 styles are DiceBear's (CC0, except Bottts, free for personal and commercial use).

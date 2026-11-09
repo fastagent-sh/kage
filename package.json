@@ -2,7 +2,7 @@
   "name": "duang",
   "version": "0.2.0",
   "description": "A native workbench for FastAgent agents.",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "author": "the duang authors (https://github.com/fastagent-sh/duang)",
   "homepage": "https://github.com/fastagent-sh/duang#readme",
   "repository": {

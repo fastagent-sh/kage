@@ -9,6 +9,8 @@ directories:
 files:
   - out/**
   - package.json
+  - LICENSE
+  - LICENSE-MIT
 mac:
   category: public.app-category.developer-tools
   target:

@@ -5,6 +5,16 @@ All repository-facing text is English. Product scope comes from [README.md](READ
 [design](docs/design.md), [interactions](docs/interaction.md) and [architecture](docs/architecture.md).
 A working implementation is not evidence that all of a milestone's user workflows are accepted.
 
+## Contribution licensing
+
+By submitting a contribution, you agree to license it under [AGPL-3.0-only](LICENSE), unless an
+explicitly different license applies to the files you change. You retain copyright in your work
+and must have the right to submit it. Preserve third-party copyright and license notices.
+
+No contributor license agreement (CLA) is currently in place. This contribution policy does not
+assign copyright or grant a separate commercial relicensing right. Any future CLA or commercial
+licensing arrangement needs an explicit agreement; it must not be assumed to cover past contributions.
+
 ## Set up and verify locally
 
 Use Node 24.15 or later and npm. FastAgent is an exact version from npm (`@fastagent-sh/fastagent` in
