@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { DuangApi } from "../preload/index.ts";
+import type { KageApi } from "../preload/index.ts";
 import { createStore } from "./store.ts";
 import { rows } from "./sessions.ts";
 import { contextUsed } from "./conversation.ts";
@@ -18,10 +18,10 @@ import { faceOf } from "./face.ts";
 import { Boundary, Button } from "./ui.tsx";
 import { useNarrowWindow } from "./responsive-panel.tsx";
 
-const duang = (window as unknown as { duang: DuangApi }).duang;
+const kage = (window as unknown as { kage: KageApi }).kage;
 
 export default function App() {
-  const [store] = useState(() => createStore(duang));
+  const [store] = useState(() => createStore(kage));
   const view = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const { agents, agentId, states, sessions, conversation: c } = view;
   const agent = agents.find((row) => row.id === agentId);
@@ -72,7 +72,7 @@ export default function App() {
     void store.load({ fresh });
     return store.dispose;
   }, [store]);
-  useEffect(() => duang.onOpenSettings(openSettings), []);
+  useEffect(() => kage.onOpenSettings(openSettings), []);
   const newConversation = useCallback(() => {
     void store.newConversation().then((opened) => {
       const current = store.getSnapshot();
@@ -117,7 +117,7 @@ export default function App() {
 
   const unseenCount = Object.values(view.unseen).reduce((sum, byAgent) => sum + Object.keys(byAgent).length, 0);
   useEffect(() => {
-    void duang.setUnseenCount(unseenCount);
+    void kage.setUnseenCount(unseenCount);
   }, [unseenCount]);
 
   const remove = () => {
@@ -196,7 +196,7 @@ export default function App() {
           onSettings={openSettings}
           onRename={(id, name) => void store.renameAgent(id, name)}
           onReveal={(id) => void store.reveal(id)}
-          onMenu={duang.menu}
+          onMenu={kage.menu}
         />
         <main className="relative flex-1 flex flex-col min-w-0 min-h-0">
           {/* Floating over the pane, so nothing below moves when one comes or goes (docs/ui.md §9b). */}
@@ -268,7 +268,7 @@ export default function App() {
                 store.openPicker();
                 setSettings(false);
               }}
-              onMenu={duang.menu}
+              onMenu={kage.menu}
               onClose={() => setSettings(false)}
             />
           ) : creating ? (

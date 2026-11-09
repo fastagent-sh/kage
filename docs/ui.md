@@ -1,6 +1,6 @@
 # Interface design
 
-The principles behind duang's interface and the reason for each. It does not restate sizes, colours or
+The principles behind kage's interface and the reason for each. It does not restate sizes, colours or
 layouts: the code is the measure, `npm run shots` shows the result in both colour modes, and the component
 sheet at `#gallery` shows every control (§6b). [design.md](design.md) owns product paths and
 [interaction.md](interaction.md) owns behaviour; this document says how they should read.
@@ -132,7 +132,7 @@ into the monospace family.
 agent's name, a conversation's label. `Prose` is two bundled rounded faces under one name, Nunito for
 Latin and Resource Han Rounded for Chinese, sized to match each other. Everything the app says itself
 (times, badges, errors, controls, the trace) stays in the system face. A system face for the answer
-made duang indistinguishable from every other chat app.
+made kage indistinguishable from every other chat app.
 
 **One monospace everywhere**, Maple Mono, so a command in an answer looks like the command that ran.
 
@@ -229,7 +229,7 @@ One vocabulary everywhere, so a condition is never `working` in one place and `r
 `working` · `thinking` · `running` · `reading` · `searching` · `editing` · `fetching` · `answering` · `starting` · `done` · `failed` · `stopped` · `refused` · `unsent` ·
 `folder not found` · `broken`
 
-Copy says what something means for the person, never how duang is built: "Saved on this computer", not
+Copy says what something means for the person, never how kage is built: "Saved on this computer", not
 the name of a credential store. An agent's own files, which its author names, and original error text,
 kept verbatim, are the exceptions.
 
@@ -311,7 +311,7 @@ search, until there is a search surface to focus.
 
 ## 12. Brand
 
-`duang`, lowercase everywhere, followed by a single accent dot: `duang·`. The name is playful enough
+`kage`, lowercase everywhere, followed by a single accent dot: `kage·`. The name is playful enough
 on its own.
 
 Agent avatars are circles, because an agent is a contact; rounded squares read as a list of programs.

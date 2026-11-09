@@ -6,9 +6,9 @@ import { test } from "node:test";
 import { credentialFile, SignInCancelled } from "@fastagent-sh/fastagent";
 import { disconnect, listProviders, openable, startLogin, type LoginStep } from "./providers.ts";
 
-const dir = await mkdtemp(join(tmpdir(), "duang-providers-"));
+const dir = await mkdtemp(join(tmpdir(), "kage-providers-"));
 
-test("providers list pi's own names and ways, what duang's file holds, and a variable the file hides", async () => {
+test("providers list pi's own names and ways, what kage's file holds, and a variable the file hides", async () => {
   const auth = join(dir, "list.json");
   await writeFile(auth, JSON.stringify({ openai: { type: "api_key", key: "sk-stored" } }), { mode: 0o600 });
   process.env.OPENAI_API_KEY = "sk-env";
@@ -32,7 +32,7 @@ test("providers list pi's own names and ways, what duang's file holds, and a var
   }
 });
 
-test("disconnect removes only that provider from duang's file, and a corrupt file is an error", async () => {
+test("disconnect removes only that provider from kage's file, and a corrupt file is an error", async () => {
   const auth = join(dir, "disconnect.json");
   await writeFile(
     auth,

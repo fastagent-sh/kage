@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { DuangApi } from "../preload/index.ts";
+import type { KageApi } from "../preload/index.ts";
 import { deferred, described, harness } from "./store-harness.ts";
 
 test("commands from an earlier visit to the same agent cannot replace a later visit", async () => {
   for (const fails of [false, true]) {
     const { api, store } = harness();
     await store.load();
-    const old = deferred<Awaited<ReturnType<DuangApi["listCommands"]>>>();
+    const old = deferred<Awaited<ReturnType<KageApi["listCommands"]>>>();
     api.listCommands = () => old.promise;
     const first = store.loadCommands();
     await store.selectAgent("b");
@@ -27,7 +27,7 @@ test("leaving an agent invalidates its model read even without another read", as
   for (const fails of [false, true]) {
     const { api, store } = harness();
     await store.load();
-    const old = deferred<Awaited<ReturnType<DuangApi["listModels"]>>>();
+    const old = deferred<Awaited<ReturnType<KageApi["listModels"]>>>();
     api.listModels = () => old.promise;
     const first = store.loadModels();
     await store.selectAgent("b");
@@ -43,7 +43,7 @@ test("leaving an agent invalidates its model read even without another read", as
 
 test("a disconnected provider's unfinished usage read cannot restore its plan", async () => {
   const { api, store } = harness();
-  const old = deferred<Awaited<ReturnType<DuangApi["providerUsage"]>>>();
+  const old = deferred<Awaited<ReturnType<KageApi["providerUsage"]>>>();
   api.providerUsage = () => old.promise;
   const first = store.loadUsage("anthropic");
   await store.disconnect("anthropic");
@@ -55,7 +55,7 @@ test("a disconnected provider's unfinished usage read cannot restore its plan", 
 
 test("replacing a login invalidates its old plan and later reads win per provider", async () => {
   const { api, store } = harness();
-  const old = deferred<Awaited<ReturnType<DuangApi["providerUsage"]>>>();
+  const old = deferred<Awaited<ReturnType<KageApi["providerUsage"]>>>();
   api.providerUsage = () => old.promise;
   const first = store.loadUsage("anthropic");
   const provider = { id: "anthropic", name: "Anthropic", ways: [{ method: "oauth" as const, label: "Subscription", subscription: true }] };
@@ -72,7 +72,7 @@ test("replacing a login invalidates its old plan and later reads win per provide
 test("an older settings opening cannot replace a newer read or choice", async () => {
   for (const choose of [false, true]) {
     const { api, store } = harness();
-    const old = deferred<Awaited<ReturnType<DuangApi["getSettings"]>>>();
+    const old = deferred<Awaited<ReturnType<KageApi["getSettings"]>>>();
     api.getSettings = () => old.promise;
     const first = store.loadSettings();
     if (choose) {

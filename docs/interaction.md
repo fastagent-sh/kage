@@ -11,15 +11,15 @@ The window has a sidebar of agent rows, and a transcript with its own floating h
 When zoom leaves too little layout width, the roster opens from **Agents** and the header and composer
 take their own rows. Their controls and the scrolling transcript remain available with a long draft.
 There is no separate agent rail. Each agent row shows its name, two lines quoting the newest output of the conversation a click on it would show, that output's time, and a count of
-outcomes nobody has looked at yet. The quote streams while duang holds that conversation (on
+outcomes nobody has looked at yet. The quote streams while kage holds that conversation (on
 screen, or running in the background); otherwise it is read once from the conversation's history
-and again when the session list says it moved on, so a run driven from outside duang appears when
+and again when the session list says it moved on, so a run driven from outside kage appears when
 the list is next read. While one of its conversations runs the row says `working` in place of the
 time, and its avatar's face shows what kind of work it is (docs/ui.md §3); a setup problem or an
 unreadable list or history replaces the quote. Reading every row's list
 at launch opens each agent's instance. A failed list read is shown on
 that agent's row, not as an empty list. An agent's name can be changed from its row's context menu
-or by double-clicking it; this renames duang's registry entry, never the directory. Selecting a row
+or by double-clicking it; this renames kage's registry entry, never the directory. Selecting a row
 alone leaves the compact roster open so the second click can still reach it. The window opens
 at a size that fits the sidebar and the reading column, and reopens where it was left; a window whose
 display is gone comes back on an attached one.
@@ -31,7 +31,7 @@ Escape (without stopping a run), and closes when a conversation is chosen or sta
 drafted work stays attached to its originating agent and conversation when navigating.
 
 Creating an agent asks for its name and any folders on this computer it should work on, and creates the agent in `~/Agents/<slug>/` (FastAgent's starter files, `context.json` / `context.local.json`, and a git repository). A refused declaration (duplicate folder name, nesting) is shown in FastAgent's words and creates nothing. An agent whose
-directory is no longer there (moved, deleted, a drive not mounted) says so, with Retry and Remove from duang:
+directory is no longer there (moved, deleted, a drive not mounted) says so, with Retry and Remove from kage:
 its row says `folder not found`. A folder that cannot be looked at (no
 permission, macOS privacy controls) is not missing: it is a broken agent, in the system's own words.
 An agent whose config does not load (FastAgent names the
@@ -41,9 +41,9 @@ never written over an earlier copy), a new `export default {};` takes its place,
 for a model. Main replaces only the config FastAgent said failed, inside the agent's folder; the window does
 not name the file. Any other failure offers Retry and Reveal in Finder. A
 broken agent shows its original failure with a way to retry, reveal or remove it; any agent's row menu
-has Reveal in Finder, and the header shows the folders the agent works on (`works on app · handbook`, or its own folder with `Add folder…` when none are attached), a click on which reveals that folder. The header's Agent details button opens a right-hand inspector column when it fits, otherwise a native popover that does not squeeze the conversation. Both show the agent's own folder in `~/Agents/`, the folders it works on (with Add folder and per-folder Remove, which writes through FastAgent's `addContent` / `removeContent` and reopens the instance while no conversation is running), and the skills and tools the runtime loaded. Removal moves the agent's directory in `~/Agents/` and duang's conversations with the agent (its instance) to the Trash, after asking, and leaves the folders it works on untouched. Removing an agent, changing its folders, or replacing its config
+has Reveal in Finder, and the header shows the folders the agent works on (`works on app · handbook`, or its own folder with `Add folder…` when none are attached), a click on which reveals that folder. The header's Agent details button opens a right-hand inspector column when it fits, otherwise a native popover that does not squeeze the conversation. Both show the agent's own folder in `~/Agents/`, the folders it works on (with Add folder and per-folder Remove, which writes through FastAgent's `addContent` / `removeContent` and reopens the instance while no conversation is running), and the skills and tools the runtime loaded. Removal moves the agent's directory in `~/Agents/` and kage's conversations with the agent (its instance) to the Trash, after asking, and leaves the folders it works on untouched. Removing an agent, changing its folders, or replacing its config
 is refused while one of its conversations is at work, including a send still being recorded; changing its model is not, since nothing is rebuilt.
-A default model duang keeps for an agent that this computer's providers no longer offer (its provider was
+A default model kage keeps for an agent that this computer's providers no longer offer (its provider was
 disconnected, or its config no longer declares the model) does not stop the agent opening: the chip names it, the picker
 opens with `<model> is no longer available` at its top, and a send on it is refused before anything is recorded; the model chosen there becomes
 the default and, as any choice in the picker does, the open conversation's model, which the notice says. Other conversations keep the
@@ -55,7 +55,7 @@ the composer says "pick a model to start"; the model chosen there runs that conv
 choice, the picker stays closed until another conversation is opened or the chip is pressed. A model change leaves the open conversation as it is: the transcript stays (the same rows, the same scroll position)
 and only the chip and the effort track are read again. While it is made, the composer says "changing the model…", not that a conversation is opening.
 The picker lists the models the open agent can run, as FastAgent reports them: pi's built-in providers and the ones the
-agent's own config declares, each kept to providers with a credential here, in duang's credential file or in an
+agent's own config declares, each kept to providers with a credential here, in kage's credential file or in an
 environment variable. Switching agents with the picker open reads the new agent's list. It
 lists each model by the name it declares (its id when it declares none) with its context window
 (`GPT-5.5  272K`). pi's catalog lists some models twice, the alias that follows the newest snapshot as
@@ -64,7 +64,7 @@ stays listed, named with its date). "(latest)" is dropped from any name that sta
 without it, and kept where it is what tells two rows apart. It shows the full `provider/id` on hover, searches both the name and the `provider/id`, groups
 the models under their provider with the selected one first, and ends with the conversation's effort: a
 track of the levels FastAgent reports the model supports (`info().models[].thinkingLevels`, lowest first). A model that does not reason
-has one level and the picker says it has no effort setting. duang refuses a level the conversation's model lacks, because FastAgent would
+has one level and the picker says it has no effort setting. kage refuses a level the conversation's model lacks, because FastAgent would
 clamp it when it calls the provider and the level shown would not be the level used. Moving a conversation to a model that lacks the level it had sends its effort back to the agent's for the same reason. A new conversation exists in FastAgent from the moment it is started, so effort and
 model can be set before sending; it is listed as *New conversation* until its first message. A conversation with no model yet
 has no track, so the picker says effort can be set once a model is chosen. A conversation never given a level follows the agent's
@@ -77,7 +77,7 @@ returns to the picker after connecting. It says no model is available rather tha
 connected. Configuration is not a provider probe. FastAgent refreshes its model lists from pi.dev when
 an agent is opened (at most every four hours, over the same proxy route as a model call) and keeps them in the
 instance's state; a model released since is listed after the next open, and with pi.dev unreachable the lists last kept are used.
-duang has no refresh control.
+kage has no refresh control.
 The model on a historical conversation can differ from the agent's default.
 
 Settings open from the App menu's **Settings…** (`⌘,`) or the Settings row at the foot of the
@@ -85,20 +85,20 @@ sidebar, in place of the conversation; the sidebar stays, and choosing a convers
 close control or Escape returns to it. Opening it again while it shows keeps it open. **Network** has three choices, saved to
 `userData/settings.json` and applied at once to new requests (a running turn keeps its
 connection). *Automatic* resolves the route for each request from the system, so switching a VPN
-client on or off needs no action in duang, when duang was launched without proxy variables. If it
+client on or off needs no action in kage, when kage was launched without proxy variables. If it
 was launched from a terminal with `HTTPS_PROXY` or `ALL_PROXY` set, *Automatic* uses that, names
-it as the source and does not follow system changes until duang is relaunched from the Dock or
+it as the source and does not follow system changes until kage is relaunched from the Dock or
 Finder; *Manual* and *Off* still override it. *Manual* is a type (HTTP, HTTPS or SOCKS5), a
 server and a port; choosing it with nothing saved applies nothing until **Use this proxy**, and each
 field that cannot work says so (`Server is required`, `Port is a number from 1 to 65535`) and
 nothing is saved. The chosen row shows the route model requests take now and checks it with one
 request on opening and after every change: `connected · 320 ms` for any HTTP answer, or
 `unreachable (ECONNREFUSED)` with the full error, naming the route, on hover; a refresh control
-checks again. A route duang cannot take (a PAC answer such as SOCKS4) shows as `unsupported proxy
+checks again. A route kage cannot take (a PAC answer such as SOCKS4) shows as `unsupported proxy
 route` and fails model requests with that reason; if only the route for agent commands is
-unusable, they get no proxy variables and the page says so in red. Neither stops duang from
+unusable, they get no proxy variables and the page says so in red. Neither stops kage from
 starting or sending. Choices are applied one at a time in the order made. A launch proxy variable
-with a user name or password (`http://user:pass@proxy:8080`) cannot be used, because duang cannot
+with a user name or password (`http://user:pass@proxy:8080`) cannot be used, because kage cannot
 authenticate to a proxy yet: *Automatic* then shows `unsupported proxy route` and every request
 fails with that reason rather than the proxy's bare 407; relaunch without them, or choose *Manual*
 or *Off*. Each choice group is one tab stop on its checked row; the arrow keys move the choice.
@@ -106,7 +106,7 @@ or *Off*. Each choice group is one tab stop on its checked row; the arrow keys m
 choosing one redraws every avatar at once. Gaze is the default. An unreadable settings file leaves the
 avatars in the default until it is fixed: main says so when it starts and the page says so when opened.
 A model request through an unreachable proxy fails with whatever its provider SDK reports, often only a
-connection error; duang never falls back to a direct connection, which may be blocked or may
+connection error; kage never falls back to a direct connection, which may be blocked or may
 bypass a route the person chose. A settings file that cannot be read is reported at launch and on
 the page, with Reveal and Retry, and is never shown as or overwritten with the defaults; the
 network follows the system proxy until it is fixed.
@@ -115,7 +115,7 @@ The conversation header's right edge is how full the conversation's context is (
 only that: it is about this conversation and moves as it goes. It is always there: a new conversation
 has no context to report until its first answer, and says `–`. On hover or focus a table adds, for a Claude subscription login of the conversation's own provider, each of
 the plan's windows: its share used, its reset time, and for windows of a day or more the pace against
-the clock (`▼` under, `▲` over), then the context as `45% of 1.0M`. Sign in with ChatGPT has no windows duang can read: the table says
+the clock (`▼` under, `▲` over), then the context as `45% of 1.0M`. Sign in with ChatGPT has no windows kage can read: the table says
 `ChatGPT plan · View usage`, which opens chatgpt.com's usage page in the browser, as does the provider's
 row in Settings. An API key has no plan windows, so the table is the context alone. Opening a conversation, changing its provider and a run starting or ending ask again; main
 answers from a three-minute cache, since Anthropic's route answers 429 when polled. A failed read
@@ -128,17 +128,17 @@ A new conversation is made in FastAgent when it is started (the agent's blank on
 it is selectable at once and listed as *New conversation* until something is said in it. Selection reads FastAgent
 history; the client does not save a second transcript. A conversation's row is quoted from the newest message the person sent in
 it, read when the list is, so it follows the conversation as it goes; one with nothing the person said in view is `Conversation`. FastAgent cannot rename or delete a session,
-and duang does not offer either. The current local view keeps unsent text with its conversation
+and kage does not offer either. The current local view keeps unsent text with its conversation
 across navigation and application restart. Resizing or changing zoom preserves an inspector's unsaved
 form. A panel overlay closes with its close control, an outside click, Escape, or keyboard focus
 leaving it; this does not stop a run or leave Settings. Escape in an active rename or variable edit
 cancels that edit first. Closing an overlay restores focus when it was still inside the panel.
 A failed draft save shows a warning with its original error while editing remains available; the next state publication retries the unsaved value. An invalid stored
-value is preserved in `duang.drafts.unreadable` before new drafts may replace it. If reading or preserving
+value is preserved in `kage.drafts.unreadable` before new drafts may replace it. If reading or preserving
 that value fails, its original key stays untouched until a reload with working storage. Copy unsent text
 before closing or reloading a window that reports a storage problem. A send rejected before admission remains a draft, and a refusal is said each time, even when an
 earlier message got the same one. A run starts only on a model the picker would offer to the agent: a
-conversation whose provider was disconnected, or recorded on a route duang no longer runs, refuses a send,
+conversation whose provider was disconnected, or recorded on a route kage no longer runs, refuses a send,
 and since choosing a model is the way on, the model picker opens by itself on it: a line at its top says
 *anthropic isn't connected* (or that the model is not available with the connection that is), "Choose another
 model to send your message", with **Connect anthropic** when the provider is not connected at all, which
@@ -172,7 +172,7 @@ back, only those after the last answer or tool batch that ended the work, since 
 where a run began. They differ only when a steer carried a run past such an answer: live asks, read back
 does not. Live errs toward asking. Nothing is retried without that click, and a stopped run is not offered again.
 Read back from history, the message is the one the runtime recorded, so a slash command is resent expanded. A conversation that is not running but whose history stops partway through a turn (on the message, on a
-tool's result, or on calls that never ran) was cut with nothing recorded, because duang or the machine
+tool's result, or on calls that never ran) was cut with nothing recorded, because kage or the machine
 stopped mid-run: it says *This run was cut short* and offers Retry the same way. An agent's row
 reads the conversation's state with its history, so a run still going (after a window reload) is not called cut;
 A run whose last tool batch ended it on purpose
@@ -209,7 +209,7 @@ titled by the action; an agent's row only ever says that its list could not be r
 Only a registry that cannot be read shows the unreadable-registry page. A stream that finishes by itself is listened to again
 by itself once, from the last entry the window holds, unless a send in it is still answering (a refused one
 puts its words back in the composer, which reopening would replace); one that ends again within 30 seconds,
-one duang ended (the agent was removed) and one that failed say so in the same strip, with Reconnect
+one kage ended (the agent was removed) and one that failed say so in the same strip, with Reconnect
 (*This conversation stopped updating*, or *The live connection to this conversation was lost*), rather than
 silently leaving a run on screen forever; the strip floats, so the transcript does not move for it.
 
@@ -218,7 +218,7 @@ will stop the run; local work does not continue when the app and machine stop. Q
 stop for each running conversation, as Stop does, so its history says it was stopped (`run stopped` when
 reopened) and nothing answers the message at the next launch, then closes the agents, which gives the
 work up to three seconds to end; a tool that cannot be cancelled is cut when the app exits. Quitting
-again while it waits quits at once, and a message sent while it waits is refused (`duang is quitting: the message was
+again while it waits quits at once, and a message sent while it waits is refused (`kage is quitting: the message was
 not sent`) and stays in the draft. A window whose renderer crashes or is killed is
 reloaded and reopens what it showed; runs in progress keep going in main. After a third crash within a
 minute (counted for the app, not per window) it is not reloaded onto the same conversation in a loop: a
@@ -227,7 +227,7 @@ one it was showing still in the list (or **Close Window**); that choice holds ac
 another conversation is opened. A conversation that cannot be drawn shows the
 error in its place, with Try again, which reads it again from history, while the sidebar and composer stay usable;
 an error anywhere else in the window shows it with Reload and Open on a New Conversation. Local channels
-and schedules are not started by duang. The current client has no online contacts or share UI.
+and schedules are not started by kage. The current client has no online contacts or share UI.
 
 ## Planned: daily local use and inspecting the loaded Agent (stage 1)
 
@@ -239,9 +239,9 @@ branching are conditional on demonstrated long-conversation needs, not a checkli
 
 ## Connecting model providers (stage 1, first version shipped)
 
-The first version ([#84](https://github.com/fastagent-sh/duang/issues/84)) covers subscription
+The first version ([#84](https://github.com/fastagent-sh/kage/issues/84)) covers subscription
 sign-in and API keys for pi's built-in providers, disconnecting, and the picker's way in. Custom endpoints come after it
-([design](design.md)). Reasoning effort ([#83](https://github.com/fastagent-sh/duang/issues/83)) is set in
+([design](design.md)). Reasoning effort ([#83](https://github.com/fastagent-sh/kage/issues/83)) is set in
 the model picker, per conversation.
 
 **Model picker.** The list is already the open agent's, custom endpoints included (#59). With
@@ -282,7 +282,7 @@ disconnecting refuses to write over it (FastAgent's store will not overwrite a c
 row there shows its plan windows once they are read and nothing when they are not. If Settings was
 opened from the picker, the picker comes back.
 
-**Disconnecting** removes the provider's credential from duang's file after a confirmation, asked
+**Disconnecting** removes the provider's credential from kage's file after a confirmation, asked
 in the row itself. It
 never reaches the CLI's or pi's stores. If an environment variable also supplies the provider, the
 confirmation names it and says requests continue with it; otherwise it says conversations using the
@@ -326,7 +326,7 @@ schedule's fires ended, from the host's fire history, with what each run said in
 and laptop are closed. Show
 failed, skipped or interrupted runs as such; if the host cannot report the outcome, say it is
 unknown. Do not invent a "next run" or "done" from a declaration alone. A channel is an optional
-additional entrance: a private message in duang does not post into a Slack/Feishu/Telegram group.
+additional entrance: a private message in kage does not post into a Slack/Feishu/Telegram group.
 An online agent belongs to its host when the client window closes.
 
 ## Failures everywhere

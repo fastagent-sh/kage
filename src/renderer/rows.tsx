@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { GearSix, Plus, WarningCircle, X } from "@phosphor-icons/react";
-import type { AgentRow, DuangApi } from "../preload/index.ts";
+import type { AgentRow, KageApi } from "../preload/index.ts";
 import { stamp } from "./time.ts";
 import type { Row } from "./sessions.ts";
 import { Avatar } from "./avatar.tsx";
@@ -111,7 +111,7 @@ export function Sidebar({
   onSettings: () => void;
   onRename: (id: string, name: string) => void;
   onReveal: (id: string) => void;
-  onMenu: DuangApi["menu"];
+  onMenu: KageApi["menu"];
 }) {
   // One tab stop for the roster (§11, WAI-ARIA APG): Tab reaches it, arrows move inside it.
   const [reached, setReached] = useState<string>();
@@ -146,7 +146,7 @@ export function Sidebar({
       {/* The wordmark is centred in the column, not pushed along by the window controls overhanging it. */}
       <div className="relative h-12 shrink-0 flex items-center px-2 drag">
         <span className="sidebar-wordmark absolute left-1/2 -translate-x-1/2 font-medium tracking-[-0.01em]">
-          duang<span className="text-accent">·</span>
+          kage<span className="text-accent">·</span>
         </span>
         <span className="flex-1" />
         <Button

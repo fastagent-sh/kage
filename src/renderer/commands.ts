@@ -1,4 +1,4 @@
-// FastAgent expands the command (SPEC §5.1), not duang, so a remote agent works the same way.
+// FastAgent expands the command (SPEC §5.1), not kage, so a remote agent works the same way.
 import type { AgentCommand } from "../preload/index.ts";
 
 // Past the first space the line is arguments, the agent's to read.

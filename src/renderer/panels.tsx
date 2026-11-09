@@ -28,7 +28,7 @@ export function UnreadableRegistry({ reason, onReveal, onRetry }: { reason?: str
     <Problem
       layout="page"
       tone="error"
-      title="duang cannot read its list of agents"
+      title="kage cannot read its list of agents"
       advice="Your agents and their conversations are untouched, and the file is left exactly as it is. Fix or move it, then retry."
       reason={reason}
       actions={
@@ -67,8 +67,8 @@ export function BrokenAgent({
       title="This agent could not be loaded"
       advice={
         inConfig
-          ? "Its fastagent.config.ts, or a file it imports, does not load. Fix it and retry, or start a fresh config and choose a model again: duang keeps a copy of the old one beside it, as fastagent.config.ts.broken-<time>."
-          : "Something in its definition stops it from starting. Fix it in the agent's folder, then retry; duang has changed nothing."
+          ? "Its fastagent.config.ts, or a file it imports, does not load. Fix it and retry, or start a fresh config and choose a model again: kage keeps a copy of the old one beside it, as fastagent.config.ts.broken-<time>."
+          : "Something in its definition stops it from starting. Fix it in the agent's folder, then retry; kage has changed nothing."
       }
       reason={message}
       actions={
@@ -85,7 +85,7 @@ export function BrokenAgent({
             Reveal in Finder
           </Button>
           <Button kind="danger" size={32} icon={<X size={14} />} onClick={onRemove}>
-            Remove from duang
+            Remove from kage
           </Button>
         </>
       }
@@ -110,8 +110,8 @@ export function MissingFolder({
       title="This agent's folder is not there"
       advice={
         <>
-          duang last found it at <span className="font-mono text-[12.5px]">{home(dir)}</span>. If it was on an external
-          drive, connect the drive and retry; otherwise remove the agent from duang.
+          kage last found it at <span className="font-mono text-[12.5px]">{home(dir)}</span>. If it was on an external
+          drive, connect the drive and retry; otherwise remove the agent from kage.
         </>
       }
       actions={
@@ -120,7 +120,7 @@ export function MissingFolder({
             Retry
           </Button>
           <Button kind="danger" size={32} icon={<X size={14} />} onClick={onRemove}>
-            Remove from duang
+            Remove from kage
           </Button>
         </>
       }

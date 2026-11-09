@@ -1,9 +1,9 @@
-import type { DuangApi, ProviderUsage } from "../preload/index.ts";
+import type { KageApi, ProviderUsage } from "../preload/index.ts";
 import { message } from "./message.ts";
 
 export type PlanUsageView = Record<string, { data?: ProviderUsage; error?: string }>;
 
-export function createProviderUsage(api: DuangApi, publish: (patch: { usage: PlanUsageView }) => void) {
+export function createProviderUsage(api: KageApi, publish: (patch: { usage: PlanUsageView }) => void) {
   let usage: PlanUsageView = {};
   const requests = new Map<string, object>();
   return {

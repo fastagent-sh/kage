@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions, ideas & help
-    url: https://github.com/fastagent-sh/duang/discussions
+    url: https://github.com/fastagent-sh/kage/discussions
     about: Ask a question or discuss an idea in Discussions — issues are for bugs and concrete feature requests.
   - name: Report a security vulnerability
-    url: https://github.com/fastagent-sh/duang/security/advisories/new
+    url: https://github.com/fastagent-sh/kage/security/advisories/new
     about: Report it privately, never in a public issue (see SECURITY.md).
   - name: Product design and architecture
-    url: https://github.com/fastagent-sh/duang/tree/main/docs
+    url: https://github.com/fastagent-sh/kage/tree/main/docs
     about: Check product scope and interaction requirements before proposing a change.

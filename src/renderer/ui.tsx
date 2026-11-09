@@ -138,7 +138,7 @@ export class Boundary extends Component<
     return props.reset === state.reset ? null : { error: undefined, reset: props.reset };
   }
   componentDidCatch(error: unknown, info: ErrorInfo) {
-    console.error("duang: drawing failed", error, info.componentStack);
+    console.error("kage: drawing failed", error, info.componentStack);
   }
   render() {
     const { error } = this.state;

@@ -178,7 +178,7 @@ test("the picker rereads models on every open, and a stale answer never lands", 
   assert.deepEqual(store.getSnapshot().models, described(["provider/model"]));
   assert.deepEqual(askedFor, [store.getSnapshot().agentId], "the list is the open agent's own ");
   await store.loadModels();
-  assert.equal(listed, 2, "a login while duang runs must show up without a restart");
+  assert.equal(listed, 2, "a login while kage runs must show up without a restart");
 
   api.listModels = async () => {
     throw new Error("corrupt auth file");

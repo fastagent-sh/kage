@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-duang is pre-release. There are no release lines yet: security fixes land on `main`, and the app is
+kage is pre-release. There are no release lines yet: security fixes land on `main`, and the app is
 built from it (`npm run package`). Build from the latest `main` to receive fixes.
 
 ## Reporting a vulnerability
@@ -10,7 +10,7 @@ built from it (`npm run package`). Build from the latest `main` to receive fixes
 Do not open a public issue for a security report.
 
 Use GitHub's private vulnerability reporting: open the repository's **Security → Report a
-vulnerability** form (`https://github.com/fastagent-sh/duang/security/advisories/new`).
+vulnerability** form (`https://github.com/fastagent-sh/kage/security/advisories/new`).
 
 Please include:
 
@@ -40,14 +40,14 @@ Out of scope:
 
 - what an agent is authorized to do: agents execute the tools they are given and may modify the
   directories they work on. Stopping a run is not rollback, and author-controlled tools are not
-  sandboxed by this client. Report a bypass of duang's trust boundaries, not a declared capability;
+  sandboxed by this client. Report a bypass of kage's trust boundaries, not a declared capability;
 - third-party model providers and their availability;
 - issues that require a compromised local machine or leaked secrets you control.
 
 ## Handling secrets
 
-- duang keeps provider credentials in its own `auth.json` in its user data directory
-  (`~/Library/Application Support/duang/` on macOS) and never in an agent's directory.
+- kage keeps provider credentials in its own `auth.json` in its user data directory
+  (`~/Library/Application Support/kage/` on macOS) and never in an agent's directory.
 - No CI job reads a developer's auth file or uses real model credentials; tests use isolated
   fixtures and fake model endpoints.
 - If a credential is exposed, revoke or rotate it at the provider rather than merely deleting it

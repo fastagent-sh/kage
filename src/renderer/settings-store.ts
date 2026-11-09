@@ -1,7 +1,7 @@
 // Part of the store's one `View`; kept apart because none of it touches a conversation.
 import type {
   AvatarStyle,
-  DuangApi,
+  KageApi,
   LoginOutcome,
   LoginStep,
   Network,
@@ -46,7 +46,7 @@ export interface SettingsView {
   signIn?: SignIn;
 }
 export function createSettings(
-  api: DuangApi,
+  api: KageApi,
   view: () => SettingsView,
   publish: (patch: Partial<SettingsView>) => void,
   credentialsChanged: (provider: string) => void,

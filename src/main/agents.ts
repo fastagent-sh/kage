@@ -42,7 +42,7 @@ export async function createAgentWithFolders(name: string, folders: string[]): P
   }
 }
 
-// One instance of the agent per duang, kept apart from the one `fastagent dev` opens in the same folder.
+// One instance of the agent per kage, kept apart from the one `fastagent dev` opens in the same folder.
 const instanceDir = (id: string) => join(app.getPath("userData"), "instances", id);
 
 /** Why an agent is not ready: its folder is gone, or its definition does not load. */
@@ -169,7 +169,7 @@ export async function openAgentResult(agentId: string): Promise<OpenResult> {
     const [info, sessions] = await Promise.all([agent.info(), summaries(agent)]);
     const inspection = await inspectAgentDir(row.dir, info.description);
     const models = choicesOf(info);
-    // duang's own default for the agent, over the config's; one this computer's providers no longer offer cannot start anything.
+    // kage's own default for the agent, over the config's; one this computer's providers no longer offer cannot start anything.
     const staleDefault = row.model && !models.some(({ spec }) => spec === row.model) ? row.model : undefined;
     const model = row.model ?? (info.defaultModel && specOf(info.defaultModel));
     return {
@@ -347,7 +347,7 @@ export function resetAgentConfig(row: AgentRow): Promise<Result> {
   });
 }
 
-// Removing an agent moves the agent directory duang created to the Trash first, then deletes its registry row and instance; bound folders stay untouched.
+// Removing an agent moves the agent directory kage created to the Trash first, then deletes its registry row and instance; bound folders stay untouched.
 export function removeAgent(
   id: string,
   trash: (dir: string) => Promise<void> = (dir) => rm(dir, { recursive: true, force: true }),

@@ -257,7 +257,7 @@ const cutShort = (fold: Fold, turn: Extract<Item, { kind: "user" }>): Item => ({
   tone: "error",
   text: "run cut short: no answer was recorded",
   title: "This run was cut short",
-  advice: "duang or the computer stopped before an answer was recorded. What it did up to here is kept.",
+  advice: "kage or the computer stopped before an answer was recorded. What it did up to here is kept.",
   at: fold.items.at(-1)!.at,
   resend: { text: turn.text, toolsRan: fold.items.slice(fold.unconcluded).some((item) => item.kind === "tool") },
 });

@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { DuangApi, LoginOutcome, ProviderRow } from "../preload/index.ts";
+import type { KageApi, LoginOutcome, ProviderRow } from "../preload/index.ts";
 import { keyStep } from "./settings-store.ts";
 import { deferred, harness } from "./store-harness.ts";
 
 
 test("settings are read fresh each time, and only the newest change and check land", async () => {
   const { api, store } = harness();
-  type Checked = Awaited<ReturnType<DuangApi["testNetwork"]>>;
-  type Routed = Awaited<ReturnType<DuangApi["setNetwork"]>>;
+  type Checked = Awaited<ReturnType<KageApi["testNetwork"]>>;
+  type Routed = Awaited<ReturnType<KageApi["setNetwork"]>>;
   api.getSettings = async () => {
     throw new Error("settings.json: Unexpected token");
   };

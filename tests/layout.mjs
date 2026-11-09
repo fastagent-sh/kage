@@ -9,7 +9,7 @@ export async function checkPanelLayout(win, { evaluate, until, type }) {
   const initialZoom = win.webContents.getZoomFactor();
   const initialTheme = nativeTheme.themeSource;
   const initialDraft = await evaluate("document.querySelector('textarea[aria-label=Message]').value");
-  const shots = process.env.DUANG_LAYOUT_SHOTS === "1";
+  const shots = process.env.KAGE_LAYOUT_SHOTS === "1";
   const folder = fileURLToPath(new URL("../out/layout-shots/", import.meta.url));
   if (shots) await mkdir(folder, { recursive: true });
   const settle = () => evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
@@ -213,7 +213,7 @@ export async function checkUsagePopoverLayout(win, { evaluate, until }) {
                 return x < p.left || x > p.right || y < p.top || y > p.bottom || panel.contains(document.elementFromPoint(x, y));
               })()`), `${width}-${zoom * 100}-${theme}: transcript controls do not cover the usage table`);
             }
-            if (process.env.DUANG_LAYOUT_SHOTS === "1" && zoom === 2 && mode === "hover") {
+            if (process.env.KAGE_LAYOUT_SHOTS === "1" && zoom === 2 && mode === "hover") {
               await mkdir(folder, { recursive: true });
               await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
               await writeFile(`${folder}${width}-200-${theme}-usage.png`, (await win.webContents.capturePage()).toPNG());

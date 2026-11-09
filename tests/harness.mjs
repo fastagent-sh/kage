@@ -53,18 +53,18 @@ export function withoutCredentials(env) {
 // The root goes only after Electron exited, so Chromium has stopped writing its caches into it.
 export async function isolated(script, { name, timeout, home = true, prepare, after }) {
   if (process.versions.electron) {
-    const root = process.env.DUANG_TEST_ROOT;
+    const root = process.env.KAGE_TEST_ROOT;
     if (!root) throw new Error(`Run with node tests/${name}.mjs so the fixture is isolated`);
     return root;
   }
-  const root = mkdtempSync(join(tmpdir(), `duang-${name}-`));
+  const root = mkdtempSync(join(tmpdir(), `kage-${name}-`));
   try {
     // Before the fixture, so a stale build fails in a second rather than after a launch and a fake run.
     requireFreshBuild();
     await prepare?.(root);
     const child = spawnSync(electron, [fileURLToPath(script)], {
       stdio: "inherit",
-      env: { ...process.env, DUANG_TEST_ROOT: root, ...(home ? { HOME: root } : {}) },
+      env: { ...process.env, KAGE_TEST_ROOT: root, ...(home ? { HOME: root } : {}) },
       timeout,
     });
     process.exitCode = child.status ?? 1;

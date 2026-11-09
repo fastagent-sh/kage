@@ -48,7 +48,7 @@ if (root) {
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   writeMockAgent(dir, server.address().port, { model: { reasoning: true } });
-  // A second agent whose one conversation is already long: made by FastAgent itself, in the instance duang will open.
+  // A second agent whose one conversation is already long: made by FastAgent itself, in the instance kage will open.
   const long = join(root, "long");
   writeMockAgent(long, server.address().port, { model: { reasoning: true } });
   const LONG_TURNS = 40;

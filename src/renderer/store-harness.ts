@@ -1,6 +1,6 @@
 import type { Entry, Message, Session, SessionEvent } from "@fastagent-sh/fastagent";
 import type { Ending } from "../main/follow.ts";
-import type { DuangApi, Models, LoginStep, OpenResult, Result, SessionFrame } from "../preload/index.ts";
+import type { KageApi, Models, LoginStep, OpenResult, Result, SessionFrame } from "../preload/index.ts";
 import { createStore } from "./store.ts";
 
 export function deferred<T>() {
@@ -56,7 +56,7 @@ export function harness() {
   let stepListener!: (step: LoginStep) => void;
   const closed: string[] = [];
   const opens: string[] = [];
-  const api: DuangApi = {
+  const api: KageApi = {
     homeDir: undefined,
     listAgents: async () => [
       { id: "a", name: "A", dir: "/a", colour: 0 },

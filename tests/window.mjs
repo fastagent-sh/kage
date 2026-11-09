@@ -1,4 +1,4 @@
-// Drives duang's real window: the one place that knows how to open it, wait for it, type into it and read it
+// Drives kage's real window: the one place that knows how to open it, wait for it, type into it and read it
 // back. Each script keeps its own fixtures, its own waits (they differ on purpose) and what it asserts.
 import electron from "electron";
 

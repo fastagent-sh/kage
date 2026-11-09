@@ -1,4 +1,4 @@
-// duang names a model `provider/modelId` everywhere outside FastAgent's API, which names it by the pair.
+// kage names a model `provider/modelId` everywhere outside FastAgent's API, which names it by the pair.
 export interface ModelRef {
   provider: string;
   modelId: string;

@@ -6,7 +6,7 @@ export type Frame = { agentId: string; session: string; subscription: string } &
   | { event: SessionEvent; ended?: never }
   | { event?: never; ended: { reason: string; why: Ending } }
 );
-// let_go: the stream finished by itself (the runtime closed it: listen again). ended: duang ended it. failed: it broke.
+// let_go: the stream finished by itself (the runtime closed it: listen again). ended: kage ended it. failed: it broke.
 export type Ending = "let_go" | "ended" | "failed";
 export interface Listener {
   id: number;

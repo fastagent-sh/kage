@@ -66,7 +66,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          dmg="duang-${TAG#v}-arm64.dmg"
+          dmg="kage-${TAG#v}-arm64.dmg"
           cd dist
           shasum -a 256 "$dmg" > "$dmg.sha256"
           gh release create "$TAG" --draft --verify-tag --title "$TAG" --generate-notes "$dmg" "$dmg.sha256"

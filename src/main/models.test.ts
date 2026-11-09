@@ -24,10 +24,10 @@ test("a model's levels are the ones FastAgent reports for it, and a retired rout
   assert.deepEqual(choices[1]!.thinkingLevels, ["off"], "a model that does not reason has no choice to make");
 });
 
-test("a conversation's effort is judged against the model it will run on: its own, else duang's default, else the config's", async () => {
+test("a conversation's effort is judged against the model it will run on: its own, else kage's default, else the config's", async () => {
   const own = { model: { provider: "openai", modelId: "gpt-4o-mini" } };
   assert.equal((await effortOf(agent(own), "s", "anthropic/claude-sonnet-4-5"))?.spec, "openai/gpt-4o-mini", "its own model wins over the default");
-  assert.equal((await effortOf(agent({}), "s", "openai/gpt-4o-mini"))?.spec, "openai/gpt-4o-mini", "duang's default for the agent");
+  assert.equal((await effortOf(agent({}), "s", "openai/gpt-4o-mini"))?.spec, "openai/gpt-4o-mini", "kage's default for the agent");
   assert.equal((await effortOf(agent({}), "s"))?.spec, "anthropic/claude-sonnet-4-5", "the config's");
   assert.equal(await effortOf(agent({}), "s", "local/gone"), undefined, "a model the agent does not offer has no levels to judge by");
 });
