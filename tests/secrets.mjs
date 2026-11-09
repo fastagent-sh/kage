@@ -1,5 +1,6 @@
 // A program that declares a variable it needs: the agent does not open until kage holds a value, the value is set
-// in the window, and it reaches the agent's commands (and nothing else of kage's environment does).
+// in the window, and it reaches the agent's commands (and nothing else of kage's environment does). Then the
+// network route changes under the open agent, and its next command sees the route as it is.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -26,14 +27,14 @@ if (root) {
   // Present in kage's environment and declared by nobody: it must not reach a command.
   process.env.KAGE_UNDECLARED = "leaked";
 
-  let calls = 0;
+  // Each turn is a bash call, then an answer.
+  const script = [];
   const server = createServer((req, res) => {
     req.resume();
     req.on("end", () => {
-      calls++;
+      const command = script.shift();
       res.writeHead(200, { "content-type": "text/event-stream" });
-      if (calls === 1) {
-        const command = `printenv ${NAME} > got-token.txt; printenv KAGE_UNDECLARED > got-undeclared.txt; true`;
+      if (command) {
         res.write(chunk({ role: "assistant", tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: "bash", arguments: JSON.stringify({ command }) } }] }));
         res.write(chunk({}, "tool_calls"));
       } else {
@@ -68,12 +69,29 @@ if (root) {
     for (const file of filesUnder(project))
       assert.ok(!readFileSync(join(file.parentPath, file.name)).includes(VALUE), `the value is not written into the agent's folder (${file.name})`);
 
-    await send("check the environment");
-    await until("document.querySelector('[aria-label=\"Transcript\"]')?.innerText.includes('Checked.')", "the run ends");
+    const checked = async (command) => {
+      const before = await evaluate("(document.querySelector('[aria-label=\"Transcript\"]')?.innerText ?? '').split('Checked.').length");
+      script.push(command, undefined);
+      await send("check the environment");
+      await until(`(document.querySelector('[aria-label="Transcript"]')?.innerText ?? '').split('Checked.').length > ${before} && !document.querySelector('button[aria-label="Stop the run"]')`, "the run ends");
+    };
+    await checked(`printenv ${NAME} > got-token.txt; printenv KAGE_UNDECLARED > got-undeclared.txt; true`);
     assert.equal(readFileSync(join(project, "got-token.txt"), "utf8").trim(), VALUE, "the declared value reaches the command");
     assert.equal(readFileSync(join(project, "got-undeclared.txt"), "utf8"), "", "a variable nobody declared does not");
     assert.ok(!existsSync(join(project, ".state", NAME)));
-    console.log("Secrets passed: a required value blocks the open, is set in the window, stays out of the folder and reaches only the commands.");
+
+    // The agent stays open while the route changes: no reopen, and the next command still sees the new route.
+    const proxyOf = async (name) => {
+      await checked(`printenv HTTPS_PROXY > ${name}.txt; true`);
+      return readFileSync(join(project, `${name}.txt`), "utf8").trim();
+    };
+    await evaluate(`window.kage.setNetwork({ mode: "off" })`);
+    assert.equal(await proxyOf("proxy-before"), "", "no proxy to begin with");
+    await evaluate(`window.kage.setNetwork({ mode: "manual", url: "http://127.0.0.1:7777" })`);
+    assert.equal(await proxyOf("proxy-manual"), "http://127.0.0.1:7777", "a proxy set while the agent is open reaches its next command");
+    await evaluate(`window.kage.setNetwork({ mode: "off" })`);
+    assert.equal(await proxyOf("proxy-off"), "", "and turning it off takes it away again");
+    console.log("Secrets passed: a required value blocks the open, is set in the window, stays out of the folder and reaches only the commands; a route that changes under an open agent reaches its next command.");
     app.quit();
   }
   const timeout = setTimeout(() => {

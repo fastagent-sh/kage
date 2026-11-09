@@ -44,8 +44,7 @@ needs a source project), so kage reads and writes the `content` entries itself a
 them. Provider variables of kage's environment and the values kage holds in `userData/secrets.json`
 are the `secrets` input; only the names the program declares reach the agent's commands, and the
 program declares none yet, so the window shows no secrets section until it does. `env` is the base
-environment (`baseEnv(process.env)`) taken when the agent opens, which is why a proxy that changes
-later reaches an agent's commands only after the agent is opened again. A message is sent with `messages.send`, which resolves once FastAgent has recorded it; a
+environment (`baseEnv(process.env)`) taken when the agent opens, plus `BASH_ENV` (below). A message is sent with `messages.send`, which resolves once FastAgent has recorded it; a
 busy conversation takes it as a steer (`whenBusy: "steer"`). Its end arrives as `done` on the conversation's
 event stream, and Stop is `sessions.cancel`. The locked FastAgent version's contract is what a remote client
 builds on; bump the version with the feature that needs a newer one.
@@ -116,14 +115,16 @@ is used, and proxy authentication is unsupported until a real user needs it: Chr
 every request with that explanation instead of the proxy's bare 407.
 
 Agent commands cannot use the dispatcher: they run as child processes whose environment FastAgent
-assembles when the agent opens from the `env` kage passes, so the only lever is main's own
-`process.env`, shared by every agent in the process (matching the one app-wide Network setting). When the route is not direct and
+assembles once, when the agent opens, from the `env` kage passes. Reopening an agent for a new route would
+cut the window's live view of its conversations, so kage passes `BASH_ENV` pointing at
+`userData/command-env.sh`, which bash runs before every command, and rewrites that file when the route
+changes. The route is one app-wide setting, shared by every agent in the process. When the route is not direct and
 no proxy variables came from the launch environment, main sets `HTTPS_PROXY`, `HTTP_PROXY` and
 `ALL_PROXY` to the proxy `resolveProxy` returns for `https://github.com`, the host agent commands
 most often need, and `NO_PROXY` to `localhost,127.0.0.1,::1`; *Manual* sets the manual URL and
-*Off* removes the variables kage set. This is re-applied before every send, and an agent opened by the
-send takes it into its `env`; an agent that is already open keeps the environment it opened with, so a
-route that changed since needs kage restarted. `resolveProxy` answers one URL, not a bypass list, so per-host PAC rules and
+*Off* removes the variables kage set. This is re-applied before every send, into `process.env` (the `env` of an
+agent opened from then on) and into `command-env.sh` (every command of an agent already open), so a run's
+commands see the route as it is when each starts; a running command keeps its environment. FastAgent runs commands with `/bin/bash -c`, which reads `BASH_ENV`; a process started any other way, an MCP server for one, keeps the route the agent opened with. `resolveProxy` answers one URL, not a bypass list, so per-host PAC rules and
 the system bypass list beyond loopback do not reach child processes: a private-range or `.local`
 host reached by a command goes through the proxy. Launch-environment variables are left untouched.
 

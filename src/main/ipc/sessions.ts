@@ -88,7 +88,7 @@ export function registerSessions(): void {
     if (typeof text !== "string" || !text.trim()) throw new Error("Message must not be empty");
     // Held before the first await: a Stop sent right after this message must find it.
     return inFlight.hold(id, session, async (stopped) => {
-      // An agent opened by this send takes the commands' route as it is now; an open one keeps the route it opened with.
+      // The agent's commands start with the route as it is now.
       await syncCommandProxy();
       const row = await agentRow(id);
       return withAgentRun(row, (agent) => send(agent, session, text, stopped, (model) => offered(agent, model), row.model));

@@ -1,8 +1,10 @@
 // Node's fetch ignores the system proxy and a startup snapshot misses VPNs and PAC changes, so every request
 // asks Chromium (route.ts); the Network setting only configures Chromium.
-import { session } from "electron";
+import { app, session } from "electron";
+import { join } from "node:path";
 import { setGlobalDispatcher } from "undici";
-import { commandProxyEnv, hasCredentials, RoutedDispatcher, tryRoute, unreachable } from "./route.ts";
+import { writeTextAtomic } from "./json-file.ts";
+import { commandEnvScript, commandProxyEnv, hasCredentials, RoutedDispatcher, tryRoute, unreachable } from "./route.ts";
 import type { Network } from "./settings.ts";
 
 const MODEL_HOST = "https://api.anthropic.com";
@@ -75,19 +77,32 @@ export async function describeRoute(): Promise<Route> {
   };
 }
 
-// An agent's commands get main's environment as it was when the agent opened, so this runs before a send can open it.
+// FastAgent fixes an agent's environment when the agent opens, and reopening one mid-conversation would cut the
+// window's live view of it. Bash runs this file (BASH_ENV) before every command, so the route in force when a
+// command starts reaches it; processes started by other means keep the environment the agent opened with.
+export const commandEnvFile = join(app.getPath("userData"), "command-env.sh");
+let writtenScript: string | undefined;
+async function writeCommandEnv(script: string): Promise<void> {
+  if (script === writtenScript) return;
+  await writeTextAtomic(commandEnvFile, script);
+  writtenScript = script;
+}
+
+// Runs before every send, and at launch, so the file exists before an agent opens.
 export async function syncCommandProxy(): Promise<void> {
-  if (launchUrl) return;
+  if (launchUrl) return writeCommandEnv("");
   const route = tryRoute(await session.defaultSession.resolveProxy(COMMAND_HOST));
   // A route the variables cannot express costs the commands their proxy (never a stale one), not the send.
   commandError = "error" in route ? `Agent commands get no proxy: ${route.error}` : undefined;
   if (commandError) console.error(`[kage] ${commandError}`);
   const proxy = "error" in route ? undefined : route.proxy;
-  for (const [name, value] of Object.entries(commandProxyEnv(proxy))) {
+  const env = commandProxyEnv(proxy);
+  for (const [name, value] of Object.entries(env)) {
     if (presentAtLaunch.has(name)) continue;
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;
   }
+  await writeCommandEnv(commandEnvScript(env, presentAtLaunch));
 }
 
 export type ConnectionCheck = { status: number; ms: number; route: Route } | { error: string; code?: string };

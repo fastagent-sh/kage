@@ -90,6 +90,16 @@ export function commandProxyEnv(proxy: string | undefined): Record<string, strin
   return env;
 }
 
+const shellQuoted = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
+
+/** What bash runs before a command to give it `env`: a value is exported, an absent one unset. Names in `keep` are left as they are. */
+export function commandEnvScript(env: Record<string, string | undefined>, keep: ReadonlySet<string>): string {
+  return Object.entries(env)
+    .filter(([name]) => !keep.has(name))
+    .map(([name, value]) => (value === undefined ? `unset ${name}\n` : `export ${name}=${shellQuoted(value)}\n`))
+    .join("");
+}
+
 export function unreachable(host: string, proxy: string | undefined, error: unknown): { error: string; code?: string } {
   const cause = (error as Error & { cause?: Error & { code?: string } }).cause;
   const why = cause ? `${cause.code ? `${cause.code}: ` : ""}${cause.message}` : (error as Error).message;
