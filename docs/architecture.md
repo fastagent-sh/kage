@@ -12,7 +12,7 @@ Electron renderer ── typed preload ── Electron main ── local FastAge
                                          │
                                          └── planned HTTP/SSE ── protected endpoint
                                                                   │
-                                         owned self-host or optional duang cloud FastAgent
+                                         owned self-host or optional kage cloud FastAgent
                                          (its own sessions, schedules and channel adapters)
 ```
 
@@ -27,7 +27,7 @@ it need not proxy every conversation or own a transcript.
 **Main owns every `Agent`.** A local agent is opened with `openAgent(dir, { credentials, stateDir })`
 from `@fastagent-sh/fastagent` and spoken to through the Agent API v2 (`sessions`, `messages`, `info`);
 a future remote connection uses `connectAgent` from `@fastagent-sh/fastagent/client`, which is the same
-interface. duang's own instance of an agent keeps its state under `userData/instances/<agent id>`, so it
+interface. kage's own instance of an agent keeps its state under `userData/instances/<agent id>`, so it
 runs beside the instance `fastagent dev` opens in the same directory and shares nothing with it but
 the definition. A message is sent with `messages.send`, which resolves once FastAgent has recorded it; a
 busy conversation takes it as a steer (`whenBusy: "steer"`). Its end arrives as `done` on the conversation's
@@ -51,19 +51,19 @@ no usage route that accepts its token (chatgpt.com answers 401), so main answers
 chatgpt.com's usage page itself when asked: the renderer names a provider, never a URL to open. The renderer
 receives window percentages and reset times only.
 
-**duang's own credential file.** Every opened agent and the sign-in receive the same
+**kage's own credential file.** Every opened agent and the sign-in receive the same
 `CredentialStore`, `credentialFile(userData/auth.json)`, and plan usage opens `credentialFile` on the same path, whose lock is a file's, so a refresh anywhere takes the same one; it is never chosen from an agent default, a cached
 provider probe or `FASTAGENT_AUTH_PATH`. Only that file is read: no fallback to the CLI's or pi's
 store, because one OAuth grant in two files is invalidated by whichever refreshes first. Provider
 environment variables still apply when the file has no credential for a provider. FastAgent
 resolves credentials for the actual session model and owns OAuth refresh/writeback. The renderer
 receives model specs, never the file's path or credential contents. The file is plain JSON
-(`0600`); OS-backed storage is a `CredentialStore` of duang's own over the keychain, which 0.26 allows. Tests follow the same
+(`0600`); OS-backed storage is a `CredentialStore` of kage's own over the keychain, which 0.26 allows. Tests follow the same
 rule, without an override: the smoke writes synthetic credentials into its isolated userData's
 `auth.json`, and decoys into the CLI's and pi's stores and a `FASTAGENT_AUTH_PATH` file, which must
 stay unread. The opt-in live check keeps its isolated userData but makes that `auth.json` a symlink
-to the developer's real duang file, never a copy, so a real refresh writes back to the one grant;
-it runs with duang closed, because each process locks the path it was given. See the
+to the developer's real kage file, never a copy, so a real refresh writes back to the one grant;
+it runs with kage closed, because each process locks the path it was given. See the
 [credential policy](../README.md#how-it-works).
 
 **Sign-in runs in main** (`src/main/providers.ts`). Main calls FastAgent's public `signIn`
@@ -73,12 +73,12 @@ window destruction abort it, which also closes the provider's local callback ser
 travels from renderer to main once, as an answer; no message from main to the renderer carries
 credential contents. Browser and verification URLs open with `shell.openExternal` after an
 `https:` (or loopback `http:`) check, never in an app window, and the renderer can reopen only a URL
-the running flow reported. The provider list reads duang's file (`fastagentCredentialStore.list`),
+the running flow reported. The provider list reads kage's file (`fastagentCredentialStore.list`),
 names and ways from FastAgent (`loginOptions`, pi's provider names), and each provider's ambient
 source (an environment variable) over an empty store, so a stored credential cannot hide the
 variable that keeps answering after a disconnect. Custom endpoints come after the first
 version; where their definitions are written is open (see [design](design.md)). Whatever the file,
-duang never writes an entry for a built-in provider id: a `baseUrl` override there would outlive the
+kage never writes an entry for a built-in provider id: a `baseUrl` override there would outlive the
 credential it was entered with and send a later subscription token or official key to the relay.
 
 **One network route, owned by Chromium.** Node's `fetch` ignores the system proxy, and a
@@ -93,7 +93,7 @@ proxy for provider hosts and `DIRECT` for loopback, private ranges and `.local`,
 real Codex run streamed through Clash and its `bash` tool saw the proxy variables; a proxy that is
 not listening fails the page's connection check with `ECONNREFUSED` and the proxy's address; the
 same check reached Anthropic through Clash's SOCKS5 port. Picking up a
-system proxy switched while duang runs is expected from Chromium's configuration watcher, and the
+system proxy switched while kage runs is expected from Chromium's configuration watcher, and the
 dispatcher asks per request, but switching one was not tested. Only the first entry of a PAC list
 is used, and proxy authentication is unsupported until a real user needs it: Chromium's route answer
 (`PROXY h:p`) carries no credentials. A launch variable with a user name or password therefore fails
@@ -105,13 +105,13 @@ agent in the process (matching the one app-wide Network setting). When the route
 no proxy variables came from the launch environment, main sets `HTTPS_PROXY`, `HTTP_PROXY` and
 `ALL_PROXY` to the proxy `resolveProxy` returns for `https://github.com`, the host agent commands
 most often need, and `NO_PROXY` to `localhost,127.0.0.1,::1`; *Manual* sets the manual URL and
-*Off* removes the variables duang set. This is re-applied before every send, so a run's commands
+*Off* removes the variables kage set. This is re-applied before every send, so a run's commands
 see the route as it is when the run starts; a running command
 keeps its environment. `resolveProxy` answers one URL, not a bypass list, so per-host PAC rules and
 the system bypass list beyond loopback do not reach child processes: a private-range or `.local`
 host reached by a command goes through the proxy. Launch-environment variables are left untouched.
 
-**An agent's default model is duang's, applied by duang.** The registry's model overrides the config's
+**An agent's default model is kage's, applied by kage.** The registry's model overrides the config's
 for new conversations: a conversation is created with it, and one with no model of its own is given it
 when its first message is sent, so what the chip showed, what runs and what the history records agree.
 Changing it updates the open conversation (when there is one) and then the registry; nothing is rebuilt
@@ -137,13 +137,13 @@ directory, avatar colour and optional model override. Reads validate the file; o
 registry. Writes serialize read/modify/rename, so concurrent changes do not lose rows and a failed
 write never publishes an in-memory success. Conversations remain the runtime's files. The renderer
 persists drafts and selection in localStorage. The draft storage boundary preserves an invalid value in
-`duang.drafts.unreadable` before allowing new writes. If reading or preserving it fails, the original key
+`kage.drafts.unreadable` before allowing new writes. If reading or preserving it fails, the original key
 stays protected until a reload with working storage. A save failure is shown in the window; editing stays
 available, and the next publication retries the unsaved value. Only a successful write suppresses a repeat
 save. Selection remains best effort. Live output and attention marks are presentation
 state, not a second durable transcript. Remote contacts and credentials are future work: never
 store access tokens alongside contact metadata; use OS-backed secure storage for secrets. Model
-credentials live in duang's own `userData/auth.json`, written through FastAgent's credential store. App preferences
+credentials live in kage's own `userData/auth.json`, written through FastAgent's credential store. App preferences
 (the network mode and the avatar style) live in `userData/settings.json`, validated on read; an unreadable file is an
 error, not a first run.
 
@@ -183,17 +183,17 @@ reissue accepted work merely to restore a stream.
 hosted alternative: publish a reviewed Agent snapshot (with its contexts as their types allow), set required model/channel secrets on
 the host, provision durable runtime state, and provide update and stop controls. The desktop can
 close without stopping online turns or scheduled work. Owner-hosted agents do not depend on our hosting
-service; duang cloud needs only hosting and access metadata, not a centralized chat store.
+service; kage cloud needs only hosting and access metadata, not a centralized chat store.
 Do not claim a specific Fly topology, sign-in provider or price before verifying the hosting path.
 
 Timed work is a **schedule**: `src/schedules/<name>.ts` in the Agent's directory, default-exporting
-`defineSchedule({ cron, tz?, prompt })` (FastAgent 0.25). It is code, so duang cannot write one without
+`defineSchedule({ cron, tz?, prompt })` (FastAgent 0.25). It is code, so kage cannot write one without
 TypeScript, and a change takes effect at the next start. Every fire continues one session of that schedule's own, which holds what each run
 **said**. How each fire **ended** is not in it: the host's fire history records it (`completed`, `failed`,
 `skipped` when the previous fire still held the session), in claim files under its state root,
 `schedule/claims/<name>/`. Neither the list of an instance's schedules nor their fire history has a remote
 route: in process, `serve()` loads them, and on the host `fastagent schedules run <name>` fires one now.
-If duang needs them remotely, ask FastAgent for a route rather than infer them from files or from the session.
+If kage needs them remotely, ask FastAgent for a route rather than infer them from files or from the session.
 (Written against 0.27 for planning; verify each claim against the locked version before building stage 3.)
 
 A clock must remain available while the owner's laptop is off. On Fly or Railway a schedule is the agent's own
@@ -214,13 +214,13 @@ These are data-integrity constraints, not an enterprise audit UI.
 
 | State | Owner | Boundary |
 |---|---|---|
-| Agent | its own directory in `~/Agents/<name>/` / a recipient's own copy | Only the reviewed harness and chosen contexts travel; moved to the Trash when the agent is removed from duang. |
+| Agent | its own directory in `~/Agents/<name>/` / a recipient's own copy | Only the reviewed harness and chosen contexts travel; moved to the Trash when the agent is removed from kage. |
 | Context | its project or folder, outside every Agent directory; a host's copy or clone in that instance's state | Never moved or deleted by removing an Agent. |
-| Local conversations | duang's instance of the Agent (`userData/instances/<agent id>/agent.sqlite`) | Already implemented; not uploaded on publish; deleted when the agent is removed from duang. |
+| Local conversations | kage's instance of the Agent (`userData/instances/<agent id>/agent.sqlite`) | Already implemented; not uploaded on publish; deleted when the agent is removed from kage. |
 | Online and channel conversations | FastAgent on the owner-controlled host | Access-scoped per visitor or channel, no second client transcript. |
 | Invitation and endpoint access | host-side protection, with optional hosting metadata | Revocable; do not put secrets in a public URL without labeling its bearer semantics. |
-| Model and channel credentials | duang's own `userData/auth.json` for local agents; each remote runtime's credential store or host secrets | Never copy an OAuth login between stores or into a hosted instance. |
-| Custom model endpoints duang adds (planned) | open: see [design](design.md) (an agent's config declares providers; there is no machine-level catalog) | Local to this machine; not part of a copy of an Agent or a hosted instance. |
+| Model and channel credentials | kage's own `userData/auth.json` for local agents; each remote runtime's credential store or host secrets | Never copy an OAuth login between stores or into a hosted instance. |
+| Custom model endpoints kage adds (planned) | open: see [design](design.md) (an agent's config declares providers; there is no machine-level catalog) | Local to this machine; not part of a copy of an Agent or a hosted instance. |
 | App preferences | `userData/settings.json` | Network mode and avatar style; never credentials. |
 | Schedule declaration and execution | the Agent's `schedules/` + the running host and clock; how each fire ended in the host's fire history, what it said in its `schedule:<name>` session | Display only verified schedules and outcomes. |
 | Drafts and attention markers | the client | Drafts persist locally; markers are presentation state. |

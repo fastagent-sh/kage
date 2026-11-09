@@ -5,7 +5,7 @@ import { retired } from "./providers.ts";
 export { refOf, specOf } from "../shared/model-spec.ts";
 
 export interface ModelChoice {
-  /** `provider/modelId`, which is how duang names a model everywhere outside FastAgent's API. */
+  /** `provider/modelId`, which is how kage names a model everywhere outside FastAgent's API. */
   spec: string;
   name?: string;
   contextWindow?: number;
@@ -31,7 +31,7 @@ export async function modelsOf(agent: Agent): Promise<Models> {
 }
 
 /**
- * The model a conversation runs on (its own, else duang's default for the agent, else the config's) and the
+ * The model a conversation runs on (its own, else kage's default for the agent, else the config's) and the
  * effort levels it supports. FastAgent clamps an unsupported level when it calls the provider, which would leave
  * the level shown and the level used apart.
  */

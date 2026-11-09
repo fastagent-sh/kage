@@ -1,7 +1,7 @@
 // No dialog: the page stays the context. The sign-in is drawn by what it asks for, never per provider.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CaretDown, CaretRight, Check, Copy, DotsThree, Globe, Key, MagnifyingGlass, X } from "@phosphor-icons/react";
-import type { DuangApi, ProviderRow } from "../preload/index.ts";
+import type { KageApi, ProviderRow } from "../preload/index.ts";
 import { keyStep, type SignIn } from "./settings-store.ts";
 import type { Store, View } from "./store.ts";
 import { PlanUsage } from "./plan-usage.tsx";
@@ -85,7 +85,7 @@ export function ProvidersSection({
 }: {
   view: View;
   store: Store;
-  onMenu: DuangApi["menu"];
+  onMenu: KageApi["menu"];
   focusAdd?: boolean;
   reconnect?: string;
   onConnected: () => void;

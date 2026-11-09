@@ -1,11 +1,11 @@
-# duang — Agent Guide
+# kage — Agent Guide
 
 ## Product and authority
 
 A native local-first workbench for FastAgent agents: create one with the contexts it works on and
 knows, use it locally, give someone their own copy of the Agent, connect to your own or an invited
-online instance, or optionally host it with duang cloud for scheduled work. Agents are contacts;
-conversations and history belong to each FastAgent instance, not a duang transcript store. Only the
+online instance, or optionally host it with kage cloud for scheduled work. Agents are contacts;
+conversations and history belong to each FastAgent instance, not a kage transcript store. Only the
 Week 1 local path is implemented.
 
 Vocabulary follows FastAgent's agent model (`docs/design/agent-model.md` there): an **Agent** is the
@@ -47,7 +47,7 @@ verification of existing code, not a rewrite. Resolve conflicting product polici
 
 ## Working and verification
 
-duang is early and has published unsigned macOS releases. Never add backward compatibility,
+kage is early and has published unsigned macOS releases. Never add backward compatibility,
 migrations, legacy-format detection or compatibility shims. When a format, layout or contract
 changes, change the code, tests and docs to the new one and drop the old.
 

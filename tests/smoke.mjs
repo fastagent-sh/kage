@@ -12,7 +12,7 @@ const root = await isolated(import.meta.url, { name: "smoke", timeout: 150000 })
 if (root) {
   const { app, BrowserWindow, Menu } = electron;
   async function run() {
-    // Empty: duang scaffolds the agent into it, and FastAgent only scaffolds a folder with nothing in it.
+    // Empty: kage scaffolds the agent into it, and FastAgent only scaffolds a folder with nothing in it.
     const workspace = join(root, "project");
     const data = join(root, "user-data");
     mkdirSync(join(data, "Shared Dictionary", "cache"), { recursive: true });
@@ -33,9 +33,9 @@ if (root) {
       anthropic: { type: "oauth", access: "sk-ant-oat01-synthetic", refresh: "synthetic-refresh", expires: Date.now() + 3600000 },
       "openai-codex": codex,
     };
-    // duang's own file, in its user data. Everything below reads and writes only this one.
+    // kage's own file, in its user data. Everything below reads and writes only this one.
     const selectedAuth = join(data, "auth.json");
-    // Stores duang must never read. They hold only `openai-codex` (or a wrong key), so the `anthropic/...`
+    // Stores kage must never read. They hold only `openai-codex` (or a wrong key), so the `anthropic/...`
     // assertions below cannot pass from them.
     const globalAuth = join(root, ".fastagent", ".secrets", "auth.json");
     const decoy = JSON.stringify({ "openai-codex": codex });
@@ -271,7 +271,7 @@ if (root) {
           { id: "gone", name: "Gone", dir: join(root, "moved-away"), colour: 2 },
         ]),
       );
-      await evaluate("window.duang.listAgents()");
+      await evaluate("window.kage.listAgents()");
       await until(
         "document.querySelector('dialog').innerText.includes('Effort can be set once a model is chosen')",
         "an agent with no model has no levels to offer",
@@ -370,7 +370,7 @@ if (root) {
       assert.ok(
         await evaluate(`(() => {
           const summary = document.querySelector('details details summary').textContent;
-          return summary.includes('project/hello.txt') && !summary.includes('duang-smoke-');
+          return summary.includes('project/hello.txt') && !summary.includes('kage-smoke-');
         })()`),
         "a tool row names the file, not a machine-specific path",
       );
@@ -608,22 +608,22 @@ if (root) {
       await send("Use the configured model with the selected credentials.");
       await until("document.querySelector('main').innerText.includes('Smoke answer') && !document.querySelector('main .bounce')", "configured model uses the same credential file");
 
-      const models = await evaluate("window.duang.listModels('configured')");
+      const models = await evaluate("window.kage.listModels('configured')");
       assert.ok(models.some((model) => model.spec === "anthropic/claude-sonnet-4-5"));
       // Another provider's default for the race and history checks below; pi's retired ChatGPT route is not offered.
       const otherModel = "openai/gpt-5.5";
       assert.ok(models.some((model) => model.spec === otherModel));
       assert.ok(!models.some(({ spec }) => spec.startsWith("openai-codex/")), "the retired route's models are not offered");
       assert.ok(models.some((model) => model.spec === "local/m1"), "the agent's own provider is pickable");
-      assert.ok(!(await evaluate(`window.duang.listModels(${JSON.stringify(smokeId)})`)).some((model) => model.spec === "local/m1"), "another agent's is not");
+      assert.ok(!(await evaluate(`window.kage.listModels(${JSON.stringify(smokeId)})`)).some((model) => model.spec === "local/m1"), "another agent's is not");
       const sessionSaying = (text) =>
-        evaluate(`window.duang.openAgent('configured').then((r) => r.sessions.find((s) => s.preview?.includes(${quoted(text)}))?.session)`);
+        evaluate(`window.kage.openAgent('configured').then((r) => r.sessions.find((s) => s.preview?.includes(${quoted(text)}))?.session)`);
       const historical = await sessionSaying("Use the configured model");
       assert.ok(historical, "the conversation that ran on the configured model is listed, by what was said in it");
       // The conversation's last message ends in FastAgent, after a send has answered: read how it ended.
       const ended = async (agent, session) => {
         for (let t = 0; t < 200; t++) {
-          const { lastMessage } = await evaluate(`window.duang.openSession(${JSON.stringify(agent)}, ${JSON.stringify(session)}, 'probe').then(async (r) => (await window.duang.closeSession('probe'), r))`);
+          const { lastMessage } = await evaluate(`window.kage.openSession(${JSON.stringify(agent)}, ${JSON.stringify(session)}, 'probe').then(async (r) => (await window.kage.closeSession('probe'), r))`);
           if (lastMessage && !["queued", "running"].includes(lastMessage.status)) return lastMessage;
           await new Promise((resolve) => setTimeout(resolve, 50));
         }
@@ -655,14 +655,14 @@ if (root) {
       await until("document.querySelectorAll('dialog button[data-model]').length > 0", "the models are listed");
       assert.match(await evaluate("document.querySelector('dialog').innerText"), /\d+ more: search to narrow the list/, "a cut-off list says so");
       const levels = await evaluate(`[...document.querySelectorAll('dialog [role=radio]')].map((stop) => stop.getAttribute('aria-label'))`);
-      const sonnet = (await evaluate("window.duang.listModels('configured')")).find((m) => m.spec === "anthropic/claude-sonnet-4-5");
+      const sonnet = (await evaluate("window.kage.listModels('configured')")).find((m) => m.spec === "anthropic/claude-sonnet-4-5");
       assert.deepEqual(levels, sonnet.thinkingLevels.map((level) => ({ xhigh: "Extra high" })[level] ?? level[0].toUpperCase() + level.slice(1)), "the stops are the levels the model supports");
       assert.ok(levels.length > 1 && levels.includes("High"), `a reasoning model offers a track: ${levels}`);
       assert.match(await evaluate("document.querySelector('dialog').innerText"), /Agent default/, "a conversation that was not given a level follows the agent's");
-      const unsupported = await evaluate(`window.duang.setThinking('configured', ${JSON.stringify(historical)}, 'max')`);
+      const unsupported = await evaluate(`window.kage.setThinking('configured', ${JSON.stringify(historical)}, 'max')`);
       assert.equal(unsupported.ok, sonnet.thinkingLevels.includes("max"), "a level the model lacks is refused, not clamped behind the person's back");
       const thinkingSession = historical;
-      const levelOf = () => evaluate(`window.duang.readState('configured', ${JSON.stringify(thinkingSession)}).then((s) => s.thinkingLevel)`);
+      const levelOf = () => evaluate(`window.kage.readState('configured', ${JSON.stringify(thinkingSession)}).then((s) => s.thinkingLevel)`);
       await evaluate(`document.querySelector('dialog [role=radio][aria-label="High"]').click()`);
       await until(`${chip}.textContent.includes('High')`, "the chip names the level");
       await until(`document.querySelector('dialog [role=radio][aria-label="High"]').getAttribute('aria-checked') === 'true'`, "and so does the track");
@@ -724,13 +724,13 @@ if (root) {
       await evaluate(`[...document.querySelectorAll('#conversations button')].find((b) => b.textContent.includes('Use the Anthropic conversation model')).click()`);
       await until("document.querySelector('main').innerText.includes('Anthropic smoke answer')", "back in the conversation with its history");
 
-      assert.deepEqual(await evaluate("window.duang.setModel('configured', 'local/m1')"), { ok: true }, "setModel accepts it");
-      assert.equal((await evaluate("window.duang.setModel('configured', 'local/nope')")).error.code, "model_unavailable");
+      assert.deepEqual(await evaluate("window.kage.setModel('configured', 'local/m1')"), { ok: true }, "setModel accepts it");
+      assert.equal((await evaluate("window.kage.setModel('configured', 'local/nope')")).error.code, "model_unavailable");
       const racing = await evaluate(`(async () => {
-        const change = window.duang.setModel('configured', ${JSON.stringify(otherModel)});
+        const change = window.kage.setModel('configured', ${JSON.stringify(otherModel)});
         const reads = [];
         for (let i = 0; i < 40; i++) {
-          reads.push(window.duang.openAgent('configured'));
+          reads.push(window.kage.openAgent('configured'));
           await new Promise((resolve) => setTimeout(resolve, 5));
         }
         return [await change, await Promise.all(reads)];
@@ -760,7 +760,7 @@ if (root) {
             await until("document.querySelector('main').innerText.includes('Smoke answer')", `crash ${crash}: reloaded onto its conversation`);
           }
         }
-        assert.deepEqual(asked, ["duang's window keeps crashing."], "the third crash asks instead of reloading");
+        assert.deepEqual(asked, ["kage's window keeps crashing."], "the third crash asks instead of reloading");
         await until("document.body.innerText.includes('What should we work on?')", "the way on is a new conversation");
         assert.ok(!(await evaluate("document.querySelector('main').innerText.includes('Smoke answer')")), "not the one it crashed on");
         assert.equal(await evaluate("window.location.hash"), "", "the fresh start is read once");
@@ -773,33 +773,33 @@ if (root) {
       await showConversations();
       await evaluate(`[...document.querySelectorAll('#conversations button')].find((b) => b.textContent.includes('Use the Anthropic conversation model')).click()`);
       await until("document.body.innerText.includes('anthropic/claude-sonnet-4-5') && !document.querySelector('textarea').disabled", "history keeps its provider despite Codex default");
-      assert.equal(await evaluate("window.duang.openAgent('configured').then(r => r.model)"), otherModel);
+      assert.equal(await evaluate("window.kage.openAgent('configured').then(r => r.model)"), otherModel);
       await send("Continue the historical Anthropic conversation.");
       await until("document.querySelector('main').innerText.split('Anthropic smoke answer').length === 3 && !document.querySelector('main .bounce')", "mixed-provider history resolves its own credential");
       assert.equal(anthropicRequests, 2);
 
       // A missing historical provider fails without silently switching models; fixing the file needs no restart.
       await writeFile(selectedAuth, JSON.stringify({ openai: stored.openai }));
-      const missing = await evaluate(`window.duang.send('configured', ${JSON.stringify(historical)}, 'Missing provider check')`);
+      const missing = await evaluate(`window.kage.send('configured', ${JSON.stringify(historical)}, 'Missing provider check')`);
       assert.equal(missing.ok, false);
-      assert.equal(missing.error.code, "model_unavailable", "refused before anything is recorded, in duang's words rather than the CLI's advice");
+      assert.equal(missing.error.code, "model_unavailable", "refused before anything is recorded, in kage's words rather than the CLI's advice");
       assert.match(missing.error.message, /^anthropic\/claude-sonnet-4-5 cannot run: .*Connect the provider/);
       assert.equal(anthropicRequests, 2);
-      assert.ok(!(await evaluate("window.duang.listModels('configured')")).some(({ spec }) => spec.startsWith("anthropic/")));
+      assert.ok(!(await evaluate("window.kage.listModels('configured')")).some(({ spec }) => spec.startsWith("anthropic/")));
       const expired = { ...stored, anthropic: { ...stored.anthropic, expires: 0 } };
       await writeFile(selectedAuth, JSON.stringify(expired));
-      assert.ok((await evaluate("window.duang.listModels('configured')")).some((model) => model.spec === "anthropic/claude-sonnet-4-5"), "picker does not attempt OAuth refresh");
+      assert.ok((await evaluate("window.kage.listModels('configured')")).some((model) => model.spec === "anthropic/claude-sonnet-4-5"), "picker does not attempt OAuth refresh");
       // The send is recorded; the refresh that fails is the message's own end, which FastAgent keeps.
-      assert.equal((await evaluate(`window.duang.send('configured', ${JSON.stringify(historical)}, 'Expired token check')`)).ok, true);
+      assert.equal((await evaluate(`window.kage.send('configured', ${JSON.stringify(historical)}, 'Expired token check')`)).ok, true);
       const refreshFailure = await ended("configured", historical);
       assert.equal(refreshFailure.status, "failed");
       assert.match(refreshFailure.error.message, /Synthetic OAuth refresh rejected/);
       assert.deepEqual(JSON.parse(await readFile(selectedAuth, "utf8")), expired, "failed refresh preserves the credential");
       await writeFile(selectedAuth, "{invalid");
-      assert.match(await evaluate("window.duang.listModels('configured').then(() => '', error => error.message)"), /corrupt/i);
+      assert.match(await evaluate("window.kage.listModels('configured').then(() => '', error => error.message)"), /corrupt/i);
       await writeFile(selectedAuth, JSON.stringify(stored));
-      assert.ok((await evaluate("window.duang.listModels('configured')")).some((model) => model.spec === "anthropic/claude-sonnet-4-5"));
-      const recovered = await evaluate(`window.duang.send('configured', ${JSON.stringify(historical)}, 'Retry with restored credentials')`);
+      assert.ok((await evaluate("window.kage.listModels('configured')")).some((model) => model.spec === "anthropic/claude-sonnet-4-5"));
+      const recovered = await evaluate(`window.kage.send('configured', ${JSON.stringify(historical)}, 'Retry with restored credentials')`);
       assert.equal(recovered.ok, true);
       for (let t = 0; t < 200 && anthropicRequests < 3; t++) await new Promise((resolve) => setTimeout(resolve, 50));
       assert.equal(anthropicRequests, 3);
@@ -877,14 +877,14 @@ if (root) {
       await until("document.body.innerText.includes('moved-away')", "the missing directory is named");
       // Removal is offered by the panel, not the sidebar row.
       await until(
-        "[...document.querySelectorAll('main button')].some((b) => b.textContent.trim() === 'Remove from duang')",
+        "[...document.querySelectorAll('main button')].some((b) => b.textContent.trim() === 'Remove from kage')",
         "a directory that no longer exists stays removable from the panel that explains it",
       );
       assert.ok(
-        await evaluate("document.querySelector('main').innerText.includes(\"This agent's folder is not there\") && [...document.querySelectorAll('main [role=\"alert\"] button')].map((b) => b.textContent.trim()).join(',') === 'Retry,Remove from duang'"),
-        "a folder that is not there offers Retry and Remove from duang",
+        await evaluate("document.querySelector('main').innerText.includes(\"This agent's folder is not there\") && [...document.querySelectorAll('main [role=\"alert\"] button')].map((b) => b.textContent.trim()).join(',') === 'Retry,Remove from kage'"),
+        "a folder that is not there offers Retry and Remove from kage",
       );
-      // An agent's name is duang's label, so even a broken agent can be renamed; the directory is not.
+      // An agent's name is kage's label, so even a broken agent can be renamed; the directory is not.
       await evaluate(`document.querySelector('button[aria-label="Gone"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
       await until("document.querySelector('aside input[aria-label=\"Agent name\"]') !== null", "agent rename opens");
       await evaluate(`(() => {
@@ -1209,7 +1209,7 @@ if (root) {
         now = (await stat(settingsFile)).mtimeMs;
       }
       assert.deepEqual(JSON.parse(await readFile(settingsFile, "utf8")).network, { mode: "automatic" });
-      assert.equal((await evaluate("window.duang.getRoute()")).source, "system", "Chromium ended on the second choice too");
+      assert.equal((await evaluate("window.kage.getRoute()")).source, "system", "Chromium ended on the second choice too");
       await until("document.querySelector('[data-source=system]')?.textContent.includes('connected')", "the page ends on the second choice");
       // Enter on the refresh control checks again; it does not re-apply (rewrite) the choice.
       const written = (await stat(settingsFile)).mtimeMs;
@@ -1259,7 +1259,7 @@ if (root) {
       win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
       await until("!document.querySelector('#network-heading') && document.querySelector('textarea')", "Escape leaves Settings");
 
-      // A key connected in its row (rejected once, fixed, accepted) and disconnected; only duang's file changes.
+      // A key connected in its row (rejected once, fixed, accepted) and disconnected; only kage's file changes.
       const escape = () => {
         win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
         win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
@@ -1326,7 +1326,7 @@ if (root) {
       assert.ok(await evaluate("document.body.innerText.includes('Anthropic')"), "listed by pi's names");
       assert.ok(
         await evaluate("!document.body.innerText.includes('OpenAI Codex')"),
-        "pi's retired ChatGPT route is not listed, though duang's file still holds a login for it",
+        "pi's retired ChatGPT route is not listed, though kage's file still holds a login for it",
       );
       assert.equal(await evaluate("!!document.querySelector('dialog')"), false, "Settings reached from the sidebar opens no dialog");
 
@@ -1362,7 +1362,7 @@ if (root) {
       await landed("the checked key is connected, and listed on Settings: this visit did not start at the picker");
       assert.deepEqual(deepseekKeys, ["Bearer sk-bad", "Bearer sk-good"], "each key was checked once, with the provider itself");
       let saved = JSON.parse(await readFile(selectedAuth, "utf8"));
-      assert.deepEqual(saved.deepseek, { type: "api_key", key: "sk-good" }, "written to duang's own file");
+      assert.deepEqual(saved.deepseek, { type: "api_key", key: "sk-good" }, "written to kage's own file");
       assert.equal(JSON.parse(await readFile(globalAuth, "utf8")).deepseek, undefined, "never to the CLI's");
       await disconnectDeepSeek("a disconnected provider leaves the list");
       saved = JSON.parse(await readFile(selectedAuth, "utf8"));
@@ -1439,12 +1439,12 @@ if (root) {
         registry,
         JSON.stringify([...JSON.parse(savedRegistry), { id: "legacy", name: "Legacy", dir: legacyDir, model: "openai-codex/gpt-5.5", colour: 4 }]),
       );
-      const legacy = await evaluate("window.duang.openAgent('legacy')");
+      const legacy = await evaluate("window.kage.openAgent('legacy')");
       assert.equal(legacy.ok, true, legacy.message);
       assert.equal(legacy.model, "openai-codex/gpt-5.5", "the default is the one the registry names");
-      const legacySend = await evaluate("window.duang.createSession('legacy').then((session) => window.duang.send('legacy', session, 'hello'))");
+      const legacySend = await evaluate("window.kage.createSession('legacy').then((session) => window.kage.send('legacy', session, 'hello'))");
       assert.equal(legacySend.ok === false && legacySend.error.code, "model_unavailable", "a send on it asks for another model");
-      // Removing an agent deletes duang's instance of it and trashes its agent directory while leaving bound folders untouched.
+      // Removing an agent deletes kage's instance of it and trashes its agent directory while leaving bound folders untouched.
       const instance = (id) => stat(join(data, "instances", id)).then(() => true, () => false);
       assert.equal(await instance("legacy"), true, "the opened agent has an instance");
       const trashed = [];
@@ -1454,7 +1454,7 @@ if (root) {
         await rm(dir, { recursive: true, force: true });
       };
       try {
-        assert.deepEqual(await evaluate("window.duang.removeAgent('legacy')"), { ok: true });
+        assert.deepEqual(await evaluate("window.kage.removeAgent('legacy')"), { ok: true });
       } finally {
         electron.shell.trashItem = trashItem;
       }
@@ -1569,7 +1569,7 @@ if (root) {
         window.__draftWrite = Storage.prototype.setItem;
         window.__draftFull = true;
         Storage.prototype.setItem = function(key, value) {
-          if (key === 'duang.drafts' && window.__draftFull) throw new Error('Synthetic draft storage full');
+          if (key === 'kage.drafts' && window.__draftFull) throw new Error('Synthetic draft storage full');
           return window.__draftWrite.call(this, key, value);
         };
       })()`);
@@ -1579,7 +1579,7 @@ if (root) {
       await evaluate("window.__draftFull = false");
       await evaluate(`document.querySelector('button[title^="Model for this agent"]').click()`);
       await until("!document.body.innerText.includes('Draft storage needs attention')", "the same draft is saved after storage recovers");
-      assert.match(await evaluate("localStorage.getItem('duang.drafts')"), /Keep this unsent text/);
+      assert.match(await evaluate("localStorage.getItem('kage.drafts')"), /Keep this unsent text/);
       win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
       win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
       await until("document.querySelector('dialog') === null", "the picker closes after the storage check");
@@ -1588,10 +1588,10 @@ if (root) {
       // Chromium does not run new-document scripts until the Page domain is enabled.
       await win.webContents.debugger.sendCommand("Page.enable");
       const protection = await win.webContents.debugger.sendCommand("Page.addScriptToEvaluateOnNewDocument", {
-        source: `localStorage.setItem('duang.drafts', '{original unsent text');
+        source: `localStorage.setItem('kage.drafts', '{original unsent text');
           window.__draftWrite = Storage.prototype.setItem;
           Storage.prototype.setItem = function(key, value) {
-            if (key === 'duang.drafts.unreadable') throw new Error('Synthetic quarantine refused');
+            if (key === 'kage.drafts.unreadable') throw new Error('Synthetic quarantine refused');
             return window.__draftWrite.call(this, key, value);
           };`,
       });
@@ -1600,8 +1600,8 @@ if (root) {
       await until("document.body.innerText.includes('Synthetic quarantine refused') && document.querySelector('textarea')?.disabled === false", "a failed quarantine is visible and editing remains available");
       await type("New text stays in memory");
       await until("document.querySelector('textarea').value === 'New text stays in memory'", "the protected draft remains editable");
-      assert.equal(await evaluate("localStorage.getItem('duang.drafts')"), "{original unsent text");
-      assert.equal(await evaluate("localStorage.getItem('duang.drafts.unreadable')"), null);
+      assert.equal(await evaluate("localStorage.getItem('kage.drafts')"), "{original unsent text");
+      assert.equal(await evaluate("localStorage.getItem('kage.drafts.unreadable')"), null);
       for (const mode of ["light", "dark"]) {
         electron.nativeTheme.themeSource = mode;
         await until(`matchMedia('(prefers-color-scheme: ${mode})').matches`, `${mode} draft warning`);
@@ -1610,7 +1610,7 @@ if (root) {
         await writeFile(fileURLToPath(new URL(`../out/draft-storage-${mode}.png`, import.meta.url)), image.toPNG());
       }
       await win.webContents.debugger.sendCommand("Page.removeScriptToEvaluateOnNewDocument", protection);
-      await evaluate("Storage.prototype.setItem = window.__draftWrite; localStorage.removeItem('duang.drafts')");
+      await evaluate("Storage.prototype.setItem = window.__draftWrite; localStorage.removeItem('kage.drafts')");
 
       assert.equal(BrowserWindow.getAllWindows().length, 1);
       assert.deepEqual(errors, []);
@@ -1631,7 +1631,7 @@ if (root) {
       }
       assert.ok(onSettings, "the new window lands on Settings");
       console.log(
-        "Electron smoke passed: local workflow, duang's own credential file, connecting and disconnecting a provider, cross-provider history, missing/corrupt credentials and recovery",
+        "Electron smoke passed: local workflow, kage's own credential file, connecting and disconnecting a provider, cross-provider history, missing/corrupt credentials and recovery",
       );
     } catch (error) {
       console.error(error);

@@ -68,7 +68,7 @@ if (root) {
     await mkdir(join(data, "Shared Dictionary", "cache"), { recursive: true });
     process.env.HOME = root;
     withoutCredentials(process.env);
-    // duang reads only its own credential file, in its user data.
+    // kage reads only its own credential file, in its user data.
     await writeFile(join(data, "auth.json"), JSON.stringify({ openai: { type: "api_key", key: "shot-key" } }));
     await writeFile(join(workspace, "fastagent.config.ts"), 'export default { model: "openai/gpt-4o-mini" };\n');
     // Skills are what the composer's `/` completion lists.

@@ -50,7 +50,7 @@ const root = await isolated(import.meta.url, {
       res.end("data: [DONE]\n\n");
     });
     writeAgent(project, server.address().port);
-    // The conversation lives in the instance duang will open: its state directory, for the agent id below.
+    // The conversation lives in the instance kage will open: its state directory, for the agent id below.
     const { openAgent } = await import("@fastagent-sh/fastagent");
     const agent = await openAgent(project, { stateDir: join(root, "user-data", "instances", "l") });
     const { id } = await agent.sessions.create();

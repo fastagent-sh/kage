@@ -1,8 +1,8 @@
 # Unsigned until there is an Apple Developer ID: a first open needs Privacy & Security → Open Anyway.
 # app.asar ships `dependencies` only; the renderer is bundled by Vite. electron-builder leaves out a package's
 # peers, so tests/packaged.mjs checks the bundle for any module a bundled package needs and lacks.
-appId: sh.fastagent.duang
-productName: duang
+appId: sh.fastagent.kage
+productName: kage
 directories:
   output: dist
   buildResources: build

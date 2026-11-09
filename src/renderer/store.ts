@@ -5,7 +5,7 @@ import type {
   AgentInspection,
   AgentRow,
   AgentSetup,
-  DuangApi,
+  KageApi,
   SessionFrame,
   SessionSummary,
 } from "../preload/index.ts";
@@ -47,7 +47,7 @@ type Pane =
   | "start"
   | "transcript";
 // Navigation only: losing it costs one click, so it is best effort and anything unreadable is a first start.
-const SELECTION_KEY = "duang.selection";
+const SELECTION_KEY = "kage.selection";
 interface Selection {
   agentId?: string;
   perAgent: [string, string][];
@@ -67,7 +67,7 @@ function writeStored(storageKey: string, value: string): void {
   try {
     globalThis.localStorage?.setItem(storageKey, value);
   } catch (error) {
-    console.error(`duang: ${storageKey} was not saved:`, error);
+    console.error(`kage: ${storageKey} was not saved:`, error);
   }
 }
 // Presentation only: never written anywhere; the transcript stays the runtime's.
@@ -84,7 +84,7 @@ export type ModelAsk =
   | { reason: "needs" }
   | { reason: "gone"; model: string }
   | { reason: "refused"; model: string };
-// A send the runtime refused for its model, and duang's own default for an agent that pi does not know: stored
+// A send the runtime refused for its model, and kage's own default for an agent that pi does not know: stored
 // facts, each about one conversation or one agent, turned into the ask above in one place.
 type Refusal = { agentId: string; session: string; model: string };
 type StaleDefault = { agentId: string; model: string };
@@ -196,7 +196,7 @@ function modelAskOf(view: View, refusal: Refusal | undefined, staleDefault: Stal
   if (!agentId || !c || c.loading) return undefined;
   if (refusal && refusal.agentId === agentId && refusal.session === c.session) return { reason: "refused", model: refusal.model };
   if (staleDefault?.agentId === agentId) return { reason: "gone", model: staleDefault.model };
-  // As opposed to duang not knowing the model yet, which does not ask for one.
+  // As opposed to kage not knowing the model yet, which does not ask for one.
   if (view.states[agentId] === "ready" && !(c.state?.model ?? view.model)) return { reason: "needs" };
   return undefined;
 }
@@ -236,7 +236,7 @@ function derive(
   return derived;
 }
 
-export function createStore(api: DuangApi) {
+export function createStore(api: KageApi) {
   let view: View = {
     agents: [],
     states: {},
@@ -790,7 +790,7 @@ export function createStore(api: DuangApi) {
     },
     load,
     selectAgent,
-    // FastAgent owns the session list; duang keeps no second copy. A failure belongs to that agent's row and never
+    // FastAgent owns the session list; kage keeps no second copy. A failure belongs to that agent's row and never
     // touches the open agent's `states`, which would put the window into "this agent is broken".
     listSessions,
     async renameAgent(id: string, name: string) {

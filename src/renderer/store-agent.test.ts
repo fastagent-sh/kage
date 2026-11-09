@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { DuangApi, LoginOutcome, OpenResult, ProviderRow, Result } from "../preload/index.ts";
+import type { KageApi, LoginOutcome, OpenResult, ProviderRow, Result } from "../preload/index.ts";
 import { assistantEntry, deferred, empty, events, harness, listed, opened, panes, ready, runningSession, sessionOf } from "./store-harness.ts";
 
 test("an agent's existing conversation opens straight into it, never by way of the new-conversation page", async () => {
@@ -334,7 +334,7 @@ test("command names load once per agent, retry after a failure, and never cross 
   // Switching away mid-flight: the late answer belongs to an agent nobody is looking at.
   const slow = deferred<{ name: string; description: string; source: string }[]>();
   await store.selectAgent("a");
-  api.listCommands = () => slow.promise as ReturnType<DuangApi["listCommands"]>;
+  api.listCommands = () => slow.promise as ReturnType<KageApi["listCommands"]>;
   const pending = store.loadCommands();
   await store.selectAgent("b");
   slow.resolve([{ name: "from-a", description: "", source: "definition" }]);

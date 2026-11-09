@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-const dir = await mkdtemp(join(tmpdir(), "duang-usage-"));
+const dir = await mkdtemp(join(tmpdir(), "kage-usage-"));
 const auth = join(dir, "auth.json");
 const { MIN_GAP_MS, forgetUsage, parseAnthropic, providerUsage, usagePage } = await import("./usage.ts");
 

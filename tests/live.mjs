@@ -1,5 +1,5 @@
-// Opt-in (`DUANG_LIVE=1`): real providers, this machine's duang credential file, a few tokens. `auth.json` is a
-// symlink, never a copy: a copied OAuth login breaks when either refreshes. Quit duang first: two locks, one file.
+// Opt-in (`KAGE_LIVE=1`): real providers, this machine's kage credential file, a few tokens. `auth.json` is a
+// symlink, never a copy: a copied OAuth login breaks when either refreshes. Quit kage first: two locks, one file.
 import assert from "node:assert/strict";
 import { existsSync, symlinkSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -11,8 +11,8 @@ import { assertLiveReply, selectLiveModels } from "./live-models.mjs";
 
 const ASK = "Reply with exactly: OK";
 
-if (!process.versions.electron && process.env.DUANG_LIVE !== "1") {
-  console.log("Skipped: set DUANG_LIVE=1 to spend real model credits against the real credential file.");
+if (!process.versions.electron && process.env.KAGE_LIVE !== "1") {
+  console.log("Skipped: set KAGE_LIVE=1 to spend real model credits against the real credential file.");
   process.exit(0);
 }
 // The real HOME: the credential file this check links to is the developer's own.
@@ -27,7 +27,7 @@ if (root) {
   let evaluate;
   let liveId = "live";
   const call = (name, ...args) =>
-    evaluate(`window.duang.${name}(${args.map((a) => JSON.stringify(a)).join(", ")})`);
+    evaluate(`window.kage.${name}(${args.map((a) => JSON.stringify(a)).join(", ")})`);
   /**
    * How the message `asked` ended and the assistant's own words, so a "success" with no answer cannot pass. A send
    * answers once FastAgent has recorded the message, so wait for its `user` entry and then for the message's end.
@@ -58,12 +58,12 @@ if (root) {
     await mkdir(project, { recursive: true });
     await mkdir(data, { recursive: true });
     await writeFile(join(project, "note.txt"), "before\n");
-    // The app's own data directory, named explicitly: this process is "Electron", not "duang".
-    const real = join(app.getPath("appData"), "duang", "auth.json");
+    // The app's own data directory, named explicitly: this process is "Electron", not "kage".
+    const real = join(app.getPath("appData"), "kage", "auth.json");
     process.env.HOME = root;
     assert.ok(
       existsSync(real),
-      `${real} does not exist. Connect the providers to check in duang (Settings → Model providers), or ` +
+      `${real} does not exist. Connect the providers to check in kage (Settings → Model providers), or ` +
         `sign in with the CLI pointed at it: FASTAGENT_AUTH_PATH="${real}" fastagent login`,
     );
     const authFile = join(data, "auth.json");
@@ -81,8 +81,8 @@ if (root) {
     const chatgpt = JSON.parse(before).openai?.type === "oauth";
     const [defaultModel, other] = selectLiveModels(models, {
       chatgpt,
-      first: process.env.DUANG_LIVE_OPENAI,
-      second: process.env.DUANG_LIVE_OTHER,
+      first: process.env.KAGE_LIVE_OPENAI,
+      second: process.env.KAGE_LIVE_OTHER,
     });
     console.log(`Credential file: ${authFile}\nUsing: ${defaultModel} + ${other}`);
 
@@ -103,7 +103,7 @@ if (root) {
       assert.doesNotMatch(
         answer.error.message,
         /model_not_found|not supported when using/i,
-        `${defaultModel} is not a model this account runs; set DUANG_LIVE_OPENAI to one it does (${answer.error.message})`,
+        `${defaultModel} is not a model this account runs; set KAGE_LIVE_OPENAI to one it does (${answer.error.message})`,
       );
       console.log(`${defaultModel} credentials accepted, provider refused the run: ${answer.error.message}`);
     }

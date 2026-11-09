@@ -1,4 +1,4 @@
-import type { AgentCommand, DuangApi, Models } from "../preload/index.ts";
+import type { AgentCommand, KageApi, Models } from "../preload/index.ts";
 import { message } from "./message.ts";
 
 export interface AgentResourcesView {
@@ -8,7 +8,7 @@ export interface AgentResourcesView {
   commandsError?: string;
 }
 
-export function createAgentResources(api: DuangApi, publish: (patch: Partial<AgentResourcesView>) => void) {
+export function createAgentResources(api: KageApi, publish: (patch: Partial<AgentResourcesView>) => void) {
   let selected: { id: string } | undefined;
   let modelRead: object | undefined;
   let commandsFor: typeof selected;

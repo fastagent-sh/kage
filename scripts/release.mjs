@@ -70,7 +70,7 @@ async function main() {
   }
 
   const pkg = JSON.parse(readFileSync("package.json", "utf8"));
-  if (pkg.name !== "duang") throw new Error("Run this script from the duang repository root.");
+  if (pkg.name !== "kage") throw new Error("Run this script from the kage repository root.");
   if (!SEMVER_RE.test(pkg.version)) throw new Error(`Current version is not a stable semantic version: ${pkg.version}`);
   if (capture("git", ["branch", "--show-current"]) !== "main") throw new Error("Releases must start from the main branch.");
   if (capture("git", ["status", "--porcelain"])) throw new Error("Working tree is not clean. Commit or stash changes first.");
@@ -113,7 +113,7 @@ async function main() {
   const body = [
     `## Release ${tag}`,
     "",
-    `Bump duang from ${pkg.version} to ${version}.`,
+    `Bump kage from ${pkg.version} to ${version}.`,
     "",
     "### Verification",
     "",

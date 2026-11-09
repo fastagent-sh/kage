@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useLayoutEffect, useState } from "react";
 import { ArrowClockwise, Check, X } from "@phosphor-icons/react";
-import type { AvatarStyle, DuangApi, Network, Route } from "../preload/index.ts";
+import type { AvatarStyle, KageApi, Network, Route } from "../preload/index.ts";
 import { Avatar } from "./avatar.tsx";
 import type { Connection } from "./settings-store.ts";
 import type { Store, View } from "./store.ts";
@@ -26,7 +26,7 @@ export function Settings({
   reconnect?: string;
   network?: boolean;
   onConnected: () => void;
-  onMenu: DuangApi["menu"];
+  onMenu: KageApi["menu"];
   onClose: () => void;
 }) {
   const saved = view.settings;
@@ -346,7 +346,7 @@ function Status({ route, check, onRefresh }: { route: Route; check?: Connection;
   return (
     <span data-source={route.source} className="flex flex-wrap items-center gap-x-1.5">
       {route.error ? (
-        // The system answered with a route duang cannot take; model requests fail with this reason.
+        // The system answered with a route kage cannot take; model requests fail with this reason.
         <span className="text-danger" title={route.error}>
           unsupported proxy route
         </span>
@@ -357,7 +357,7 @@ function Status({ route, check, onRefresh }: { route: Route; check?: Connection;
           {route.source === "environment" && (
             <span
               className="font-sans"
-              title={`duang was started from a terminal with ${route.variable ?? "a proxy variable"} set. Open duang from the Dock to follow ${MAC ? "macOS" : "system"} settings.`}
+              title={`kage was started from a terminal with ${route.variable ?? "a proxy variable"} set. Open kage from the Dock to follow ${MAC ? "macOS" : "system"} settings.`}
             >
               {" "}
               from {route.variable ?? "the launch environment"}

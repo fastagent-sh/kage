@@ -1,8 +1,8 @@
-# duang
+# kage
 
-[![CI](https://github.com/fastagent-sh/duang/actions/workflows/ci.yml/badge.svg)](https://github.com/fastagent-sh/duang/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/fastagent-sh/duang/actions/workflows/codeql.yml/badge.svg)](https://github.com/fastagent-sh/duang/actions/workflows/codeql.yml)
-[![license](https://img.shields.io/github/license/fastagent-sh/duang.svg)](LICENSE)
+[![CI](https://github.com/fastagent-sh/kage/actions/workflows/ci.yml/badge.svg)](https://github.com/fastagent-sh/kage/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/fastagent-sh/kage/actions/workflows/codeql.yml/badge.svg)](https://github.com/fastagent-sh/kage/actions/workflows/codeql.yml)
+[![license](https://img.shields.io/github/license/fastagent-sh/kage.svg)](LICENSE)
 [![built on FastAgent](https://img.shields.io/badge/built%20on-FastAgent-0b7285.svg)](https://github.com/fastagent-sh/fastagent)
 ![platform](https://img.shields.io/badge/platform-macOS%20(Apple%20silicon)-555.svg)
 
@@ -13,18 +13,18 @@ happened, and continue. Your agents sit in a sidebar like contacts; each convers
 FastAgent session, read from the agent's own runtime rather than copied into a second store.
 
 <p align="center">
-  <img src="docs/screenshots/reading-light.png" alt="duang: two agents in the sidebar, and a conversation with a code block, a table and mixed English and Chinese text" width="860">
+  <img src="docs/screenshots/reading-light.png" alt="kage: two agents in the sidebar, and a conversation with a code block, a table and mixed English and Chinese text" width="860">
 </p>
 
-> **Status: early.** duang runs agents on your Mac only (Apple silicon), and its releases are not signed
+> **Status: early.** kage runs agents on your Mac only (Apple silicon), and its releases are not signed
 > yet. Online agents, giving someone an agent and hosting are [planned](#roadmap), not built.
 
 ## Why
 
 Making an agent in a terminal is easy now. Living with one is not: a long run scrolls past, switching
 to something else loses track of it, and coming back means reading a log to find out whether it
-worked. duang is the place you give an agent work and come back to the result. FastAgent supplies the
-runtime; duang adds no transcript, database or agent format of its own.
+worked. kage is the place you give an agent work and come back to the result. FastAgent supplies the
+runtime; kage adds no transcript, database or agent format of its own.
 
 ## What it does
 
@@ -71,25 +71,26 @@ follow the system; seven avatar styles; the sidebar and transcript work from the
 
 ## Install
 
-Requirements: macOS on Apple silicon.
+Requirements: macOS on Apple silicon. Earlier releases keep their original app and asset names;
+`kage`-named downloads start with the next release.
 
-1. Download `duang-<version>-arm64.dmg` from the
-   [latest release](https://github.com/fastagent-sh/duang/releases/latest), open it and drag duang to
+1. Download `kage-<version>-arm64.dmg` from the
+   [latest release](https://github.com/fastagent-sh/kage/releases/latest), open it and drag kage to
    Applications.
 2. The app is not signed with an Apple Developer ID or notarized yet, so macOS refuses the first open
    ("Apple could not verify…"). Click **Done**, then open System Settings → Privacy & Security, find
-   duang near the bottom, click **Open Anyway** and confirm. macOS remembers the choice.
+   kage near the bottom, click **Open Anyway** and confirm. macOS remembers the choice.
 
-Each release lists the dmg's SHA-256 (`shasum -a 256 duang-<version>-arm64.dmg` to compare). To update,
+Each release lists the dmg's SHA-256 (`shasum -a 256 kage-<version>-arm64.dmg` to compare). To update,
 download the new release and replace the app; there are no automatic updates until the app is signed.
 
-**From source** (Node 24.15 or later and npm): `git clone https://github.com/fastagent-sh/duang.git`, then
+**From source** (Node 24.15 or later and npm): `git clone https://github.com/fastagent-sh/kage.git`, then
 `npm ci && npm run package` builds the same dmg into `dist/`.
 
 ## Getting started
 
 1. **Create an agent.** Click **+** at the top of the sidebar, name the agent and attach any folders on
-   this computer it should work on. duang creates the agent in `~/Agents/<name>/` with FastAgent's starter
+   this computer it should work on. kage creates the agent in `~/Agents/<name>/` with FastAgent's starter
    files and a git repository.
 2. **Connect a provider.** Settings (`⌘,`) → Model providers, or **Connect a provider** in the model
    picker.
@@ -103,20 +104,20 @@ renderer (React) ── typed preload API ── Electron main ── FastAgent,
 ```
 
 - **Main owns the runtime.** Each agent is opened with FastAgent's public `openAgent`, inside
-  Electron main, without opening a local port, as its own instance in duang's data directory. The renderer runs with
+  Electron main, without opening a local port, as its own instance in kage's data directory. The renderer runs with
   context isolation and no Node access; it gets named operations, never the filesystem, a shell or
   credentials.
-- **No second transcript.** Conversations live in duang's instance of each agent (FastAgent's own
-  storage). duang reads history and live events through the Agent API; it stores only presentation state (drafts, the open
+- **No second transcript.** Conversations live in kage's instance of each agent (FastAgent's own
+  storage). kage reads history and live events through the Agent API; it stores only presentation state (drafts, the open
   conversation, where you were reading).
-- **duang's own files** live in its data directory, `~/Library/Application Support/duang/`:
+- **kage's own files** live in its data directory, `~/Library/Application Support/kage/`:
   `agents.json` (the agents you added), `settings.json` (network and avatar style) and `auth.json`
   (provider credentials). Writes are atomic, and a file that cannot be read is reported with its
   original error, never treated as empty or overwritten.
-- **One credential file.** duang reads only its own `auth.json`, not the `fastagent` CLI's, pi's or a
+- **One credential file.** kage reads only its own `auth.json`, not the `fastagent` CLI's, pi's or a
   project's: one OAuth login kept in two files is invalidated by whichever refreshes first. A login
-  made in a terminal is made again in duang. Provider environment variables still apply.
-- **One instance.** Only one duang runs per data directory; starting another brings the running one
+  made in a terminal is made again in kage. Provider environment variables still apply.
+- **One instance.** Only one kage runs per data directory; starting another brings the running one
   forward. The installed app and `npm run dev` share the directory.
 
 More: [architecture](docs/architecture.md) (processes, state ownership, network route),
@@ -129,8 +130,11 @@ More: [architecture](docs/architecture.md) (processes, state ownership, network 
 - Conversations cannot be renamed or deleted: FastAgent's sessions have neither. A conversation is titled by
   the newest message you sent in it.
 - Messages queued from another window or a channel appear when they enter the conversation, not before.
+- The app uses `~/Library/Application Support/kage/`. It does not import the former app's registry,
+  credentials, conversations or drafts; its old data directory is left untouched. Reconnect providers
+  in kage rather than copying OAuth credentials between stores.
 - Sessions of earlier versions are not read: this version keeps its own instance of each agent.
-- Removing an agent moves its directory in `~/Agents/` and duang's conversations with it to the Trash; the folders it works on stay on disk.
+- Removing an agent moves its directory in `~/Agents/` and kage's conversations with it to the Trash; the folders it works on stay on disk.
 - Credentials are a plain JSON file (mode `0600`), as FastAgent writes it, not the macOS Keychain
   ([fastagent#652](https://github.com/fastagent-sh/fastagent/issues/652)).
 - A proxy that needs a user name and password is not supported.
@@ -140,13 +144,13 @@ More: [architecture](docs/architecture.md) (processes, state ownership, network 
   Anthropic does not document; Sign in with ChatGPT links to its usage page instead.
 - A command name typed by hand that the agent does not know goes to the model as plain text.
 - Attachments and voice input are not implemented.
-- duang does not run an agent's schedules or channels, and has no online agents or sharing yet.
+- kage does not run an agent's schedules or channels, and has no online agents or sharing yet.
 
 ## Roadmap
 
 Each stage is an outcome that has to be shown working with real use, not a date
 ([how that is measured](docs/design.md#how-we-know-it-worked)). The first local
-milestone ([Week 1](https://github.com/fastagent-sh/duang/milestone/1)) is accepted; stage 1 is in
+milestone ([Week 1](https://github.com/fastagent-sh/kage/milestone/1)) is accepted; stage 1 is in
 progress; the rest are planned.
 
 1. **Daily local workbench.** Create an agent with the folders it works on and the ones it should
@@ -175,18 +179,18 @@ npm run test:smoke    # the real app with a fake model: the local workflow, then
 npm run shots         # screenshots of the real window in both colour modes, into out/shots/
 npm run test:package  # package, then run the installed app outside the checkout
 npm run test:perf     # timings on a 150-turn conversation (machine-dependent, not in CI)
-DUANG_LIVE=1 npm run test:live  # opt-in: real provider calls with this machine's duang logins; two providers, any two
+KAGE_LIVE=1 npm run test:live  # opt-in: real provider calls with this machine's kage logins; two providers, any two
 ```
 
 FastAgent is pinned to an exact published version. Automated tests use isolated data and fake model
-endpoints; only `test:live` talks to real providers, spends model credits, and must run while duang
+endpoints; only `test:live` talks to real providers, spends model credits, and must run while kage
 is closed.
 
 ## Contributing
 
 Issues, discussions and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup,
 the branch and PR workflow and what to verify. Questions and ideas go to
-[Discussions](https://github.com/fastagent-sh/duang/discussions). Report a vulnerability privately as
+[Discussions](https://github.com/fastagent-sh/kage/discussions). Report a vulnerability privately as
 described in [SECURITY.md](SECURITY.md), never in a public issue.
 
 ## License

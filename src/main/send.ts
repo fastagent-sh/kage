@@ -70,7 +70,7 @@ export function sends() {
   let quitting = false;
   return {
     hold<T>(agentId: string, session: string, run: (stopped: () => boolean) => Promise<Result<T>>): Promise<Result<T>> {
-      if (quitting) return Promise.resolve(refuse("quitting", "duang is quitting: the message was not sent"));
+      if (quitting) return Promise.resolve(refuse("quitting", "kage is quitting: the message was not sent"));
       const key = keyOf(agentId, session);
       const ticket: Ticket = { stopped: false };
       const tickets = held.get(key) ?? new Set();

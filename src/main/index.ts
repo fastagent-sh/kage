@@ -95,7 +95,7 @@ const crashes: number[] = [];
 function reloadWhenGone(win: BrowserWindow): void {
   win.webContents.on("render-process-gone", (_event, details) => {
     if (details.reason === "clean-exit") return;
-    console.error(`duang: the window's renderer ended (${details.reason}, exit code ${details.exitCode})`);
+    console.error(`kage: the window's renderer ended (${details.reason}, exit code ${details.exitCode})`);
     const now = Date.now();
     crashes.push(now);
     while (crashes[0]! < now - CRASH_SPAN_MS) crashes.shift();
@@ -103,7 +103,7 @@ function reloadWhenGone(win: BrowserWindow): void {
     void dialog
       .showMessageBox(win, {
         type: "error",
-        message: "duang's window keeps crashing.",
+        message: "kage's window keeps crashing.",
         detail: `It ended ${crashes.length} times in the last minute (${details.reason}). The conversation it was showing may be what crashes it, so it opens on a new conversation; that one stays in the list. Runs in progress keep going.`,
         buttons: ["Open on a New Conversation", "Close Window"],
         defaultId: 0,
@@ -119,10 +119,10 @@ function reloadWhenGone(win: BrowserWindow): void {
 
 
 
-// One duang per userData (the app and `npm run dev` share it): two would write one registry with no lock and
+// One kage per userData (the app and `npm run dev` share it): two would write one registry with no lock and
 // refresh one OAuth login twice.
 if (!app.requestSingleInstanceLock()) {
-  console.error(`duang is already running with ${app.getPath("userData")}; showing that one instead.`);
+  console.error(`kage is already running with ${app.getPath("userData")}; showing that one instead.`);
   app.exit(0);
 } else
   app.on("second-instance", () => {
@@ -141,7 +141,7 @@ void app
     } catch (error) {
       // Guessing a manual proxy is worse than the system's; said here and on Settings until the file is fixed.
       dialog.showErrorBox(
-        "duang could not read its settings",
+        "kage could not read its settings",
         `${(error as Error).message}\n\nThe network follows the system proxy until the file is fixed or removed.`,
       );
     }
@@ -155,14 +155,14 @@ void app
   })
   .catch((error) => {
     console.error(error);
-    dialog.showErrorBox("duang could not start", String(error));
+    dialog.showErrorBox("kage could not start", String(error));
     app.quit();
   });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-// A run keeps going only while duang does, so ask. Quit anyway records a stop for each, as Stop does, so none is
+// A run keeps going only while kage does, so ask. Quit anyway records a stop for each, as Stop does, so none is
 // answered at the next launch, and closing the agents gives their work a moment to end.
 const CLOSE_WAIT_MS = 3000;
 let phase: "running" | "asking" | "stopping" | "leaving" = "running";
@@ -174,7 +174,7 @@ async function readyToQuit(): Promise<boolean> {
     busy = await runsBusy();
   } catch (error) {
     // Not being able to look must not keep the app from quitting.
-    console.error("duang: running conversations could not be listed before quitting:", error);
+    console.error("kage: running conversations could not be listed before quitting:", error);
   }
   if (busy) {
     const quit = dialog.showMessageBoxSync({
@@ -194,7 +194,7 @@ async function readyToQuit(): Promise<boolean> {
   }
   const gaveUp = new Promise<false>((resolve) => setTimeout(() => resolve(false), CLOSE_WAIT_MS));
   if (!(await Promise.race([closeAgents().then(() => true), gaveUp])))
-    console.error(`duang: the agents had not closed after ${CLOSE_WAIT_MS} ms; quitting cuts them, and the next launch may find an instance still held`);
+    console.error(`kage: the agents had not closed after ${CLOSE_WAIT_MS} ms; quitting cuts them, and the next launch may find an instance still held`);
   return true;
 }
 

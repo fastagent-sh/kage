@@ -17,7 +17,7 @@ const presentAtLaunch = new Set(Object.keys(process.env));
 // Chromium's route answer drops a launch proxy's credentials: say so rather than show a bare 407.
 const launchCredentials =
   launchUrl && hasCredentials(launchUrl)
-    ? `${launchVariable} carries a user name and password, and duang cannot authenticate to a proxy yet. Relaunch without them, or choose Manual with a proxy that needs none, or Off.`
+    ? `${launchVariable} carries a user name and password, and kage cannot authenticate to a proxy yet. Relaunch without them, or choose Manual with a proxy that needs none, or Off.`
     : undefined;
 const launchUnusable = () => current.mode === "automatic" && launchCredentials !== undefined;
 
@@ -81,7 +81,7 @@ export async function syncCommandProxy(): Promise<void> {
   const route = tryRoute(await session.defaultSession.resolveProxy(COMMAND_HOST));
   // A route the variables cannot express costs the commands their proxy (never a stale one), not the send.
   commandError = "error" in route ? `Agent commands get no proxy: ${route.error}` : undefined;
-  if (commandError) console.error(`[duang] ${commandError}`);
+  if (commandError) console.error(`[kage] ${commandError}`);
   const proxy = "error" in route ? undefined : route.proxy;
   for (const [name, value] of Object.entries(commandProxyEnv(proxy))) {
     if (presentAtLaunch.has(name)) continue;

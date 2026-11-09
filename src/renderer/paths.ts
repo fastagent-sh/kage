@@ -1,5 +1,5 @@
 export const home = (dir: string): string => {
-  const configured = (globalThis as { duang?: { homeDir?: string } }).duang?.homeDir?.replace(/\/+$/, "");
+  const configured = (globalThis as { kage?: { homeDir?: string } }).kage?.homeDir?.replace(/\/+$/, "");
   if (configured) {
     for (const prefix of configured.startsWith("/var/") ? [`/private${configured}`, configured] : [configured]) {
       if (dir === prefix) return "~";

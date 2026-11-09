@@ -8,7 +8,7 @@ import { AVATARS, avatar, DEFAULTS, network, proxyUrl, SettingsFile } from "./se
 const readSettings = (file: string) => new SettingsFile(file).read();
 
 test("only a missing file is a first run; an unreadable one names itself", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "duang-settings-"));
+  const dir = await mkdtemp(join(tmpdir(), "kage-settings-"));
   const file = join(dir, "settings.json");
   assert.deepEqual(await readSettings(file), DEFAULTS);
 
@@ -25,8 +25,8 @@ test("only a missing file is a first run; an unreadable one names itself", async
   assert.deepEqual(JSON.parse(await readFile(file, "utf8")).network.mode, "manual");
 });
 
-test("the avatar style is one duang draws; a file that names none has the default, one that names another is an error", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "duang-settings-"));
+test("the avatar style is one kage draws; a file that names none has the default, one that names another is an error", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kage-settings-"));
   const file = join(dir, "settings.json");
   assert.equal(DEFAULTS.avatar, "gaze");
   await writeFile(file, JSON.stringify({ network: { mode: "off" } }));
@@ -50,7 +50,7 @@ test("a proxy URL is normalised to scheme and host, and anything else is refused
 });
 
 test("changes go one at a time: two at once both land, a failed one leaves the file and the queue running", async () => {
-  const file = join(await mkdtemp(join(tmpdir(), "duang-settings-")), "settings.json");
+  const file = join(await mkdtemp(join(tmpdir(), "kage-settings-")), "settings.json");
   const settings = new SettingsFile(file);
   const order: string[] = [];
   await Promise.all([

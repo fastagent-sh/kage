@@ -1,7 +1,7 @@
 import { message } from "./message.ts";
 
-const KEY = "duang.drafts";
-const UNREADABLE = "duang.drafts.unreadable";
+const KEY = "kage.drafts";
+const UNREADABLE = "kage.drafts.unreadable";
 
 export function createDraftStorage() {
   let entries: [string, string][] = [];

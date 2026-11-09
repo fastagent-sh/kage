@@ -78,7 +78,7 @@ test("file paths are distinguished from model specs, slash commands, and code ex
     "docs/design.md#the-workbench",
     "./README.md#known-limitations",
     "./package.json",
-    "~/Library/Application Support/duang/agents.json",
+    "~/Library/Application Support/kage/agents.json",
     "/Users/someone/research/video-research",
     "fastagent.config.ts",
     "fastagent.config.ts:12",

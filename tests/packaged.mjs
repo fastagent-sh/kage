@@ -2,7 +2,7 @@
 // Checks bundle completeness, a real run against a local model, and the single-instance handoff.
 import assert from "node:assert/strict";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -11,15 +11,15 @@ import { extractAll } from "@electron/asar";
 import { chunk, requireFreshBuild, withoutCredentials, writeMockAgent } from "./harness.mjs";
 import { driver } from "./window.mjs";
 
-const built = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "mac-arm64", "duang.app");
+const built = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "mac-arm64", "kage.app");
 // The packaged app, not `out/`: `npm run package` refreshes it, and a source edit makes it stale.
 requireFreshBuild([join(built, "Contents", "Resources", "app.asar")], "npm run package");
-const root = mkdtempSync(join(tmpdir(), "duang-packaged-"));
+const root = mkdtempSync(join(tmpdir(), "kage-packaged-"));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Peers a bundled package declares but nothing duang runs imports. Each needs its reason.
+// Peers a bundled package declares but nothing kage runs imports. Each needs its reason.
 const UNUSED = {
-  // Only NodeRedis.js imports it. FastAgent loads the NodeHttpServer subpath, inside serve(), which duang never calls.
+  // Only NodeRedis.js imports it. FastAgent loads the NodeHttpServer subpath, inside serve(), which kage never calls.
   "@effect/platform-node": ["redis"],
 };
 
@@ -87,16 +87,22 @@ function launch(app, data) {
 }
 
 async function run() {
-  // 1. The bundle is complete.
+  const info = JSON.parse(execFileSync("plutil", ["-convert", "json", "-o", "-", join(built, "Contents", "Info.plist")], { encoding: "utf8" }));
+  assert.equal(info.CFBundleIdentifier, "sh.fastagent.kage");
+  assert.equal(info.CFBundleName, "kage");
+  assert.equal(info.CFBundleExecutable, "kage");
   const bundle = join(root, "bundle");
   extractAll(join(built, "Contents", "Resources", "app.asar"), bundle);
+  const manifest = JSON.parse(readFileSync(join(bundle, "package.json"), "utf8"));
+  assert.equal(manifest.name, "kage");
+  assert.ok(existsSync(join(dirname(dirname(built)), `kage-${manifest.version}-arm64.dmg`)));
   const unpacked = join(built, "Contents", "Resources", "app.asar.unpacked");
   if (existsSync(unpacked)) cpSync(unpacked, bundle, { recursive: true });
   const { checked, missing } = missingDependencies(bundle);
   assert.deepEqual(missing, [], `app.asar is missing modules (found only through the repository's node_modules)`);
 
   // 2. The app runs outside the repository.
-  const installed = join(root, "Applications", "duang.app");
+  const installed = join(root, "Applications", "kage.app");
   cpSync(built, installed, { recursive: true, verbatimSymlinks: true });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const data = join(root, "user-data");
@@ -105,7 +111,7 @@ async function run() {
   // The agent's own modules are the app's: the one place outside the repository that has pi-ai.
   writeMockAgent(project, server.address().port, { modules: join(bundle, "node_modules") });
   writeFileSync(join(data, "agents.json"), JSON.stringify([{ id: "p", name: "Installed", dir: project, colour: 2 }]));
-  const binary = join(installed, "Contents", "MacOS", "duang");
+  const binary = join(installed, "Contents", "MacOS", "kage");
   const first = launch(binary, data);
 
   // Chromium writes the port it chose to DevToolsActivePort in the profile.
@@ -148,13 +154,14 @@ async function run() {
   const { until, send } = driver(evaluate, { timeout: 30000, poll: 100, dump: () => first.output() });
 
   // The page is listed as soon as the window exists, before its preload has run: wait for the app's API.
-  await until("typeof window.duang?.listAgents === 'function'", "the window's preload API");
-  assert.equal(await evaluate("window.duang.listAgents().then((agents) => agents.map((a) => a.name).join())"), "Installed", "the isolated profile");
+  await until("typeof window.kage?.listAgents === 'function'", "the window's preload API");
+  assert.equal(await evaluate("document.title"), "kage");
+  assert.equal(await evaluate("window.kage.listAgents().then((agents) => agents.map((a) => a.name).join())"), "Installed", "the isolated profile");
   await send("go");
   await until("document.querySelector('main').innerText.includes('Installed answer.')", "the answer");
   assert.equal(readFileSync(join(project, "proof.txt"), "utf8").trim(), "installed", "bash ran in the project");
 
-  // 3. A second duang shows the first and leaves, also when the first has no window left.
+  // 3. A second kage shows the first and leaves, also when the first has no window left.
   const pages = () =>
     fetch(`http://127.0.0.1:${port}/json`)
       .then((r) => r.json())
@@ -162,18 +169,18 @@ async function run() {
   // The page goes with its window, so its reply never comes.
   void evaluate("window.close()");
   for (let t = 0; t < 50 && (await pages()) > 0; t++) await sleep(100);
-  assert.equal(await pages(), 0, "the first duang's window closed, the app still running");
+  assert.equal(await pages(), 0, "the first kage's window closed, the app still running");
   assert.equal(first.child.exitCode, null);
   const second = launch(binary, data);
   const code = await Promise.race([new Promise((resolve) => second.child.on("exit", resolve)), sleep(20000).then(() => "still running")]);
-  assert.equal(code, 0, `a second duang on the same profile leaves: ${second.output()}`);
+  assert.equal(code, 0, `a second kage on the same profile leaves: ${second.output()}`);
   assert.match(second.output(), /already running/);
   for (let t = 0; t < 100 && (await pages()) === 0; t++) await sleep(100);
   assert.equal(await pages(), 1, "the first one shows a window again");
   first.child.kill();
   const exited = await Promise.race([new Promise((resolve) => first.child.on("exit", resolve)), sleep(10000).then(() => "still running")]);
   assert.equal(exited, 0, `the running app quits on SIGTERM: ${first.output()}`);
-  console.log(`Packaged app passed: ${checked} bundled packages complete, an agent answered with a bash call outside the repository, one duang per profile.`);
+  console.log(`Packaged app passed: ${checked} bundled packages complete, an agent answered with a bash call outside the repository, one kage per profile.`);
 }
 
 const timeout = setTimeout(() => {

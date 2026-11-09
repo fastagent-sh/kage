@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { DuangApi, OpenResult } from "../preload/index.ts";
+import type { KageApi, OpenResult } from "../preload/index.ts";
 import { STOPPED_CODE } from "../shared/refusals.ts";
 import { queueView } from "./transcript.ts";
 import {
@@ -18,7 +18,7 @@ import {
   userEntry,
 } from "./store-harness.ts";
 
-type Sent = Awaited<ReturnType<DuangApi["send"]>>;
+type Sent = Awaited<ReturnType<KageApi["send"]>>;
 type Harness = ReturnType<typeof harness>;
 type Open = NonNullable<ReturnType<Harness["store"]["getSnapshot"]>["conversation"]>;
 
@@ -91,7 +91,7 @@ test("a rejected send returns its text without eating what was typed meanwhile",
 
 
 test("unreadable drafts are moved aside, not overwritten by the next write", async () => {
-  const values = new Map<string, string>([["duang.drafts", "{not json"]]);
+  const values = new Map<string, string>([["kage.drafts", "{not json"]]);
   Object.defineProperty(globalThis, "localStorage", {
     value: { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => void values.set(k, v) },
     configurable: true,
@@ -102,8 +102,8 @@ test("unreadable drafts are moved aside, not overwritten by the next write", asy
     const { store } = harness();
     await store.load();
     store.setDraft("new text");
-    assert.equal(values.get("duang.drafts.unreadable"), "{not json", "the person's old text survives the write");
-    assert.match(values.get("duang.drafts") ?? "", /new text/);
+    assert.equal(values.get("kage.drafts.unreadable"), "{not json", "the person's old text survives the write");
+    assert.match(values.get("kage.drafts") ?? "", /new text/);
     store.dispose();
   } finally {
     console.error = error;
@@ -121,7 +121,7 @@ test("a draft save failure is visible, keeps the text, and clears after storage 
     value: {
       getItem: (key: string) => values.get(key) ?? null,
       setItem(key: string, value: string) {
-        if (failing && key === "duang.drafts") throw new Error("storage full");
+        if (failing && key === "kage.drafts") throw new Error("storage full");
         values.set(key, value);
       },
     },
@@ -140,7 +140,7 @@ test("a draft save failure is visible, keeps the text, and clears after storage 
   failing = false;
   store.setDraft("keep this text");
   assert.equal(store.getSnapshot().draftsError, undefined);
-  assert.match(values.get("duang.drafts") ?? "", /keep this text/);
+  assert.match(values.get("kage.drafts") ?? "", /keep this text/);
 });
 
 
@@ -417,7 +417,7 @@ test("a stream that finished by itself is listened to again once; any other end 
   await store.retry();
   assert.equal(store.getSnapshot().conversation?.ended, undefined);
 
-  // duang ending it (the agent was removed) is not answered by opening it again.
+  // kage ending it (the agent was removed) is not answered by opening it again.
   const before = opens.length;
   end(store.getSnapshot().conversation!, "The agent was removed", "ended");
   await new Promise((resolve) => setImmediate(resolve));

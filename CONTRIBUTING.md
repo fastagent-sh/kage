@@ -1,4 +1,4 @@
-# Contributing to duang
+# Contributing to kage
 
 Use GitHub Flow: one focused branch, one reviewed PR, one squash commit on `main`.
 All repository-facing text is English. Product scope comes from [README.md](README.md),
@@ -11,8 +11,8 @@ Use Node 24.15 or later and npm. FastAgent is an exact version from npm (`@fasta
 `package.json` and the lockfile), so a standalone checkout is all there is to set up:
 
 ```bash
-git clone https://github.com/fastagent-sh/duang.git duang
-cd duang
+git clone https://github.com/fastagent-sh/kage.git kage
+cd kage
 npm ci
 npm test
 npm run build
@@ -20,16 +20,16 @@ npm run dev
 ```
 
 `npm run build` includes TypeScript checking and the Electron main/preload/renderer builds.
-duang does not follow a moving FastAgent branch or a local checkout of it: what CI runs is what
+kage does not follow a moving FastAgent branch or a local checkout of it: what CI runs is what
 you run. A FastAgent API change must be released upstream first, then the exact version is bumped
-in the same duang PR that consumes it (`npm install @fastagent-sh/fastagent@X.Y.Z --save-exact`),
+in the same kage PR that consumes it (`npm install @fastagent-sh/fastagent@X.Y.Z --save-exact`),
 with `npm test`, `npm run build` and `npm run test:smoke` run against it.
 
 Verify locally before pushing. CI is confirmation, not the first debugging environment.
 
 ## Issues and milestones
 
-Questions and ideas go to [Discussions](https://github.com/fastagent-sh/duang/discussions); issues are
+Questions and ideas go to [Discussions](https://github.com/fastagent-sh/kage/discussions); issues are
 for bugs and concrete feature requests. Security reports never go in an issue: see
 [SECURITY.md](SECURITY.md).
 
@@ -87,7 +87,7 @@ threads; address every item before resolving its thread.
 ## Product-specific verification
 
 `Desktop checks` runs tests, a production build, `node tests/smoke.mjs`, `node tests/transcript.mjs` and `node tests/quit.mjs` on
-macOS with Node 24.15 or later — all three launch a real Electron window, so they run on the only platform duang supports. The
+macOS with Node 24.15 or later — all three launch a real Electron window, so they run on the only platform kage supports. The
 smoke drives the real Electron/preload/IPC/FastAgent stack with synthetic credentials and fake HTTP. The
 transcript check holds runs at the steps the live end of a run must draw as one line (calls running, a
 thought, an answer being written, a retry waited out) against a local fake model endpoint. The quit check
@@ -97,7 +97,7 @@ launch would: the message must be canceled and its tool not run again. Run
 checks that the bundle carries every module it needs, runs the installed app outside the checkout against a fake
 model endpoint, and keeps the dmg as an artifact; `npm run test:package` does the same locally. None of these checks signing or
 notarization, and none claims Windows/Linux support, real-provider/OAuth validation or full Week 1 acceptance. The
-[release gate](https://github.com/fastagent-sh/duang/issues/16) still requires workflow evidence.
+[release gate](https://github.com/fastagent-sh/kage/issues/16) still requires workflow evidence.
 
 `npm run test:perf` measures a long conversation (open, scroll, a new turn streaming) and is run by hand before
 and after a change to how the transcript renders; it depends on the machine, so it is not in CI.
@@ -135,9 +135,9 @@ on a branch up to date with `main`, review conversations must be resolved, histo
 and the rules apply to admins too. After changing that file, a repository admin applies and verifies it:
 
 ```bash
-gh api --method PUT repos/fastagent-sh/duang/branches/main/protection \
+gh api --method PUT repos/fastagent-sh/kage/branches/main/protection \
   --input .github/main-protection.json
-gh api repos/fastagent-sh/duang/branches/main/protection
+gh api repos/fastagent-sh/kage/branches/main/protection
 ```
 
 After an explicitly authorized merge:
@@ -157,7 +157,7 @@ GitHub retargets the PR to `main` once the parent's branch is deleted.
 
 ## Releases
 
-A release is the macOS app (`duang-X.Y.Z-arm64.dmg`) attached to a GitHub Release `vX.Y.Z`. Start from a
+A release is the macOS app (`kage-X.Y.Z-arm64.dmg`) attached to a GitHub Release `vX.Y.Z`. Start from a
 clean, up-to-date `main` with an authenticated GitHub CLI:
 
 ```bash

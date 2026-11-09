@@ -247,7 +247,7 @@ export function lost(c: Conversation, ending: { reason: string; why: "let_go" | 
   else
     c.error = {
       title: "The live connection to this conversation was lost",
-      advice: "A run in it goes on in duang. Reconnect to see where it is now.",
+      advice: "A run in it goes on in kage. Reconnect to see where it is now.",
       reason: ending.reason,
     };
 }

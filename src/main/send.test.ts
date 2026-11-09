@@ -62,11 +62,11 @@ test("a message goes only to a model the picker would offer, before anything is 
   const asked: string[] = [];
   const inherited = fake();
   await send(inherited.agent, "s", "hello", () => false, async (spec) => (asked.push(spec), true));
-  assert.deepEqual(asked, ["anthropic/claude-sonnet-4-5"], "with no default of duang's, a conversation runs on the config's");
+  assert.deepEqual(asked, ["anthropic/claude-sonnet-4-5"], "with no default of kage's, a conversation runs on the config's");
   assert.deepEqual(inherited.calls, ["send:hello:steer"]);
 });
 
-test("a conversation with no model of its own is given duang's default for the agent, and refused if that cannot run", async () => {
+test("a conversation with no model of its own is given kage's default for the agent, and refused if that cannot run", async () => {
   const given = fake();
   const asked: string[] = [];
   await send(given.agent, "s", "hello", () => false, async (spec) => (asked.push(spec), true), "openai/gpt-5.5");

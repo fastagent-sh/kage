@@ -21,7 +21,7 @@ import {
 } from "./agent-files.ts";
 
 test("registry serializes writes in one process, survives restart and deduplicates real paths", async () => {
-  const root = await mkdtemp(join(tmpdir(), "duang-registry-"));
+  const root = await mkdtemp(join(tmpdir(), "kage-registry-"));
   try {
     const file = join(root, "data", "agents.json");
     const registry = new AgentRegistry(file);
@@ -51,7 +51,7 @@ test("registry serializes writes in one process, survives restart and deduplicat
 });
 
 test("each agent has a colour: the lowest one free, kept for its life, reused once it is free again", async () => {
-  const root = await mkdtemp(join(tmpdir(), "duang-registry-"));
+  const root = await mkdtemp(join(tmpdir(), "kage-registry-"));
   try {
     const registry = new AgentRegistry(join(root, "agents.json"));
     const dirs = await Promise.all(["a", "b", "c", "d"].map(async (name) => {
@@ -71,7 +71,7 @@ test("each agent has a colour: the lowest one free, kept for its life, reused on
 });
 
 test("every row names its colour, a whole number from zero; one without it is an invalid registry", async () => {
-  const root = await mkdtemp(join(tmpdir(), "duang-registry-"));
+  const root = await mkdtemp(join(tmpdir(), "kage-registry-"));
   try {
     const file = join(root, "agents.json");
     for (const colour of [undefined, -1, 1.5, "3", null]) {
@@ -86,7 +86,7 @@ test("every row names its colour, a whole number from zero; one without it is an
 });
 
 test("invalid or unreadable registry fails visibly and is never replaced with an empty list", async () => {
-  const root = await mkdtemp(join(tmpdir(), "duang-registry-"));
+  const root = await mkdtemp(join(tmpdir(), "kage-registry-"));
   try {
     const file = join(root, "agents.json");
     const registry = new AgentRegistry(file);
@@ -111,7 +111,7 @@ test("invalid or unreadable registry fails visibly and is never replaced with an
 });
 
 test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers collisions, and refuses invalid content without leaving files", async () => {
-  const root = await mkdtemp(join(tmpdir(), "duang-create-"));
+  const root = await mkdtemp(join(tmpdir(), "kage-create-"));
   try {
     const agentsDir = join(root, "Agents");
     const registry = new AgentRegistry(join(root, "agents.json"));
@@ -238,7 +238,7 @@ test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers
 });
 
 test("a fresh config replaces only the agent's own, keeps the old one beside it, never over a copy, and loads", async () => {
-  const root = await mkdtemp(join(tmpdir(), "duang-file-"));
+  const root = await mkdtemp(join(tmpdir(), "kage-file-"));
   try {
     const dir = join(root, "agent");
     await mkdir(dir, { recursive: true });
@@ -271,7 +271,7 @@ test("a fresh config replaces only the agent's own, keeps the old one beside it,
 });
 
 test("a load that failed in the config is told apart by FastAgent's own words", async () => {
-  const root = await mkdtemp(join(tmpdir(), "duang-config-"));
+  const root = await mkdtemp(join(tmpdir(), "kage-config-"));
   const failure = async (name: string, files: Record<string, string>) => {
     const dir = join(root, name);
     for (const [file, text] of Object.entries(files)) {
@@ -303,7 +303,7 @@ test("a load that failed in the config is told apart by FastAgent's own words", 
 });
 
 test("only a folder that is not there is missing; one that cannot be looked at says why", async () => {
-  const root = await mkdtemp(join(tmpdir(), "duang-folder-"));
+  const root = await mkdtemp(join(tmpdir(), "kage-folder-"));
   try {
     await assert.rejects(requireFolder(join(root, "gone")), (error) => error instanceof MissingDirError && /ENOENT/.test(error.message));
     await writeFile(join(root, "file"), "");
@@ -322,7 +322,7 @@ test("only a folder that is not there is missing; one that cannot be looked at s
 });
 
 test("agent paths resolve relative, home, and file-URL targets with line suffixes, and reject missing files", async () => {
-  const root = await mkdtemp(join(tmpdir(), "duang-path-"));
+  const root = await mkdtemp(join(tmpdir(), "kage-path-"));
   try {
     const agent = join(root, "agent");
     const home = join(root, "home");

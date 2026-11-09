@@ -1,16 +1,16 @@
 {
-  "name": "duang",
+  "name": "kage",
   "version": "0.2.0",
   "description": "A native workbench for FastAgent agents.",
   "license": "MIT",
-  "author": "the duang authors (https://github.com/fastagent-sh/duang)",
-  "homepage": "https://github.com/fastagent-sh/duang#readme",
+  "author": "the kage authors (https://github.com/fastagent-sh/kage)",
+  "homepage": "https://github.com/fastagent-sh/kage#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/fastagent-sh/duang.git"
+    "url": "git+https://github.com/fastagent-sh/kage.git"
   },
   "bugs": {
-    "url": "https://github.com/fastagent-sh/duang/issues"
+    "url": "https://github.com/fastagent-sh/kage/issues"
   },
   "keywords": [
     "fastagent",

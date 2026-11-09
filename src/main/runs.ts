@@ -24,7 +24,7 @@ export async function stopRuns(agents: Opened[]): Promise<void> {
   await Promise.all(
     running.map(({ agentId, session }) =>
       byId.get(agentId)!.sessions.cancel(session).catch((error: unknown) => {
-        console.error(`duang: ${agentId}/${session} could not be stopped before quitting:`, error);
+        console.error(`kage: ${agentId}/${session} could not be stopped before quitting:`, error);
       }),
     ),
   );

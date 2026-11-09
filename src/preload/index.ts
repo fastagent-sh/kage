@@ -104,6 +104,6 @@ const api = {
   },
 };
 
-export type DuangApi = typeof api;
+export type KageApi = typeof api;
 
-contextBridge.exposeInMainWorld("duang", api);
+contextBridge.exposeInMainWorld("kage", api);

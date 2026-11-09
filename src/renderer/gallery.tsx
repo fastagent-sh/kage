@@ -28,7 +28,7 @@ export default function Gallery() {
       <div className="column space-y-8">
         <header>
           <h1 className="text-[22px] font-medium">
-            duang<span className="text-accent">·</span> components
+            kage<span className="text-accent">·</span> components
           </h1>
           <p className="text-muted text-[12px]">docs/ui.md §6b. Every section renders the real components.</p>
         </header>
@@ -227,7 +227,7 @@ export default function Gallery() {
             <Problem
               tone="error"
               title="This run was cut short"
-              advice="duang or the computer stopped before an answer was recorded. What it did up to here is kept."
+              advice="kage or the computer stopped before an answer was recorded. What it did up to here is kept."
             />
             <Message item={{ kind: "note", tone: "info", text: "run stopped", at: FIXED }} />
             <Message item={{ kind: "note", tone: "info", text: "retrying 1/3: could not reach the provider", at: FIXED }} />
@@ -240,7 +240,7 @@ export default function Gallery() {
               layout="strip"
               tone="error"
               title="The agent was not renamed"
-              reason="EACCES: permission denied, rename '~/Library/Application Support/duang/agents.json.tmp' -> '~/Library/Application Support/duang/agents.json'"
+              reason="EACCES: permission denied, rename '~/Library/Application Support/kage/agents.json.tmp' -> '~/Library/Application Support/kage/agents.json'"
               onDismiss={() => {}}
             />
             <Problem

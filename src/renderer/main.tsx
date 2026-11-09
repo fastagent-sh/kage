@@ -19,7 +19,7 @@ createRoot(document.getElementById("root")!).render(
           <Problem
             layout="page"
             tone="error"
-            title="duang could not draw this window"
+            title="kage could not draw this window"
             advice="Runs keep going in the background. Reload to draw it again; if the conversation it shows is what fails, open a new one instead (that conversation stays in the list)."
             reason={error.message}
             actions={
