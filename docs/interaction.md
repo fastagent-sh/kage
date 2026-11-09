@@ -96,7 +96,7 @@ request on opening and after every change: `connected · 320 ms` for any HTTP an
 `unreachable (ECONNREFUSED)` with the full error, naming the route, on hover; a refresh control
 checks again. A route kage cannot take (a PAC answer such as SOCKS4) shows as `unsupported proxy
 route` and fails model requests with that reason; if only the route for agent commands is
-unusable, they get no proxy variables and the page says so in red. Neither stops kage from
+unusable, their connections are refused with that reason and the page says so in red. Neither stops kage from
 starting or sending. Choices are applied one at a time in the order made. A launch proxy variable
 with a user name or password (`http://user:pass@proxy:8080`) cannot be used, because kage cannot
 authenticate to a proxy yet: *Automatic* then shows `unsupported proxy route` and every request

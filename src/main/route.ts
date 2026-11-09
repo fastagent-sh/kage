@@ -82,22 +82,12 @@ export class RoutedDispatcher extends Dispatcher {
   }
 }
 
-// Both spellings: curl reads only lowercase. Per-host PAC rules and the bypass list cannot be expressed here.
+// Both spellings: curl reads only lowercase.
 export function commandProxyEnv(proxy: string | undefined): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = {};
   for (const name of ["HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY"]) env[name] = env[name.toLowerCase()] = proxy;
   env.NO_PROXY = env.no_proxy = proxy && "localhost,127.0.0.1,::1";
   return env;
-}
-
-const shellQuoted = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
-
-/** What bash runs before a command to give it `env`: a value is exported, an absent one unset. Names in `keep` are left as they are. */
-export function commandEnvScript(env: Record<string, string | undefined>, keep: ReadonlySet<string>): string {
-  return Object.entries(env)
-    .filter(([name]) => !keep.has(name))
-    .map(([name, value]) => (value === undefined ? `unset ${name}\n` : `export ${name}=${shellQuoted(value)}\n`))
-    .join("");
 }
 
 export function unreachable(host: string, proxy: string | undefined, error: unknown): { error: string; code?: string } {

@@ -64,8 +64,8 @@ provider, **Network settings** for a connection error,
 
 **Works behind a proxy.** Every model and sign-in request follows the system proxy as it is at that
 moment, including PAC rules and a VPN switched on later; Settings → Network can fix a proxy or turn
-it off, and checks the route. The agent's own commands (`git`, `npm`) get the proxy too, as it is when each
-command starts. (Other processes an agent starts, such as MCP servers, keep the route it opened with.)
+it off, and checks the route. The agent's own commands (`git`, `npm`, MCP servers) get it too, through a
+proxy kage runs on loopback that takes the route as it is for each connection.
 
 Also: `/` completes the agent's skills, extension commands and prompt templates; light and dark
 follow the system; seven avatar styles; the sidebar and transcript work from the keyboard.

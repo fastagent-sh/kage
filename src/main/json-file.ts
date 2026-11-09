@@ -18,15 +18,11 @@ export async function readJson<T>(file: string, missing: T, parse: (value: unkno
   }
 }
 
-export function writeJsonAtomic(file: string, value: unknown): Promise<void> {
-  return writeTextAtomic(file, JSON.stringify(value, null, 2));
-}
-
-export async function writeTextAtomic(file: string, text: string): Promise<void> {
+export async function writeJsonAtomic(file: string, value: unknown): Promise<void> {
   await mkdir(dirname(file), { recursive: true });
   const temporary = `${file}.${randomUUID()}.tmp`;
   try {
-    await writeFile(temporary, text, { flag: "wx", mode: 0o600 });
+    await writeFile(temporary, JSON.stringify(value, null, 2), { flag: "wx", mode: 0o600 });
     await rename(temporary, file);
   } finally {
     await rm(temporary, { force: true });

@@ -5,7 +5,7 @@ import { baseEnv, openAgent as openFastAgent, type LocalAgent } from "@fastagent
 import type { Result } from "../shared/result.ts";
 import { credentials } from "./credential-file.ts";
 import { changesForModel, choicesOf, offered, refOf, specOf } from "./models.ts";
-import { commandEnvFile } from "./proxy.ts";
+import { commandProxyEnvironment } from "./proxy.ts";
 import { loadProgram } from "./program.ts";
 import { runningSessions, stopRuns } from "./runs.ts";
 import { SecretStore } from "./secrets.ts";
@@ -119,7 +119,7 @@ async function build(row: AgentRow): Promise<LocalAgent> {
       config: instanceConfigPath(row.dir),
       credentials,
       secrets: { ...process.env, ...(await secrets.get(row.id)) },
-      env: { ...baseEnv(process.env), BASH_ENV: commandEnvFile },
+      env: { ...baseEnv(process.env), ...(await commandProxyEnvironment()) },
       offline: process.env.FASTAGENT_OFFLINE === "1",
     });
   } catch (error) {

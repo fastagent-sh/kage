@@ -1,10 +1,9 @@
 // Node's fetch ignores the system proxy and a startup snapshot misses VPNs and PAC changes, so every request
 // asks Chromium (route.ts); the Network setting only configures Chromium.
-import { app, session } from "electron";
-import { join } from "node:path";
+import { session } from "electron";
 import { setGlobalDispatcher } from "undici";
-import { writeTextAtomic } from "./json-file.ts";
-import { commandEnvScript, commandProxyEnv, hasCredentials, RoutedDispatcher, tryRoute, unreachable } from "./route.ts";
+import { startForwarder, type Forwarder } from "./forward.ts";
+import { commandProxyEnv, hasCredentials, RoutedDispatcher, tryRoute, unreachable } from "./route.ts";
 import type { Network } from "./settings.ts";
 
 const MODEL_HOST = "https://api.anthropic.com";
@@ -33,8 +32,10 @@ export interface Route {
 }
 
 let current: Network = { mode: "automatic" };
-let commandError: string | undefined;
 let installed = false;
+
+const resolveRoute = (url: string) =>
+  launchUnusable() ? Promise.reject(new Error(launchCredentials)) : session.defaultSession.resolveProxy(url);
 
 export async function applyNetwork(network: Network): Promise<void> {
   const config: Electron.ProxyConfig =
@@ -54,20 +55,17 @@ export async function applyNetwork(network: Network): Promise<void> {
   await session.defaultSession.closeAllConnections();
   current = network;
   if (!installed) {
-    setGlobalDispatcher(
-      new RoutedDispatcher((origin) =>
-        launchUnusable() ? Promise.reject(new Error(launchCredentials)) : session.defaultSession.resolveProxy(origin),
-      ),
-    );
+    setGlobalDispatcher(new RoutedDispatcher(resolveRoute));
     installed = true;
   }
-  await syncCommandProxy();
 }
 
 export async function describeRoute(): Promise<Route> {
   const route = launchUnusable()
     ? { error: launchCredentials! }
     : tryRoute(await session.defaultSession.resolveProxy(MODEL_HOST));
+  const command = launchUrl ? {} : tryRoute(await session.defaultSession.resolveProxy(COMMAND_HOST));
+  const commandError = "error" in command ? `Agent commands cannot connect through it: ${command.error}` : undefined;
   const source: Source = current.mode === "automatic" ? (launchUrl ? "environment" : "system") : current.mode === "manual" ? "manual" : "off";
   return {
     ...route,
@@ -77,32 +75,25 @@ export async function describeRoute(): Promise<Route> {
   };
 }
 
-// FastAgent fixes an agent's environment when the agent opens, and reopening one mid-conversation would cut the
-// window's live view of it. Bash runs this file (BASH_ENV) before every command, so the route in force when a
-// command starts reaches it; processes started by other means keep the environment the agent opened with.
-export const commandEnvFile = join(app.getPath("userData"), "command-env.sh");
-let writtenScript: string | undefined;
-async function writeCommandEnv(script: string): Promise<void> {
-  if (script === writtenScript) return;
-  await writeTextAtomic(commandEnvFile, script);
-  writtenScript = script;
-}
+let forwarder: Promise<Forwarder> | undefined;
 
-// Runs before every send, and at launch, so the file exists before an agent opens.
-export async function syncCommandProxy(): Promise<void> {
-  if (launchUrl) return writeCommandEnv("");
-  const route = tryRoute(await session.defaultSession.resolveProxy(COMMAND_HOST));
-  // A route the variables cannot express costs the commands their proxy (never a stale one), not the send.
-  commandError = "error" in route ? `Agent commands get no proxy: ${route.error}` : undefined;
-  if (commandError) console.error(`[kage] ${commandError}`);
-  const proxy = "error" in route ? undefined : route.proxy;
-  const env = commandProxyEnv(proxy);
-  for (const [name, value] of Object.entries(env)) {
-    if (presentAtLaunch.has(name)) continue;
-    if (value === undefined) delete process.env[name];
-    else process.env[name] = value;
+/**
+ * The proxy variables an agent's commands start with: kage's forwarder, whose route follows the Network setting for
+ * each connection. A proxy exported in the launching terminal is the commands' own and is left as it is.
+ */
+export async function commandProxyEnvironment(): Promise<Record<string, string>> {
+  if (launchUrl) return {};
+  if (!forwarder) {
+    const starting = startForwarder(resolveRoute);
+    forwarder = starting;
+    starting.catch(() => {
+      if (forwarder === starting) forwarder = undefined;
+    });
   }
-  await writeCommandEnv(commandEnvScript(env, presentAtLaunch));
+  const { url } = await forwarder;
+  return Object.fromEntries(
+    Object.entries(commandProxyEnv(url)).flatMap(([name, value]) => (value === undefined || presentAtLaunch.has(name) ? [] : [[name, value]])),
+  );
 }
 
 export type ConnectionCheck = { status: number; ms: number; route: Route } | { error: string; code?: string };

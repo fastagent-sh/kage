@@ -1,6 +1,6 @@
 // A program that declares a variable it needs: the agent does not open until kage holds a value, the value is set
 // in the window, and it reaches the agent's commands (and nothing else of kage's environment does). Then the
-// network route changes under the open agent, and its next command sees the route as it is.
+// network route changes under the open agent, and its next connection takes the route as it is.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -80,18 +80,33 @@ if (root) {
     assert.equal(readFileSync(join(project, "got-undeclared.txt"), "utf8"), "", "a variable nobody declared does not");
     assert.ok(!existsSync(join(project, ".state", NAME)));
 
-    // The agent stays open while the route changes: no reopen, and the next command still sees the new route.
-    const proxyOf = async (name) => {
-      await checked(`printenv HTTPS_PROXY > ${name}.txt; true`);
-      return readFileSync(join(project, `${name}.txt`), "utf8").trim();
+    // The agent stays open while the route changes; its commands keep one proxy, kage's, which takes the route
+    // as it is for each connection. `kage.test` resolves nowhere, so only the upstream proxy can answer for it.
+    const upstream = createServer((_req, res) => res.end("via-upstream"));
+    upstream.on("connect", (_req, socket) => {
+      socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+      upstream.emit("connection", socket);
+    });
+    await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+    const fetched = async (name) => {
+      await checked(`printenv HTTPS_PROXY > ${name}-proxy.txt; curl -s --max-time 20 http://kage.test/ > ${name}.txt; true`);
+      return { proxy: readFileSync(join(project, `${name}-proxy.txt`), "utf8").trim(), answer: readFileSync(join(project, `${name}.txt`), "utf8") };
     };
-    await evaluate(`window.kage.setNetwork({ mode: "off" })`);
-    assert.equal(await proxyOf("proxy-before"), "", "no proxy to begin with");
-    await evaluate(`window.kage.setNetwork({ mode: "manual", url: "http://127.0.0.1:7777" })`);
-    assert.equal(await proxyOf("proxy-manual"), "http://127.0.0.1:7777", "a proxy set while the agent is open reaches its next command");
-    await evaluate(`window.kage.setNetwork({ mode: "off" })`);
-    assert.equal(await proxyOf("proxy-off"), "", "and turning it off takes it away again");
-    console.log("Secrets passed: a required value blocks the open, is set in the window, stays out of the folder and reaches only the commands; a route that changes under an open agent reaches its next command.");
+    try {
+      await evaluate(`window.kage.setNetwork({ mode: "off" })`);
+      const before = await fetched("off");
+      assert.match(before.proxy, /^http:\/\/127\.0\.0\.1:\d+$/, "commands are given kage's proxy");
+      assert.doesNotMatch(before.answer, /via-upstream/, "Off goes direct");
+      await evaluate(`window.kage.setNetwork({ mode: "manual", url: "http://127.0.0.1:${upstream.address().port}" })`);
+      const manual = await fetched("manual");
+      assert.equal(manual.proxy, before.proxy, "the variables a command starts with do not change");
+      assert.equal(manual.answer, "via-upstream", "a proxy set while the agent is open carries its next connection");
+      await evaluate(`window.kage.setNetwork({ mode: "off" })`);
+      assert.doesNotMatch((await fetched("off-again")).answer, /via-upstream/, "and turning it off takes it away again");
+    } finally {
+      upstream.close();
+    }
+    console.log("Secrets passed: a required value blocks the open, is set in the window, stays out of the folder and reaches only the commands; a route that changes under an open agent carries its next connection.");
     app.quit();
   }
   const timeout = setTimeout(() => {

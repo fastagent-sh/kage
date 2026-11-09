@@ -1388,7 +1388,7 @@ if (root) {
       // What the empty picker needed is put back, beside the provider it just connected.
       await writeFile(selectedAuth, JSON.stringify({ ...stored, ...JSON.parse(await readFile(selectedAuth, "utf8")) }));
 
-      // A SOCKS4 PAC route is shown, not fatal: a send still goes out, agent commands get no proxy.
+      // A SOCKS4 PAC route is shown, not fatal: a send still goes out; agent commands cannot connect through it.
       await electron.session.defaultSession.setProxy({
         mode: "pac_script",
         pacScript: `data:application/x-ns-proxy-autoconfig,${encodeURIComponent('function FindProxyForURL() { return "SOCKS 127.0.0.1:1080"; }')}`,
@@ -1400,12 +1400,12 @@ if (root) {
       await until(`document.querySelector('main').innerText.split('Smoke answer').length > ${before} && !document.querySelector('main .bounce')`, "a send is not stopped by the commands' route");
       settingsItem.click();
       await until(
-        "document.body.innerText.includes('unsupported proxy route') && document.body.innerText.includes('Agent commands get no proxy: Unsupported proxy route \"SOCKS 127.0.0.1:1080\"')",
+        "document.body.innerText.includes('unsupported proxy route') && document.body.innerText.includes('Agent commands cannot connect through it: Unsupported proxy route \"SOCKS 127.0.0.1:1080\"')",
         "both unusable routes are shown, and the settings file is not blamed",
       );
       assert.ok(!(await evaluate("document.body.innerText.includes('Fix or remove the file')")));
       await choose("Automatic");
-      await until("!!document.querySelector('[data-source=system]') && !document.body.innerText.includes('Agent commands get no proxy')", "choosing again recovers");
+      await until("!!document.querySelector('[data-source=system]') && !document.body.innerText.includes('Agent commands cannot connect')", "choosing again recovers");
       win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
       win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
       await until("!document.querySelector('#network-heading')", "Escape leaves Settings again");

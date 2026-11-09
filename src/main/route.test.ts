@@ -3,7 +3,7 @@ import { createServer, request as httpRequest, type Server } from "node:http";
 import { connect, type AddressInfo } from "node:net";
 import { test } from "node:test";
 import { fetch, getGlobalDispatcher, setGlobalDispatcher } from "undici";
-import { commandEnvScript, commandProxyEnv, hasCredentials, routeOf, RoutedDispatcher, tryRoute, unreachable } from "./route.ts";
+import { commandProxyEnv, hasCredentials, routeOf, RoutedDispatcher, tryRoute, unreachable } from "./route.ts";
 
 test("a PAC answer becomes the proxy to use, and anything unsupported is an error", () => {
   assert.equal(routeOf("DIRECT"), undefined);
@@ -40,12 +40,6 @@ test("commands get one proxy with loopback direct, in both spellings, or nothing
   const off = commandProxyEnv(undefined);
   assert.equal(Object.keys(off).length, 8);
   assert.ok(Object.values(off).every((value) => value === undefined));
-});
-
-test("bash is given a route's variables to export, or told to unset them, and what was set at launch is left alone", () => {
-  assert.equal(commandEnvScript({ HTTPS_PROXY: "http://127.0.0.1:7897", NO_PROXY: undefined }, new Set()), "export HTTPS_PROXY='http://127.0.0.1:7897'\nunset NO_PROXY\n");
-  assert.equal(commandEnvScript({ HTTPS_PROXY: "x", ALL_PROXY: "y" }, new Set(["ALL_PROXY"])), "export HTTPS_PROXY='x'\n");
-  assert.equal(commandEnvScript({ HTTPS_PROXY: "a'b" }, new Set()), "export HTTPS_PROXY='a'\\''b'\n");
 });
 
 const listen = (server: Server) =>
