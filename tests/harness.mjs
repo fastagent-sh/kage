@@ -85,13 +85,18 @@ export const chunk = (delta, finish = null) =>
  * `KAGE_MOCK_MODEL_URL`, read when the program loads. Built into `<root>/mock-program/dist`, which the scripts
  * hand to kage as `KAGE_PROGRAM_DIR`. Its modules are the repository's; `useModules` points them elsewhere.
  */
-export function buildMockProgram(root, { provider = "mock", modelId = "mock", extraModels = 0, model = {}, needsCredential = false } = {}) {
+export function buildMockProgram(root, { provider = "mock", modelId = "mock", extraModels = 0, model = {}, needsCredential = false, variables = {} } = {}) {
   const dir = join(root, "mock-program");
   mkdirSync(dir, { recursive: true });
   symlinkSync(join(ROOT, "node_modules"), join(dir, "node_modules"));
   writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "mock-agent", private: true, type: "module", version: "0.0.0" }));
   writeFileSync(join(dir, "SYSTEM.md"), "You are a test agent.\n");
   cpSync(join(ROOT, "program", "skills"), join(dir, "skills"), { recursive: true });
+  if (Object.keys(variables).length > 0)
+    writeFileSync(
+      join(dir, "context.json"),
+      JSON.stringify({ environment: { variables: Object.fromEntries(Object.entries(variables).map(([name, description]) => [name, { description }])) } }),
+    );
   writeFileSync(
     join(dir, "fastagent.config.ts"),
     `import { createProvider } from "@earendil-works/pi-ai";
@@ -151,8 +156,8 @@ export function writeInstance(dir, { model, skills = {}, content } = {}) {
 }
 
 /** Opens an instance in a script's own process, for the conversation a test starts from. Close it before kage opens it. */
-export async function openInstance(dir) {
+export async function openInstance(dir, secrets = {}) {
   const { openAgent, baseEnv } = await import("@fastagent-sh/fastagent");
   const program = (await import(pathToFileURL(join(process.env.KAGE_PROGRAM_DIR, "index.js")).href)).default;
-  return openAgent(program, { root: dir, config: join(dir, "fastagent.json"), secrets: {}, env: baseEnv(process.env), offline: true });
+  return openAgent(program, { root: dir, config: join(dir, "fastagent.json"), secrets, env: baseEnv(process.env), offline: true });
 }
