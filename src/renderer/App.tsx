@@ -38,7 +38,7 @@ export default function App() {
   const compact = useNarrowWindow(640);
   const closeProfile = () => {
     setProfileOpen(false);
-    requestAnimationFrame(() => document.querySelector<HTMLElement>('main > header button[aria-label="Agent details"]')?.focus());
+    requestAnimationFrame(() => document.querySelector<HTMLElement>('main > header .drag > button')?.focus());
   };
   const openSettings = () => {
     setSidebarOpen(false);

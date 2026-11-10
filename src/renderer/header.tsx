@@ -50,8 +50,8 @@ export function ConversationHeader({
             type="button"
             onClick={onOpenDetails}
             disabled={!onOpenDetails}
-            aria-label="Agent details"
-            title="Agent details"
+            tabIndex={-1}
+            aria-hidden
             className="pointer-events-auto shrink-0 rounded-full"
           >
             <Avatar id={id} name={agent} colour={colour} size={30} face={face} />
@@ -64,6 +64,7 @@ export function ConversationHeader({
                 onClick={onOpenDetails}
                 disabled={!onOpenDetails}
                 title={agent}
+                aria-label={`${agent}, agent details`}
                 className="no-drag block max-w-full truncate text-left font-prose font-semibold"
               >
                 {agent}

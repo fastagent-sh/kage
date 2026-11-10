@@ -153,3 +153,30 @@ test("a plain HTTP request is forwarded on its route, and a request that is not 
     http.server.close();
   }
 });
+
+test("a response that ends early upstream ends the client's connection instead of leaving it waiting", async () => {
+  const target = createServer((_req, res) => {
+    res.writeHead(200, { "content-length": "100" });
+    res.write("part", () => setTimeout(() => res.socket!.destroy(), 20));
+  });
+  const targetPort = await listen(target);
+  const forwarder = await startForwarder(async () => "DIRECT");
+  const { port } = new URL(forwarder.url);
+  try {
+    const ended = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("the client was left waiting")), 3000);
+      httpRequest({ host: "127.0.0.1", port, path: `http://127.0.0.1:${targetPort}/` }, (res) => {
+        res.resume();
+        res.once("error", () => resolve("error"));
+        res.once("close", () => resolve("close"));
+      })
+        .on("error", () => resolve("error"))
+        .once("close", () => clearTimeout(timer))
+        .end();
+    });
+    assert.ok(["error", "close"].includes(ended));
+  } finally {
+    await forwarder.close();
+    target.close();
+  }
+});

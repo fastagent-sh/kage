@@ -281,7 +281,7 @@ if (root) {
       );
       await chooseModel("openai/gpt-4o-mini");
       await until("document.querySelector('dialog') === null", "first model picker closes");
-      await evaluate(`document.querySelector('main > header button[aria-label="Agent details"]').click()`);
+      await evaluate(`document.querySelector('main > header .drag > button').click()`);
       await until("document.querySelector('#agent-info') !== null", "agent details pane opens");
       const infoText = await evaluate("document.querySelector('#agent-info').innerText");
       assert.match(infoText, /Folders it works on/);
@@ -301,7 +301,7 @@ if (root) {
       await evaluate(`document.querySelector('#agent-info button[aria-label="Close agent details"]').click()`);
       await until("document.querySelector('#agent-info') === null", "agent details pane closes");
       await until("/works on\\s+project/.test(document.querySelector('main > header').innerText)", "adding the folder back updates the header");
-      await evaluate(`document.querySelector('main > header button[aria-label="Agent details"]').click()`);
+      await evaluate(`document.querySelector('main > header .drag > button').click()`);
       await until("document.querySelector('#agent-info') !== null", "agent details reopens");
       await evaluate(`[...document.querySelectorAll('#agent-info button')].find((b) => b.textContent.includes('Change')).click()`);
       await until("document.querySelector('#agent-info') === null && document.querySelector('dialog[open]') !== null", "Change opens the model picker over the conversation");

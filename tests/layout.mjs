@@ -18,7 +18,7 @@ export async function checkPanelLayout(win, { evaluate, until, type }) {
     win.webContents.sendInputEvent({ type: "keyUp", keyCode });
   };
   const openDetails = async () => {
-    await evaluate(`(() => { const button = document.querySelector('button[aria-label="Agent details"]'); button.focus(); button.click(); })()`);
+    await evaluate(`(() => { const button = document.querySelector('main > header .drag > button'); button.focus(); button.click(); })()`);
     await until("!!document.querySelector('#agent-info')", "Agent details opens");
     await settle();
   };
@@ -85,7 +85,7 @@ export async function checkPanelLayout(win, { evaluate, until, type }) {
           await evaluate(`document.querySelector('#agent-info button[aria-label="Close agent details"]').click()`);
           await until("!document.querySelector('#agent-info')", "details closes");
           await settle();
-          assert.equal(await evaluate("document.activeElement.getAttribute('aria-label')"), "Agent details", `${label}: focus returns to the opener`);
+          assert.equal(await evaluate("document.activeElement.matches('main > header .drag > button')"), true, `${label}: focus returns to the opener`);
           await type(Array.from({ length: 12 }, (_, index) => `Draft line ${index + 1}: keep this text with its conversation.`).join("\n"));
           await settle();
           const drafting = await geometry();
@@ -284,11 +284,11 @@ export async function checkCompactSettings(win, { evaluate, until }) {
 }
 
 export async function checkPanelEscapeDuringRun(win, { evaluate, until }) {
-  await evaluate(`(() => { const button = document.querySelector('button[aria-label="Agent details"]'); button.focus(); button.click(); })()`);
+  await evaluate(`(() => { const button = document.querySelector('main > header .drag > button'); button.focus(); button.click(); })()`);
   await until("!!document.querySelector('#agent-info')", "details opens over a running conversation");
   win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
   win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
   await until("!document.querySelector('#agent-info')", "Escape closes details");
   assert.ok(await evaluate("!!document.querySelector('button[aria-label=\"Stop the run\"]')"), "closing details does not stop the run");
-  await until("document.activeElement.getAttribute('aria-label') === 'Agent details'", "focus returns to the opener");
+  await until("document.activeElement.matches('main > header .drag > button')", "focus returns to the opener");
 }
