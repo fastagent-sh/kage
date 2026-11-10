@@ -3,6 +3,7 @@
 // system proxy. No Electron import, so it is testable.
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import { connect, type Socket } from "node:net";
+import { pipeline } from "node:stream/promises";
 import { connect as connectTls } from "node:tls";
 import { request } from "undici";
 import { routeOf, RoutedDispatcher } from "./route.ts";
@@ -152,7 +153,7 @@ export async function startForwarder(resolve: (url: string) => Promise<string>):
         dispatcher,
       });
       res.writeHead(answer.statusCode, endToEnd(answer.headers));
-      answer.body.pipe(res);
+      await pipeline(answer.body, res);
     } catch (error) {
       if (!res.headersSent) res.writeHead(502, { "content-type": "text/plain" });
       res.end(`${failed(url.host, error)}\n`);

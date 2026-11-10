@@ -281,11 +281,11 @@ if (root) {
       );
       await chooseModel("openai/gpt-4o-mini");
       await until("document.querySelector('dialog') === null", "first model picker closes");
-      await evaluate(`document.querySelector('main > header button[aria-label="Agent details"]').click()`);
+      await evaluate(`document.querySelector('main > header .drag > button').click()`);
       await until("document.querySelector('#agent-info') !== null", "agent details pane opens");
       const infoText = await evaluate("document.querySelector('#agent-info').innerText");
       assert.match(infoText, /Folders it works on/);
-      assert.match(infoText, /Show agent folder in Finder/);
+      assert.match(infoText, /Show folder/);
       assert.match(infoText, /Tools/);
       assert.match(infoText, /\bread\b/);
       electron.dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [workspace] });
@@ -294,12 +294,20 @@ if (root) {
         await until("document.querySelectorAll('#agent-info button[aria-label=\"Remove project\"]').length === 0", "removing the folder updates the details pane");
         await until("[...document.querySelectorAll('#agent-info button')].some((button) => button.textContent.includes('Add folder…') && !button.disabled)", "folder refresh enables Add folder");
         await evaluate(`[...document.querySelectorAll('#agent-info button')].find((b) => b.textContent.includes('Add folder…')).click()`);
-        await until("/works on\\s+project/.test(document.querySelector('main > header').innerText)", "adding the folder back updates the header");
+        await until("document.querySelector('#agent-info')?.innerText.includes('project')", "adding the folder back updates the details");
       } finally {
         electron.dialog.showOpenDialog = showOpenDialog;
       }
       await evaluate(`document.querySelector('#agent-info button[aria-label="Close agent details"]').click()`);
       await until("document.querySelector('#agent-info') === null", "agent details pane closes");
+      await until("/works on\\s+project/.test(document.querySelector('main > header').innerText)", "adding the folder back updates the header");
+      await evaluate(`document.querySelector('main > header .drag > button').click()`);
+      await until("document.querySelector('#agent-info') !== null", "agent details reopens");
+      await evaluate(`[...document.querySelectorAll('#agent-info button')].find((b) => b.textContent.includes('Change')).click()`);
+      await until("document.querySelector('#agent-info') === null && document.querySelector('dialog[open]') !== null", "Change opens the model picker over the conversation");
+      win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+      win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+      await until("document.querySelector('dialog') === null", "Escape closes the model picker");
       await until(
         "document.querySelector('textarea') && !document.querySelector('textarea').disabled",
         "first model unlocks composer",
@@ -1505,7 +1513,7 @@ if (root) {
           text: document.querySelector('main > header').innerText,
         };
       })()`;
-      await until(`document.querySelector('main > header .drag > div')?.textContent === ${JSON.stringify(longName)}`, "renamed agent in header");
+      await until(`document.querySelector('main > header .drag > button')?.textContent === ${JSON.stringify(longName)}`, "renamed agent in header");
       const named = await evaluate(headerName);
       assert.equal(named.lines, 1, "the name alone in the drag handle");
       assert.ok(named.width <= named.available + 1, "the name stays inside the header");
