@@ -34,7 +34,6 @@ export async function checkPanelLayout(win, { evaluate, until, type }) {
       transcript: rect('[aria-label="Transcript"]'),
       lineHeight: parseFloat(getComputedStyle(document.querySelector('textarea')).lineHeight),
       inputPadding: parseFloat(getComputedStyle(document.querySelector('textarea')).paddingTop) + parseFloat(getComputedStyle(document.querySelector('textarea')).paddingBottom),
-      inspector: document.querySelector('#agent-info') ? rect('#agent-info') : undefined,
     };
   })()`);
   const hit = (selector) => evaluate(`(() => {
@@ -74,23 +73,19 @@ export async function checkPanelLayout(win, { evaluate, until, type }) {
           const closed = await geometry();
           readable(closed, `${label} closed`);
           await openDetails();
-          const opened = await geometry();
-          readable(opened, `${label} open`);
-          assert.ok(opened.inspector.left >= 0 && opened.inspector.right <= opened.viewport.width, `${label}: details fits horizontally`);
-          assert.ok(opened.inspector.top >= 0 && opened.inspector.bottom <= opened.viewport.height, `${label}: details fits vertically`);
+          const opened = await evaluate(`(() => {
+            const rect = (selector) => { const el = document.querySelector(selector), r = el.getBoundingClientRect(); return { left: r.left, right: r.right, width: r.width, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }; };
+            return { viewport: { width: innerWidth }, main: rect('main'), profile: rect('#agent-info') };
+          })()`);
+          assert.ok(opened.profile.left >= 0 && opened.profile.right <= opened.viewport.width, `${label}: details fits horizontally`);
+          assert.ok(opened.profile.scrollWidth <= opened.profile.clientWidth + 1, `${label}: details does not overflow sideways`);
+          assert.ok(Math.abs(closed.main.width - opened.main.width) < 1, `${label}: details takes the conversation's place`);
           assert.ok(await hit('#agent-info button[aria-label="Close agent details"]'), `${label}: details can be closed`);
-          if (opened.viewport.width > 1080) {
-            assert.ok(opened.main.right <= opened.inspector.left, `${label}: wide details stays beside the conversation`);
-          } else {
-            assert.ok(Math.abs(closed.main.width - opened.main.width) < 1, `${label}: opening details does not squeeze the conversation`);
-            assert.equal(await evaluate("document.querySelector('#agent-info').matches(':popover-open')"), true);
-          }
           await capture(`${label}-details`);
           await evaluate(`document.querySelector('#agent-info button[aria-label="Close agent details"]').click()`);
           await until("!document.querySelector('#agent-info')", "details closes");
-          if (opened.viewport.width <= 1080) {
-            assert.equal(await evaluate("document.activeElement.getAttribute('aria-label')"), "Agent details", `${label}: focus returns to the opener`);
-          }
+          await settle();
+          assert.equal(await evaluate("document.activeElement.getAttribute('aria-label')"), "Agent details", `${label}: focus returns to the opener`);
           await type(Array.from({ length: 12 }, (_, index) => `Draft line ${index + 1}: keep this text with its conversation.`).join("\n"));
           await settle();
           const drafting = await geometry();
@@ -146,13 +141,10 @@ export async function checkPanelLayout(win, { evaluate, until, type }) {
     await settle();
     await openDetails();
     win.webContents.setZoomFactor(1.5);
-    await until("document.querySelector('#agent-info').matches(':popover-open')", "existing inspector becomes an overlay");
-    win.webContents.setZoomFactor(1);
-    await until("!document.querySelector('#agent-info').hasAttribute('popover')", "inspector returns to its column");
-    win.webContents.setZoomFactor(1.5);
-    await until("document.querySelector('#agent-info').matches(':popover-open')", "inspector overlays again");
-    await evaluate(`document.querySelector('#agent-info button[aria-label="Close agent details"]').click()`);
-    await until("!document.querySelector('#agent-info')", "inspector closes after resize");
+    await settle();
+    assert.ok(await hit('#agent-info button[aria-label="Close agent details"]'), "open details survives a zoom change");
+    press("Escape");
+    await until("!document.querySelector('#agent-info')", "Escape closes details");
   } finally {
     nativeTheme.themeSource = initialTheme;
     win.setSize(...initialSize);
@@ -292,33 +284,11 @@ export async function checkCompactSettings(win, { evaluate, until }) {
 }
 
 export async function checkPanelEscapeDuringRun(win, { evaluate, until }) {
-  const initialSize = win.getSize();
-  win.setSize(800, 540);
-  try {
-    await evaluate(`(() => { const button = document.querySelector('button[aria-label="Agent details"]'); button.focus(); button.click(); })()`);
-    await until("document.querySelector('#agent-info')?.matches(':popover-open')", "details overlays a running conversation");
-    win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
-    win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
-    await until("!document.querySelector('#agent-info')", "Escape closes details");
-    assert.ok(await evaluate("!!document.querySelector('button[aria-label=\"Stop the run\"]')"), "closing details does not stop the run");
-    assert.equal(await evaluate("document.activeElement.getAttribute('aria-label')"), "Agent details");
-    await evaluate(`document.querySelector('button[aria-label="Agent details"]').click()`);
-    await until("document.querySelector('#agent-info')?.matches(':popover-open')", "details reopens");
-    const withoutBlur = await evaluate(`(() => {
-      const panel = document.querySelector('#agent-info');
-      const block = (event) => event.stopPropagation();
-      panel.addEventListener('focusout', block, true);
-      document.querySelector('button[aria-label="Stop the run"]').focus();
-      const stillOpen = panel.matches(':popover-open');
-      panel.removeEventListener('focusout', block, true);
-      panel.querySelector('button').focus();
-      return stillOpen;
-    })()`);
-    assert.ok(withoutBlur, "without the focus-out handler, native popovers can cover controls reached by keyboard");
-    await evaluate(`document.querySelector('button[aria-label="Stop the run"]').focus()`);
-    await until("!document.querySelector('#agent-info')", "moving focus outside dismisses details");
-    assert.ok(await evaluate("!!document.querySelector('button[aria-label=\"Stop the run\"]')"), "focus changes do not stop the run");
-  } finally {
-    win.setSize(...initialSize);
-  }
+  await evaluate(`(() => { const button = document.querySelector('button[aria-label="Agent details"]'); button.focus(); button.click(); })()`);
+  await until("!!document.querySelector('#agent-info')", "details opens over a running conversation");
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+  await until("!document.querySelector('#agent-info')", "Escape closes details");
+  assert.ok(await evaluate("!!document.querySelector('button[aria-label=\"Stop the run\"]')"), "closing details does not stop the run");
+  await until("document.activeElement.getAttribute('aria-label') === 'Agent details'", "focus returns to the opener");
 }

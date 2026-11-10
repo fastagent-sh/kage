@@ -61,8 +61,9 @@ if (root) {
     await evaluate(`[...document.querySelectorAll('#agent-info button')].find((b) => b.textContent.includes('${NAME}')).click()`);
     await type(VALUE, 'input[aria-label="Variable value"]');
     await evaluate(`document.querySelector('button[aria-label="Save variable"]').click()`);
-    await until("!document.body.innerText.includes('missing required secrets')", "the agent opens once the value is set");
     await until(`!document.querySelector('#agent-info')?.innerText.includes('missing')`, "the inspector no longer says missing");
+    await evaluate(`document.querySelector('#agent-info button[aria-label="Close agent details"]').click()`);
+    await until("!document.body.innerText.includes('missing required secrets')", "the agent opens once the value is set");
 
     const stored = JSON.parse(readFileSync(join(data, "secrets.json"), "utf8"));
     assert.equal(stored.k[NAME], VALUE, "kage holds the value");
