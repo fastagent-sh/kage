@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   CaretDown,
   CaretLeft,
+  CaretRight,
   ChatCircle,
   Check,
   FileText,
@@ -35,6 +36,7 @@ export function AgentProfile({
   dir,
   model,
   showModel,
+  modelBlocked,
   skillBlocked,
   content = [],
   commands = [],
@@ -43,6 +45,7 @@ export function AgentProfile({
   busy,
   loading,
   onClose,
+  onChangeModel,
   onPickFolder,
   onAddFolder,
   onRemoveFolder,
@@ -60,6 +63,7 @@ export function AgentProfile({
   dir: string;
   model?: string;
   showModel?: boolean;
+  modelBlocked?: string;
   skillBlocked?: string;
   content?: AgentContent[];
   commands?: AgentCapability[];
@@ -68,6 +72,7 @@ export function AgentProfile({
   busy: boolean;
   loading?: boolean;
   onClose: () => void;
+  onChangeModel: () => void;
   onPickFolder: () => Promise<{ name: string; path: string } | undefined>;
   onAddFolder: (folder: string) => Promise<string | undefined>;
   onRemoveFolder: (name: string) => Promise<string | undefined>;
@@ -244,9 +249,21 @@ export function AgentProfile({
             </InfoRow>
             {showModel && (
               <InfoRow label="default model">
-                <span className={`break-all font-mono text-[12.5px] ${model ? "text-text" : "text-muted"}`}>
-                  {model ?? "None set"}
-                </span>
+                <button
+                  type="button"
+                  aria-disabled={modelBlocked ? true : undefined}
+                  title={modelBlocked ?? "Choose the model in the conversation"}
+                  onClick={modelBlocked ? undefined : onChangeModel}
+                  className={`flex w-full items-center justify-between gap-2 text-left ${modelBlocked ? "opacity-50" : "hover:text-accent"}`}
+                >
+                  <span className={`break-all font-mono text-[12.5px] ${model ? "text-text" : "text-muted"}`}>
+                    {model ?? "None set"}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-0.5 text-[12px] text-accent">
+                    Change
+                    <CaretRight size={12} />
+                  </span>
+                </button>
               </InfoRow>
             )}
           </div>

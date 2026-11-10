@@ -301,6 +301,13 @@ if (root) {
       await evaluate(`document.querySelector('#agent-info button[aria-label="Close agent details"]').click()`);
       await until("document.querySelector('#agent-info') === null", "agent details pane closes");
       await until("/works on\\s+project/.test(document.querySelector('main > header').innerText)", "adding the folder back updates the header");
+      await evaluate(`document.querySelector('main > header button[aria-label="Agent details"]').click()`);
+      await until("document.querySelector('#agent-info') !== null", "agent details reopens");
+      await evaluate(`[...document.querySelectorAll('#agent-info button')].find((b) => b.textContent.includes('Change')).click()`);
+      await until("document.querySelector('#agent-info') === null && document.querySelector('dialog[open]') !== null", "Change opens the model picker over the conversation");
+      win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+      win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+      await until("document.querySelector('dialog') === null", "Escape closes the model picker");
       await until(
         "document.querySelector('textarea') && !document.querySelector('textarea').disabled",
         "first model unlocks composer",

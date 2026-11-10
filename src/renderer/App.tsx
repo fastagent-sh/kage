@@ -312,6 +312,7 @@ export default function App() {
               dir={agent.dir}
               model={view.model}
               showModel={agentState === "ready"}
+              modelBlocked={view.modelBlocked}
               skillBlocked={view.blocked}
               content={view.content[agent.id]}
               commands={view.agentCommands[agent.id]}
@@ -320,6 +321,10 @@ export default function App() {
               busy={busy || (view.running[agent.id]?.length ?? 0) > 0}
               loading={view.loading}
               onClose={closeProfile}
+              onChangeModel={() => {
+                setProfileOpen(false);
+                store.openPicker();
+              }}
               onPickFolder={() => store.pickFolder()}
               onAddFolder={(folder) => store.addAgentFolder(folder, agent.id)}
               onRemoveFolder={(name) => store.removeAgentFolder(name, agent.id)}
