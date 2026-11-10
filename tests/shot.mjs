@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import electron from "electron";
-import { isolated, withoutCredentials } from "./harness.mjs";
+import { isolated, withoutCredentials, writeInstance } from "./harness.mjs";
 import { open, windowDriver } from "./window.mjs";
 
 const ANSWER = `Here is what the \`ListingResult\` component does, and the part worth changing.
@@ -70,30 +70,27 @@ if (root) {
     withoutCredentials(process.env);
     // kage reads only its own credential file, in its user data.
     await writeFile(join(data, "auth.json"), JSON.stringify({ openai: { type: "api_key", key: "shot-key" } }));
-    await writeFile(join(workspace, "fastagent.config.ts"), 'export default { model: "openai/gpt-4o-mini" };\n');
-    // Skills are what the composer's `/` completion lists.
-    for (const [name, description] of [
-      ["review", "Review a change for correctness and over-engineering before it is merged."],
-      ["release-notes", "Write the release notes for everything merged since the last tag."],
-      ["translate", "Translate a document and keep its formatting."],
-      ["summarize", "Summarize a long thread into the decisions and the open questions."],
-      ["triage", "Sort new issues by severity and propose an owner for each."],
-      ["changelog", "Draft a changelog entry from the commits on this branch."],
-      ["explain", "Explain a piece of code to someone who has not seen it."],
-      ["migrate", "Plan a migration and list what breaks on the way."],
-      ["outline", "Outline a document before it is written."],
-    ]) {
-      await mkdir(join(workspace, "skills", name), { recursive: true });
-      await writeFile(join(workspace, "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n---\n\nDo ${name}.\n`);
-    }
     const webProject = join(root, "amazonseo-web");
     await mkdir(webProject, { recursive: true });
-    await writeFile(join(workspace, "SYSTEM.md"), "You are the amazonseo.ai listing optimization agent.\n");
+    // Skills are what the composer's `/` completion lists.
+    writeInstance(workspace, {
+      model: "openai/gpt-4o-mini",
+      content: { "amazonseo-web": { path: webProject } },
+      skills: {
+        review: "Review a change for correctness and over-engineering before it is merged.",
+        "release-notes": "Write the release notes for everything merged since the last tag.",
+        translate: "Translate a document and keep its formatting.",
+        summarize: "Summarize a long thread into the decisions and the open questions.",
+        triage: "Sort new issues by severity and propose an owner for each.",
+        changelog: "Draft a changelog entry from the commits on this branch.",
+        explain: "Explain a piece of code to someone who has not seen it.",
+        migrate: "Plan a migration and list what breaks on the way.",
+        outline: "Outline a document before it is written.",
+      },
+    });
+    await writeFile(join(workspace, "AGENTS.md"), "You are the amazonseo.ai listing optimization agent.\n");
     await writeFile(join(workspace, "hello.txt"), "Hello from the workspace\n");
-    await writeFile(join(workspace, "context.local.json"), JSON.stringify({ content: { "amazonseo-web": { path: webProject } } }));
-    await mkdir(join(workspace, ".secrets"), { recursive: true });
-    await writeFile(join(workspace, ".secrets", ".env"), "SEMRUSH_API_KEY=sr_shot_key\n");
-    await writeFile(join(second, "fastagent.config.ts"), 'export default { model: "openai/gpt-4o-mini" };\n');
+    writeInstance(second, { model: "openai/gpt-4o-mini" });
     await writeFile(join(data, "agents.json"), JSON.stringify([
       { id: "shot", name: "amazonseo.ai", dir: workspace, colour: 0 },
       { id: "shot-2", name: "compass", dir: second, colour: 1 },
@@ -219,7 +216,7 @@ if (root) {
     await until(`document.querySelector('#conversations:popover-open')`, "conversation list");
     await capture("app-conversations");
     await evaluate(`document.querySelector('#conversations').hidePopover()`);
-    await evaluate(`document.querySelector('main > header button[aria-label="Agent details"]').click()`);
+    await evaluate(`document.querySelector('main > header .drag > button').click()`);
     await until(`document.querySelector('#agent-info') !== null`, "agent details");
     await capture("agent-details");
     await evaluate(`document.querySelector('#agent-info button[aria-label="Close agent details"]').click()`);

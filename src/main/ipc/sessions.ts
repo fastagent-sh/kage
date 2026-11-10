@@ -5,7 +5,6 @@ import type { Entry, LocalAgent, Message } from "@fastagent-sh/fastagent";
 import { agentRow, createSession, openAgent, withAgentRun } from "../agents.ts";
 import { subscriptions, type Frame, type Listener } from "../follow.ts";
 import { effortOf, offered } from "../models.ts";
-import { syncCommandProxy } from "../proxy.ts";
 import { refusal, refuse, send, sends } from "../send.ts";
 import { readEntries } from "../session-list.ts";
 
@@ -88,8 +87,6 @@ export function registerSessions(): void {
     if (typeof text !== "string" || !text.trim()) throw new Error("Message must not be empty");
     // Held before the first await: a Stop sent right after this message must find it.
     return inFlight.hold(id, session, async (stopped) => {
-      // The agent's commands spawn during this run; they get the route as it is now.
-      await syncCommandProxy();
       const row = await agentRow(id);
       return withAgentRun(row, (agent) => send(agent, session, text, stopped, (model) => offered(agent, model), row.model));
     });

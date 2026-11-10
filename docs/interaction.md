@@ -30,18 +30,18 @@ the header's list button, a round disc beside its info pill, shows and hides; it
 Escape (without stopping a run), and closes when a conversation is chosen or started. Running and
 drafted work stays attached to its originating agent and conversation when navigating.
 
-Creating an agent asks for its name and any folders on this computer it should work on, and creates the agent in `~/Agents/<slug>/` (FastAgent's starter files, `context.json` / `context.local.json`, and a git repository). A refused declaration (duplicate folder name, nesting) is shown in FastAgent's words and creates nothing. An agent whose
+Creating an agent asks for its name and any folders on this computer it should work on, and creates the agent in `~/Agents/<slug>/` (`fastagent.json`, `AGENTS.md`, empty `skills/` and `prompts/`, and a git repository). A refused declaration (duplicate folder name, nesting) is said in words and creates nothing. An agent whose
 directory is no longer there (moved, deleted, a drive not mounted) says so, with Retry and Remove from kage:
 its row says `folder not found`. A folder that cannot be looked at (no
 permission, macOS privacy controls) is not missing: it is a broken agent, in the system's own words.
-An agent whose config does not load (FastAgent names the
-config for a mistake in it, in a file it imports, or a package it needs) offers **Start a fresh config**: a
-copy of the old file is kept beside it (`fastagent.config.ts.broken-20261003-144000`, which nothing loads, and
-never written over an earlier copy), a new `export default {};` takes its place, and the agent opens asking
+An agent whose `fastagent.json` does not load (FastAgent names the
+file for a mistake in it) offers **Start a fresh config**: a
+copy of the old file is kept beside it (`fastagent.json.broken-20261003-144000`, which nothing loads, and
+never written over an earlier copy), a new one with the agent's name and its instruction, skill and prompt paths takes its place (the folders it worked on are in the copy), and the agent opens asking
 for a model. Main replaces only the config FastAgent said failed, inside the agent's folder; the window does
-not name the file. Any other failure offers Retry and Reveal in Finder. A
+not name the file. A program that declares a variable it requires (`needs()`, or `environment.variables` in its `context.json`) does not open without a value: FastAgent says `missing required secrets` (its "set them in the environment" does not apply here), and the agent's details, open on a broken agent too, list the variable as `missing` to be set there. kage keeps the value in `userData/secrets.json`, never in the agent's folder. Any other failure offers Retry and Reveal in Finder. A
 broken agent shows its original failure with a way to retry, reveal or remove it; any agent's row menu
-has Reveal in Finder, and the header shows the folders the agent works on (`works on app · handbook`, or its own folder with `Add folder…` when none are attached), a click on which reveals that folder. The header's Agent details button opens a right-hand inspector column when it fits, otherwise a native popover that does not squeeze the conversation. Both show the agent's own folder in `~/Agents/`, the folders it works on (with Add folder and per-folder Remove, which writes through FastAgent's `addContent` / `removeContent` and reopens the instance while no conversation is running), and the skills and tools the runtime loaded. Removal moves the agent's directory in `~/Agents/` and kage's conversations with the agent (its instance) to the Trash, after asking, and leaves the folders it works on untouched. Removing an agent, changing its folders, or replacing its config
+has Reveal in Finder, and the header shows the folders the agent works on (`works on app · handbook`, or its own folder with `Add folder…` when none are attached), a click on which reveals that folder. Clicking the avatar or name in the header opens Agent details in place of the conversation, with a back button and Escape to return. It shows the agent's own folder in `~/Agents/`, its default model (Change returns to the conversation with the model picker open, so the choice follows the picker's rules), the folders it works on (with Add folder and per-folder Remove, which edits `content` in the agent's `fastagent.json` and reopens the instance while no conversation is running), the skills and tools the runtime loaded, and, when the program declares variables, whether each is set. Removal moves the agent's directory in `~/Agents/`, its conversations included, to the Trash, after asking, and leaves the folders it works on untouched. Removing an agent, changing its folders, or replacing its config
 is refused while one of its conversations is at work, including a send still being recorded; changing its model is not, since nothing is rebuilt.
 A default model kage keeps for an agent that this computer's providers no longer offer (its provider was
 disconnected, or its config no longer declares the model) does not stop the agent opening: the chip names it, the picker
@@ -96,7 +96,7 @@ request on opening and after every change: `connected · 320 ms` for any HTTP an
 `unreachable (ECONNREFUSED)` with the full error, naming the route, on hover; a refresh control
 checks again. A route kage cannot take (a PAC answer such as SOCKS4) shows as `unsupported proxy
 route` and fails model requests with that reason; if only the route for agent commands is
-unusable, they get no proxy variables and the page says so in red. Neither stops kage from
+unusable, their connections are refused with that reason and the page says so in red. Neither stops kage from
 starting or sending. Choices are applied one at a time in the order made. A launch proxy variable
 with a user name or password (`http://user:pass@proxy:8080`) cannot be used, because kage cannot
 authenticate to a proxy yet: *Automatic* then shows `unsupported proxy route` and every request
@@ -129,9 +129,9 @@ it is selectable at once and listed as *New conversation* until something is sai
 history; the client does not save a second transcript. A conversation's row is quoted from the newest message the person sent in
 it, read when the list is, so it follows the conversation as it goes; one with nothing the person said in view is `Conversation`. FastAgent cannot rename or delete a session,
 and kage does not offer either. The current local view keeps unsent text with its conversation
-across navigation and application restart. Resizing or changing zoom preserves an inspector's unsaved
-form. A panel overlay closes with its close control, an outside click, Escape, or keyboard focus
-leaving it; this does not stop a run or leave Settings. Escape in an active rename or variable edit
+across navigation and application restart. Resizing or changing zoom preserves the agent details' unsaved
+form. The roster overlay closes with its close control, an outside click, Escape, or keyboard focus
+leaving it; this does not stop a run or leave Settings. Escape on the agent details returns to the conversation without stopping a run. Escape in an active rename or variable edit
 cancels that edit first. Closing an overlay restores focus when it was still inside the panel.
 A failed draft save shows a warning with its original error while editing remains available; the next state publication retries the unsaved value. An invalid stored
 value is preserved in `kage.drafts.unreadable` before new drafts may replace it. If reading or preserving

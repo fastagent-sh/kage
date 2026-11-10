@@ -82,7 +82,7 @@ export class RoutedDispatcher extends Dispatcher {
   }
 }
 
-// Both spellings: curl reads only lowercase. Per-host PAC rules and the bypass list cannot be expressed here.
+// Both spellings: curl reads only lowercase.
 export function commandProxyEnv(proxy: string | undefined): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = {};
   for (const name of ["HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY"]) env[name] = env[name.toLowerCase()] = proxy;

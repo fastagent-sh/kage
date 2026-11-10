@@ -4,11 +4,11 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import electron from "electron";
-import { isolated, withoutCredentials, writeMockAgent } from "./harness.mjs";
+import { isolated, withoutCredentials, writeInstance } from "./harness.mjs";
 import { open, windowDriver } from "./window.mjs";
 import { checkCompactSettings, checkPanelEscapeDuringRun, checkPanelLayout, checkUsagePopoverLayout } from "./layout.mjs";
 
-const root = await isolated(import.meta.url, { name: "smoke", timeout: 150000 });
+const root = await isolated(import.meta.url, { name: "smoke", timeout: 150000, program: { provider: "local", modelId: "m1", extraModels: 40, needsCredential: true } });
 if (root) {
   const { app, BrowserWindow, Menu } = electron;
   async function run() {
@@ -32,6 +32,7 @@ if (root) {
       openai: { type: "api_key", key: "smoke-key" },
       anthropic: { type: "oauth", access: "sk-ant-oat01-synthetic", refresh: "synthetic-refresh", expires: Date.now() + 3600000 },
       "openai-codex": codex,
+      local: { type: "api_key", key: "local-key" },
     };
     // kage's own file, in its user data. Everything below reads and writes only this one.
     const selectedAuth = join(data, "auth.json");
@@ -45,24 +46,18 @@ if (root) {
     await writeFile(join(root, ".fastagent", "auth.json"), decoy);
     await writeFile(join(root, ".pi", "agent", "auth.json"), JSON.stringify({ openai: { type: "api_key", key: "wrong-store" } }));
     await writeFile(selectedAuth, JSON.stringify(stored));
-    // A model of the agent's own, declared in its config: listed for this agent only, and accepted as its model.
-    // Its endpoint is never reached.
-    // Enough models with the real catalog's to pass the picker's 60-row cut-off, which says so.
-    writeMockAgent(configured, 9, { provider: "local", modelId: "m1", extraModels: 40, defaultModel: "openai/gpt-4o-mini" });
-    // A skill is what the agent's commands list, so the composer's `/` completion has something to find.
-    await mkdir(join(configured, "skills", "demo"), { recursive: true });
-    await writeFile(
-      join(configured, "skills", "demo", "SKILL.md"),
-      "---\nname: demo\ndescription: A skill the completion list should offer.\n---\n\nSay demo.\n",
-    );
-    // More names than the list shows at once, so it scrolls and the keyboard cursor can leave the view.
-    for (const suffix of "abcdefghi") {
-      await mkdir(join(configured, "skills", `demo-${suffix}`), { recursive: true });
-      await writeFile(
-        join(configured, "skills", `demo-${suffix}`, "SKILL.md"),
-        `---\nname: demo-${suffix}\ndescription: Another skill for the list to scroll past.\n---\n\nSay ${suffix}.\n`,
-      );
-    }
+    // The program kage runs here has a provider of its own, `local`, with enough models beside the real catalog's
+    // to pass the picker's 60-row cut-off, which says so. Its endpoint is never reached.
+    process.env.KAGE_MOCK_MODEL_URL = "http://127.0.0.1:9/v1";
+    // A skill is what the agent's commands list, so the composer's `/` completion has something to find; more
+    // names than the list shows at once, so it scrolls and the keyboard cursor can leave the view.
+    writeInstance(configured, {
+      model: "openai/gpt-4o-mini",
+      skills: {
+        demo: "A skill the completion list should offer.",
+        ...Object.fromEntries([..."abcdefghi"].map((suffix) => [`demo-${suffix}`, "Another skill for the list to scroll past."])),
+      },
+    });
     await writeFile(join(workspace, "hello.txt"), "Hello from the workspace\n");
 
     let requests = 0;
@@ -238,7 +233,6 @@ if (root) {
       })()`);
       const showOpenDialog = electron.dialog.showOpenDialog;
       electron.dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [workspace] });
-      let smokeId;
       try {
         await click("Add folder…");
         await until("document.querySelectorAll('form[aria-label=\"Create agent\"] button[aria-label=\"Remove project\"]').length === 1", "first folder added");
@@ -257,11 +251,10 @@ if (root) {
         electron.dialog.showOpenDialog = showOpenDialog;
       }
       const smokeDir = join(root, "Agents", "Smoke");
-      for (const file of ["SYSTEM.md", "fastagent.config.ts", ".gitignore", "context.local.json"]) await stat(join(smokeDir, file));
+      for (const file of ["AGENTS.md", "fastagent.json", ".gitignore", "skills/.gitkeep", "prompts/.gitkeep"]) await stat(join(smokeDir, file));
       await stat(join(smokeDir, ".git"));
       assert.match(await evaluate("document.querySelector('main > header').innerText"), /works on\s+project/);
       const createdRows = JSON.parse(await readFile(join(data, "agents.json"), "utf8"));
-      smokeId = createdRows[0].id;
       await writeFile(
         join(data, "agents.json"),
         JSON.stringify([
@@ -288,11 +281,11 @@ if (root) {
       );
       await chooseModel("openai/gpt-4o-mini");
       await until("document.querySelector('dialog') === null", "first model picker closes");
-      await evaluate(`document.querySelector('main > header button[aria-label="Agent details"]').click()`);
+      await evaluate(`document.querySelector('main > header .drag > button').click()`);
       await until("document.querySelector('#agent-info') !== null", "agent details pane opens");
       const infoText = await evaluate("document.querySelector('#agent-info').innerText");
       assert.match(infoText, /Folders it works on/);
-      assert.match(infoText, /Show agent folder in Finder/);
+      assert.match(infoText, /Show folder/);
       assert.match(infoText, /Tools/);
       assert.match(infoText, /\bread\b/);
       electron.dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [workspace] });
@@ -301,12 +294,20 @@ if (root) {
         await until("document.querySelectorAll('#agent-info button[aria-label=\"Remove project\"]').length === 0", "removing the folder updates the details pane");
         await until("[...document.querySelectorAll('#agent-info button')].some((button) => button.textContent.includes('Add folder…') && !button.disabled)", "folder refresh enables Add folder");
         await evaluate(`[...document.querySelectorAll('#agent-info button')].find((b) => b.textContent.includes('Add folder…')).click()`);
-        await until("/works on\\s+project/.test(document.querySelector('main > header').innerText)", "adding the folder back updates the header");
+        await until("document.querySelector('#agent-info')?.innerText.includes('project')", "adding the folder back updates the details");
       } finally {
         electron.dialog.showOpenDialog = showOpenDialog;
       }
       await evaluate(`document.querySelector('#agent-info button[aria-label="Close agent details"]').click()`);
       await until("document.querySelector('#agent-info') === null", "agent details pane closes");
+      await until("/works on\\s+project/.test(document.querySelector('main > header').innerText)", "adding the folder back updates the header");
+      await evaluate(`document.querySelector('main > header .drag > button').click()`);
+      await until("document.querySelector('#agent-info') !== null", "agent details reopens");
+      await evaluate(`[...document.querySelectorAll('#agent-info button')].find((b) => b.textContent.includes('Change')).click()`);
+      await until("document.querySelector('#agent-info') === null && document.querySelector('dialog[open]') !== null", "Change opens the model picker over the conversation");
+      win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+      win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+      await until("document.querySelector('dialog') === null", "Escape closes the model picker");
       await until(
         "document.querySelector('textarea') && !document.querySelector('textarea').disabled",
         "first model unlocks composer",
@@ -614,8 +615,7 @@ if (root) {
       const otherModel = "openai/gpt-5.5";
       assert.ok(models.some((model) => model.spec === otherModel));
       assert.ok(!models.some(({ spec }) => spec.startsWith("openai-codex/")), "the retired route's models are not offered");
-      assert.ok(models.some((model) => model.spec === "local/m1"), "the agent's own provider is pickable");
-      assert.ok(!(await evaluate(`window.kage.listModels(${JSON.stringify(smokeId)})`)).some((model) => model.spec === "local/m1"), "another agent's is not");
+      assert.ok(models.some((model) => model.spec === "local/m1"), "the program's own provider is pickable");
       const sessionSaying = (text) =>
         evaluate(`window.kage.openAgent('configured').then((r) => r.sessions.find((s) => s.preview?.includes(${quoted(text)}))?.session)`);
       const historical = await sessionSaying("Use the configured model");
@@ -1396,7 +1396,7 @@ if (root) {
       // What the empty picker needed is put back, beside the provider it just connected.
       await writeFile(selectedAuth, JSON.stringify({ ...stored, ...JSON.parse(await readFile(selectedAuth, "utf8")) }));
 
-      // A SOCKS4 PAC route is shown, not fatal: a send still goes out, agent commands get no proxy.
+      // A SOCKS4 PAC route is shown, not fatal: a send still goes out; agent commands cannot connect through it.
       await electron.session.defaultSession.setProxy({
         mode: "pac_script",
         pacScript: `data:application/x-ns-proxy-autoconfig,${encodeURIComponent('function FindProxyForURL() { return "SOCKS 127.0.0.1:1080"; }')}`,
@@ -1408,12 +1408,12 @@ if (root) {
       await until(`document.querySelector('main').innerText.split('Smoke answer').length > ${before} && !document.querySelector('main .bounce')`, "a send is not stopped by the commands' route");
       settingsItem.click();
       await until(
-        "document.body.innerText.includes('unsupported proxy route') && document.body.innerText.includes('Agent commands get no proxy: Unsupported proxy route \"SOCKS 127.0.0.1:1080\"')",
+        "document.body.innerText.includes('unsupported proxy route') && document.body.innerText.includes('Agent commands cannot connect through it: Unsupported proxy route \"SOCKS 127.0.0.1:1080\"')",
         "both unusable routes are shown, and the settings file is not blamed",
       );
       assert.ok(!(await evaluate("document.body.innerText.includes('Fix or remove the file')")));
       await choose("Automatic");
-      await until("!!document.querySelector('[data-source=system]') && !document.body.innerText.includes('Agent commands get no proxy')", "choosing again recovers");
+      await until("!!document.querySelector('[data-source=system]') && !document.body.innerText.includes('Agent commands cannot connect')", "choosing again recovers");
       win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
       win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
       await until("!document.querySelector('#network-heading')", "Escape leaves Settings again");
@@ -1434,7 +1434,7 @@ if (root) {
       assert.equal(await readFile(registry, "utf8"), savedRegistry, "a failed read never rewrites the registry");
       // A default on the retired ChatGPT route opens; a send on it is refused with the code that opens the picker.
       const legacyDir = join(root, "Agents", "legacy");
-      writeMockAgent(legacyDir, 9, { provider: "local", modelId: "m1" });
+      writeInstance(legacyDir);
       await writeFile(
         registry,
         JSON.stringify([...JSON.parse(savedRegistry), { id: "legacy", name: "Legacy", dir: legacyDir, model: "openai-codex/gpt-5.5", colour: 4 }]),
@@ -1444,9 +1444,9 @@ if (root) {
       assert.equal(legacy.model, "openai-codex/gpt-5.5", "the default is the one the registry names");
       const legacySend = await evaluate("window.kage.createSession('legacy').then((session) => window.kage.send('legacy', session, 'hello'))");
       assert.equal(legacySend.ok === false && legacySend.error.code, "model_unavailable", "a send on it asks for another model");
-      // Removing an agent deletes kage's instance of it and trashes its agent directory while leaving bound folders untouched.
-      const instance = (id) => stat(join(data, "instances", id)).then(() => true, () => false);
-      assert.equal(await instance("legacy"), true, "the opened agent has an instance");
+      // Removing an agent trashes its folder, conversations included, while leaving bound folders untouched.
+      const hasState = (dir) => stat(join(dir, ".state")).then(() => true, () => false);
+      assert.equal(await hasState(legacyDir), true, "the opened agent keeps its conversations in its own folder");
       const trashed = [];
       const trashItem = electron.shell.trashItem;
       electron.shell.trashItem = async (dir) => {
@@ -1458,13 +1458,15 @@ if (root) {
       } finally {
         electron.shell.trashItem = trashItem;
       }
-      assert.equal(await instance("legacy"), false, "removing it deletes the instance, conversations included");
-      assert.deepEqual(trashed, [legacyDir], "and trashes the agent directory");
-      assert.equal(await instance(smokeId), true, "and no other agent's");
+      assert.equal(await hasState(legacyDir), false, "removing it takes its conversations with the folder");
+      assert.deepEqual(trashed, [legacyDir], "by trashing the agent directory");
+      assert.equal(await hasState(smokeDir), true, "and no other agent's");
       // A default pi does not know: the agent opens on its own model and the picker says the default is gone.
+      const staleDir = join(root, "Agents", "stale");
+      writeInstance(staleDir);
       await writeFile(
         registry,
-        JSON.stringify([...JSON.parse(savedRegistry), { id: "stale", name: "Stale", dir: join(root, "configured"), model: "local/gone", colour: 5 }]),
+        JSON.stringify([...JSON.parse(savedRegistry), { id: "stale", name: "Stale", dir: staleDir, model: "local/gone", colour: 5 }]),
       );
       win.webContents.reload();
       await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
@@ -1511,7 +1513,7 @@ if (root) {
           text: document.querySelector('main > header').innerText,
         };
       })()`;
-      await until(`document.querySelector('main > header .drag > div')?.textContent === ${JSON.stringify(longName)}`, "renamed agent in header");
+      await until(`document.querySelector('main > header .drag > button')?.textContent === ${JSON.stringify(longName)}`, "renamed agent in header");
       const named = await evaluate(headerName);
       assert.equal(named.lines, 1, "the name alone in the drag handle");
       assert.ok(named.width <= named.available + 1, "the name stays inside the header");

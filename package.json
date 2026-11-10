@@ -25,11 +25,12 @@
   "main": "./out/main/index.js",
   "scripts": {
     "postinstall": "node -e \"require('electron')\"",
-    "dev": "electron-vite dev --watch",
-    "build": "tsc --noEmit && electron-vite build",
+    "program": "fastagent build program",
+    "dev": "npm run program && electron-vite dev --watch",
+    "build": "tsc --noEmit && npm run program && electron-vite build",
     "preview": "electron-vite preview",
     "test": "node --test --experimental-strip-types 'src/**/*.test.ts' 'tests/*.test.mjs'",
-    "test:smoke": "npm run build && node tests/smoke.mjs && node tests/transcript.mjs && node tests/quit.mjs",
+    "test:smoke": "npm run build && node tests/smoke.mjs && node tests/transcript.mjs && node tests/quit.mjs && node tests/secrets.mjs",
     "test:live": "npm run build && node tests/live.mjs",
     "shots": "npm run build && node tests/shot.mjs",
     "package": "npm run build && electron-builder --mac --publish never",
@@ -40,7 +41,7 @@
     "release:major": "node scripts/release.mjs major"
   },
   "dependencies": {
-    "@fastagent-sh/fastagent": "0.28.0",
+    "@fastagent-sh/fastagent": "0.30.2",
     "undici": "^7.18.1"
   },
   "devDependencies": {
@@ -64,7 +65,7 @@
     "react-shiki": "^0.11.1",
     "streamdown": "^2.6.0",
     "tailwindcss": "^4.1.0",
-    "typescript": "^5.9.0",
+    "typescript": "^7.0.2",
     "vite": "^7.0.0"
   },
   "allowScripts": {

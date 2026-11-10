@@ -19,7 +19,7 @@ seen as a person using kage:
 
 | Object | Owner and meaning |
 |---|---|
-| Agent | The definition: model, harness (`SYSTEM.md`, `APPEND_SYSTEM.md`, skills, tools, schedules, `fastagent.config.ts`) and the contexts it declares, in a directory of its own that is also its working directory. Someone given the Agent gets their own copy, not a live pointer. |
+| Agent | The definition: a folder of its own that is also its working directory, with its model, standing instructions (`AGENTS.md`), skills, prompt templates and the contexts it declares (`fastagent.json`). It runs the program kage ships (the system prompt and tools), which kage does not edit. Someone given the Agent gets their own copy, not a live pointer. |
 | Context | A directory the agent **works on** or **knows** (read-only): a project, a folder, a repository. Several agents can share one; it belongs to its project, not to any agent. Its type (local folder, local folder copied to a host, GitHub repository) says how it reaches an instance elsewhere. |
 | Instance | One Agent running in one place, on this Mac or on a host: its conversations, credentials and what it fetched. kage shows an instance as a contact. One owned Agent can have a local and an online instance. |
 | Conversation | A FastAgent session, owned by its instance. Local, online, personal and group conversations do not merge automatically. |
@@ -126,12 +126,12 @@ usually keep secrets in the OS keychain (VS Code, GitHub Desktop, Docker Desktop
 keychain-backed store is possible and not built ([fastagent#652](https://github.com/fastagent-sh/fastagent/issues/652)).
 
 **Custom endpoints (after the first version).** Ollama, LM Studio or a gateway, as a provider in an
-agent's `fastagent.config.ts` (`providers`, built with pi-ai's `createProvider`): name, API type, base URL,
+program's `fastagent.config.ts` (`providers`, built with pi-ai's `createProvider`): name, API type, base URL,
 optional key and the model ids. Ollama and LM Studio are prefills, not separate integrations. A relay in front of Anthropic or OpenAI is a custom endpoint
 under its own provider id: kage never redirects a built-in provider's `baseUrl`, so a subscription
 token or official key cannot be sent to a third party by a setting left behind from another
-credential. An agent's own config can already declare providers, but 0.25 removed `models.json` and the
-machine-level model catalog, so where kage would write endpoint definitions it adds is open again: a
+credential. Providers are code in a program, and an agent's `fastagent.json` has no `providers`, so where
+kage would write endpoint definitions it adds is open: a
 config is code, and part of the Agent a copy carries.
 
 **Network (shipped).** *Automatic* is the default and needs no setup: model and sign-in requests
@@ -171,12 +171,12 @@ project and attaches folders:
 ```
 
 Each context is a row: its name, where it is, and remove. An agent with no context is valid; it works only in its own directory.
-kage creates the agent's directory in `~/Agents/` (the folder is made with the first agent) through FastAgent's `createAgent(dir, { content })`, which writes the scaffold, `context.json` / `context.local.json`, `.gitignore` (excluding `.state/`, `.secrets/` and `.env`), and a git repository. The directory's name is the agent's
+kage creates the agent's directory in `~/Agents/` (the folder is made with the first agent) and writes `fastagent.json` (its name, the contexts as `content`, and the paths of its instructions, skills and prompts), `AGENTS.md`, empty `skills/` and `prompts/`, `.gitignore` (excluding `.state/`) and a git repository; FastAgent has no public call that creates an instance folder. The directory's name is the agent's
 name made one safe path segment (letters, digits, `-` and `_`, the spelling FastAgent requires of a
 name), with `-2`, `-3` added when it is taken; the name shown in kage is the name as typed, kept apart.
 Renaming an agent changes the name shown, never its directory. The folder is visible, like
-`~/IdeaProjects`, because a person edits the harness, keeps it in git and gives it to someone; not under
-`~/Library`, which hides it, nor `~/Documents`, which iCloud syncs along with the agent's `.secrets/`. The new agent has no default model, so its first
+`~/IdeaProjects`, because a person edits the instructions and skills, keeps it in git and gives it to someone; not under
+`~/Library`, which hides it, nor `~/Documents`, which iCloud syncs along with the agent's `.state/`. The new agent has no default model, so its first
 conversation asks for one. Its header then says what it works on (`works on app · handbook`)
 rather than where its directory is. Removing an agent moves its directory, conversations included, to the
 Trash after asking, because kage created that directory; its contexts are never touched.
@@ -191,7 +191,7 @@ steering, stop, drafts and background navigation.
 **Give someone the Agent (planned stage 2).** They get their own copy of the Agent; review exactly
 what travels. Its harness travels; its contexts travel as their types allow: a GitHub repository by
 reference (they need their own access), a local folder only if the owner chooses to include a copy of
-it. No credentials, runtime state (`.state/`, `.secrets/`) or machine-specific paths. The recipient
+it. No credentials, runtime state (`.state/`) or machine-specific paths. The recipient
 has their own instance, connects their own provider and services, and has independent conversations
 and schedule sessions. A successful export without an independent run on another machine is not acceptance.
 

@@ -3,22 +3,37 @@ import { chmod, mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeF
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { listContent, openAgent } from "@fastagent-sh/fastagent";
+import { baseEnv, openAgent, type AgentDefinition } from "@fastagent-sh/fastagent";
 import {
   addFolderToAgent,
   AgentRegistry,
+  checkSecret,
   createNewAgent,
   failingConfig,
   freshConfig,
   inspectAgentDir,
+  instanceConfigPath,
+  listFolders,
   MissingDirError,
-  removeAgentSecret,
   removeFolderFromAgent,
   requireFolder,
   resolveAgentPath,
-  setAgentSecret,
 } from "./agent-files.ts";
+
+const repository = join(import.meta.dirname, "..", "..");
+
+async function builtProgram(): Promise<AgentDefinition> {
+  const build = spawnSync(join(repository, "node_modules", ".bin", "fastagent"), ["build", "program"], { cwd: repository, encoding: "utf8" });
+  assert.equal(build.status, 0, build.stderr);
+  return (await import(pathToFileURL(join(repository, "program", "dist", "index.js")).href)).default;
+}
+
+const program = await builtProgram();
+
+const openInstance = (dir: string, secrets: Record<string, string> = {}) =>
+  openAgent(program, { root: dir, config: instanceConfigPath(dir), secrets, env: baseEnv(process.env), offline: true });
 
 test("registry serializes writes in one process, survives restart and deduplicates real paths", async () => {
   const root = await mkdtemp(join(tmpdir(), "kage-registry-"));
@@ -125,11 +140,14 @@ test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers
     const first = await createNewAgent({ name: "Reviewer", folders: [tally, handbook], root: agentsDir, registry });
     assert.equal(first.name, "Reviewer");
     assert.equal(first.dir, join(await realpath(agentsDir), "Reviewer"));
-    const gitignore = await readFile(join(first.dir, ".gitignore"), "utf8");
-    for (const entry of [".state", ".secrets", ".env"]) assert.match(gitignore, new RegExp(entry.replace(".", "\\.")));
-    const listed = await listContent(first.dir);
+    assert.equal(await readFile(join(first.dir, ".gitignore"), "utf8"), ".state\n");
+    assert.equal(await readFile(join(first.dir, "AGENTS.md"), "utf8"), "# Reviewer\n");
+    assert.deepEqual(await readdir(join(first.dir, "skills")), [".gitkeep"]);
+    assert.deepEqual(await readdir(join(first.dir, "prompts")), [".gitkeep"]);
+    assert.equal(JSON.parse(await readFile(instanceConfigPath(first.dir), "utf8")).name, "Reviewer");
+    const listed = await listFolders(first.dir);
     assert.deepEqual(
-      listed.content.map(({ name, location }) => [name, location]),
+      listed.map(({ name, location }) => [name, location]),
       [
         ["tally", await realpath(tally)],
         ["handbook", await realpath(handbook)],
@@ -171,67 +189,6 @@ test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers
       /contains the agent directory/,
     );
     assert.deepEqual((await readdir(agentsDir)).sort(), ["Reviewer", "Reviewer-2", "outside"].sort());
-
-    // inspectAgentDir reports definition files, environment packages/variables, and secret status (without values).
-    await mkdir(join(first.dir, ".fastagent"), { recursive: true });
-    await writeFile(
-      join(first.dir, ".fastagent", "secrets.json"),
-      JSON.stringify([
-        { name: "GITHUB_TOKEN", optional: false, description: "GitHub API access", declaredIn: ["src/tools/gh.ts"] },
-        { name: "OPTIONAL_KEY", optional: true, declaredIn: ["src/tools/opt.ts"] },
-      ]),
-    );
-    await mkdir(join(first.dir, ".secrets"), { recursive: true });
-    await writeFile(join(first.dir, ".secrets", ".env"), "# --- fastagent ---\nGITHUB_TOKEN=secret-value\n");
-    await writeFile(
-      join(first.dir, "context.json"),
-      JSON.stringify({
-        environment: {
-          packages: { gh: "2", jq: "latest" },
-          variables: { CONTEXT_VAR: { description: "From context.json" } },
-        },
-      }),
-    );
-    const inspected = await inspectAgentDir(first.dir, "Reviews pull requests");
-    assert.equal(inspected.description, "Reviews pull requests");
-    assert.ok(inspected.files.includes("SYSTEM.md"));
-    assert.ok(inspected.files.includes("fastagent.config.ts"));
-    assert.deepEqual(inspected.packages, [
-      { name: "gh", version: "2" },
-      { name: "jq", version: "latest" },
-    ]);
-    assert.deepEqual(inspected.secrets, [
-      {
-        name: "GITHUB_TOKEN",
-        optional: false,
-        description: "GitHub API access",
-        declaredIn: ["src/tools/gh.ts"],
-        configured: true,
-        fromFile: true,
-      },
-      { name: "OPTIONAL_KEY", optional: true, declaredIn: ["src/tools/opt.ts"], configured: false },
-      {
-        name: "CONTEXT_VAR",
-        optional: false,
-        description: "From context.json",
-        declaredIn: ["context.json"],
-        configured: false,
-      },
-    ]);
-
-    const afterSet = await setAgentSecret(first.dir, "CUSTOM_API_KEY", 'a"b\\c');
-    assert.ok(afterSet.secrets.some((s) => s.name === "CUSTOM_API_KEY" && s.configured && s.fromFile));
-    await setAgentSecret(first.dir, "SINGLE_QUOTE", '"');
-    const rawEnv = await readFile(join(first.dir, ".secrets", ".env"), "utf8");
-    assert.match(rawEnv, /^# --- fastagent ---$/m, "comments and section headers in .secrets/.env are preserved");
-    assert.match(rawEnv, /^CUSTOM_API_KEY=a"b\\c$/m, "values with quotes and backslashes do not accumulate JSON escapes");
-    assert.match(rawEnv, /^SINGLE_QUOTE="""$/m, "a single quote character is wrapped so FastAgent's slice(1, -1) preserves it");
-    const afterDelete = await removeAgentSecret(first.dir, "CUSTOM_API_KEY");
-    assert.ok(!afterDelete.secrets.some((s) => s.name === "CUSTOM_API_KEY"));
-    assert.ok(afterDelete.secrets.some((s) => s.name === "SINGLE_QUOTE" && s.configured));
-
-    await writeFile(join(first.dir, ".fastagent", "secrets.json"), "{not-json");
-    await assert.rejects(inspectAgentDir(first.dir), /secrets\.json/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -242,61 +199,118 @@ test("a fresh config replaces only the agent's own, keeps the old one beside it,
   try {
     const dir = join(root, "agent");
     await mkdir(dir, { recursive: true });
-    const config = join(dir, "fastagent.config.ts");
-    await writeFile(config, "export default { model: ,};\n");
+    const config = instanceConfigPath(dir);
+    await writeFile(config, '{"model": ,}\n');
     await writeFile(join(dir, "persona.ts"), "x");
     await mkdir(join(root, "elsewhere"));
-    await writeFile(join(root, "elsewhere", "fastagent.config.ts"), "outside");
+    await writeFile(join(root, "elsewhere", "fastagent.json"), "outside");
     await symlink(join(root, "elsewhere"), join(dir, "linked"));
 
-    await assert.rejects(freshConfig(dir, join(dir, "persona.ts")), /is not this agent's fastagent.config.ts/);
-    await assert.rejects(freshConfig(dir, join(root, "elsewhere", "fastagent.config.ts")), /is not this agent's/);
-    await assert.rejects(freshConfig(dir, join(dir, "linked", "fastagent.config.ts")), /is not this agent's/, "a link out of the folder");
-    assert.equal(await readFile(join(root, "elsewhere", "fastagent.config.ts"), "utf8"), "outside");
+    await assert.rejects(freshConfig(dir, join(dir, "persona.ts")), /is not this agent's fastagent.json/);
+    await assert.rejects(freshConfig(dir, join(root, "elsewhere", "fastagent.json")), /is not this agent's/);
+    await assert.rejects(freshConfig(dir, join(dir, "linked", "fastagent.json")), /is not this agent's/, "a link out of the folder");
+    assert.equal(await readFile(join(root, "elsewhere", "fastagent.json"), "utf8"), "outside");
 
     const at = new Date(2026, 9, 3, 14, 40, 0);
     await freshConfig(dir, config, at);
-    const kept = join(dir, "fastagent.config.ts.broken-20261003-144000");
-    assert.equal(await readFile(kept, "utf8"), "export default { model: ,};\n", "the person's file is kept as it was");
-    assert.equal(await readFile(config, "utf8"), "export default {};\n");
+    const kept = join(dir, "fastagent.json.broken-20261003-144000");
+    assert.equal(await readFile(kept, "utf8"), '{"model": ,}\n', "the person's file is kept as it was");
+    assert.equal(JSON.parse(await readFile(config, "utf8")).name, "agent");
     // A second reset in the same second (a double click) must not put the fresh file over the person's copy.
     await assert.rejects(freshConfig(dir, config, at), /EEXIST/);
-    assert.equal(await readFile(kept, "utf8"), "export default { model: ,};\n");
+    assert.equal(await readFile(kept, "utf8"), '{"model": ,}\n');
 
-    const agent = await openAgent(dir, { stateDir: join(root, "state") });
-    await agent.close();
+    await mkdir(join(dir, "skills"));
+    await mkdir(join(dir, "prompts"));
+    await writeFile(join(dir, "AGENTS.md"), "# agent\n");
+    await (await openInstance(dir)).close();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("a load that failed in the config is told apart by FastAgent's own words", async () => {
+test("a load that failed in the instance's config is told apart by FastAgent's own words", async () => {
   const root = await mkdtemp(join(tmpdir(), "kage-config-"));
-  const failure = async (name: string, files: Record<string, string>) => {
+  const failure = async (name: string, config: string) => {
     const dir = join(root, name);
-    for (const [file, text] of Object.entries(files)) {
-      await mkdir(join(dir, file, ".."), { recursive: true });
-      await writeFile(join(dir, file), text);
-    }
-    const error = await openAgent(dir, { stateDir: join(root, `${name}-state`) }).then(
+    await mkdir(dir, { recursive: true });
+    await writeFile(instanceConfigPath(dir), config);
+    const message = await openInstance(dir).then(
       () => assert.fail(`${name} loaded`),
       (error: Error) => error.message,
     );
-    return { dir, message: error };
+    return { dir, message };
   };
   try {
-    const cases: Record<string, Record<string, string>> = {
-      syntax: { "fastagent.config.ts": "export default {\n  model: ,\n};\n" },
-      key: { "fastagent.config.ts": "export default { modle: 'x' };\n" },
-      imported: { "fastagent.config.ts": "import t from './tools/t.ts';\nexport default { extensions: [t] };\n", "tools/t.ts": "export default {;\n" },
-      package: { "fastagent.config.ts": "import 'no-such-package-here';\nexport default {};\n" },
+    const cases: Record<string, string> = {
+      syntax: "{not json",
+      key: JSON.stringify({ modle: "x" }),
+      path: JSON.stringify({ skills: ["./nowhere"] }),
     };
-    for (const [name, files] of Object.entries(cases)) {
-      const { dir, message } = await failure(name, files);
-      assert.equal(failingConfig(dir, message), join(dir, "fastagent.config.ts"), `${name}: ${message}`);
+    for (const [name, config] of Object.entries(cases)) {
+      const { dir, message } = await failure(name, config);
+      assert.equal(failingConfig(dir, message), instanceConfigPath(dir), `${name}: ${message}`);
     }
+    const { dir, message } = await failure("gone", JSON.stringify({ content: { work: { path: join(root, "missing") } } }));
+    assert.equal(failingConfig(dir, message), undefined, `a folder that is gone is not the config: ${message}`);
     assert.equal(failingConfig("/x", "missing model: set --model"), undefined);
-    assert.equal(failingConfig("/x", "fastagent.config.ts.broken-1: nope"), undefined);
+    assert.equal(failingConfig("/x", "/x/fastagent.json.broken-1: nope"), undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a created agent opens with kage's program: its folders, instructions and skills, and its state beside it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "kage-open-"));
+  try {
+    const registry = new AgentRegistry(join(root, "agents.json"));
+    const handbook = join(root, "handbook");
+    await mkdir(handbook);
+    const { dir } = await createNewAgent({ name: "Opener", folders: [handbook], root: join(root, "Agents"), registry });
+    await mkdir(join(dir, "skills", "demo"));
+    await writeFile(join(dir, "skills", "demo", "SKILL.md"), "---\nname: demo\ndescription: Says demo.\n---\n\nSay demo.\n");
+
+    const agent = await openInstance(dir);
+    try {
+      const info = await agent.info();
+      assert.equal(info.name, "Opener");
+      assert.deepEqual(info.commands.map(({ name }) => name).sort(), ["skill:demo", "skill:writing-great-skills"]);
+      assert.ok((await readdir(dir)).includes(".state"), "sessions are kept in the agent's own folder");
+    } finally {
+      await agent.close();
+    }
+
+    await writeFile(join(handbook, "x"), "");
+    await rm(handbook, { recursive: true });
+    await assert.rejects(listFolders(dir), /content "handbook": .* does not exist/);
+    await assert.rejects(openInstance(dir), /content "handbook": .* does not exist/);
+    assert.deepEqual(await removeFolderFromAgent(dir, "handbook"), []);
+    await (await openInstance(dir)).close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("secrets are the names the program declares, whether kage holds each, and never a value", async () => {
+  const root = await mkdtemp(join(tmpdir(), "kage-inspect-"));
+  try {
+    await writeFile(join(root, "AGENTS.md"), "# agent\n");
+    const declared = [
+      { name: "GITHUB_TOKEN", optional: false, description: "GitHub API access", declaredIn: ["src/tools/gh.ts"] },
+      { name: "OPTIONAL_KEY", optional: true, declaredIn: ["src/tools/opt.ts"] },
+    ];
+    const inspected = await inspectAgentDir(root, declared, ["GITHUB_TOKEN"], "Reviews pull requests");
+    assert.equal(inspected.description, "Reviews pull requests");
+    assert.deepEqual(inspected.files, ["AGENTS.md"]);
+    assert.deepEqual(inspected.secrets, [
+      { name: "GITHUB_TOKEN", optional: false, description: "GitHub API access", declaredIn: ["src/tools/gh.ts"], configured: true },
+      { name: "OPTIONAL_KEY", optional: true, declaredIn: ["src/tools/opt.ts"], configured: false },
+    ]);
+
+    assert.deepEqual(checkSecret(" GITHUB_TOKEN ", " a\"b\\c ", declared), { name: "GITHUB_TOKEN", value: 'a"b\\c' });
+    assert.throws(() => checkSecret("OTHER", "x", declared), /OTHER is not a variable this agent's program reads/);
+    assert.throws(() => checkSecret("GITHUB_TOKEN", "  ", declared), /cannot be empty/);
+    assert.throws(() => checkSecret("GITHUB_TOKEN", "a\nb", declared), /newlines/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

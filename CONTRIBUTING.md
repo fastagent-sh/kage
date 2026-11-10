@@ -86,16 +86,18 @@ threads; address every item before resolving its thread.
 
 ## Product-specific verification
 
-`Desktop checks` runs tests, a production build, `node tests/smoke.mjs`, `node tests/transcript.mjs` and `node tests/quit.mjs` on
-macOS with Node 24.15 or later — all three launch a real Electron window, so they run on the only platform kage supports. The
+`Desktop checks` runs tests, a production build, `node tests/smoke.mjs`, `node tests/transcript.mjs`, `node tests/quit.mjs` and `node tests/secrets.mjs` on
+macOS with Node 24.15 or later — all four launch a real Electron window, so they run on the only platform kage supports. The
 smoke drives the real Electron/preload/IPC/FastAgent stack with synthetic credentials and fake HTTP. The
 transcript check holds runs at the steps the live end of a run must draw as one line (calls running, a
 thought, an answer being written, a retry waited out) against a local fake model endpoint. The quit check
 starts a run that does not end, answers "Quit anyway", and after Electron exits opens the instance as the next
-launch would: the message must be canceled and its tool not run again. Run
-`npm run test:smoke` locally to build and run all three. A second job, `Package (macOS)`, builds the app and its dmg,
+launch would: the message must be canceled and its tool not run again. The secrets check opens an agent
+whose program declares a required variable: it stays closed until the value is set in the window, the value is kept
+out of the agent's folder, and it reaches the agent's commands while an undeclared variable of kage's environment
+does not. Run `npm run test:smoke` locally to build and run all four. A second job, `Package (macOS)`, builds the app and its dmg,
 checks that the bundle carries every module it needs, runs the installed app outside the checkout against a fake
-model endpoint, and keeps the dmg as an artifact; `npm run test:package` does the same locally. None of these checks signing or
+model endpoint, opens an agent with the program the app ships, and keeps the dmg as an artifact; `npm run test:package` does the same locally. None of these checks signing or
 notarization, and none claims Windows/Linux support, real-provider/OAuth validation or full Week 1 acceptance. The
 [release gate](https://github.com/fastagent-sh/kage/issues/16) still requires workflow evidence.
 

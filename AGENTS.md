@@ -39,7 +39,7 @@ verification of existing code, not a rewrite. Resolve conflicting product polici
   Agent, protected online contacts (including the owner's private scheduled work), optional hosting,
   then groups or discovery only if needed. Do not present planned screens or schedule outcomes as
   shipped.
-- A copy of an Agent never carries secrets or runtime state (`.secrets/`, `.state/`). Remote invites require a host-side protected
+- A copy of an Agent never carries secrets or runtime state (`.state/`). Remote invites require a host-side protected
   access boundary and per-visitor conversation isolation; never expose a raw FastAgent endpoint
   or instance-wide session list to visitors. No enterprise administration or audit UI.
 - Avoid placeholder cloud UI, a built-in agent editor, permission prompts, remote file browsing or

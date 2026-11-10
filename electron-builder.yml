@@ -8,6 +8,7 @@ directories:
   buildResources: build
 files:
   - out/**
+  - program/dist/**
   - package.json
 mac:
   category: public.app-category.developer-tools

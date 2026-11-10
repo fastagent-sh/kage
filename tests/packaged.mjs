@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractAll } from "@electron/asar";
-import { chunk, requireFreshBuild, withoutCredentials, writeMockAgent } from "./harness.mjs";
+import { buildMockProgram, chunk, requireFreshBuild, useModules, withoutCredentials, writeInstance } from "./harness.mjs";
 import { driver } from "./window.mjs";
 
 const built = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "mac-arm64", "kage.app");
@@ -76,14 +76,57 @@ const server = createServer((req, res) => {
 });
 
 const children = [];
-function launch(app, data) {
-  const env = withoutCredentials({ ...process.env, HOME: root });
+function launch(app, data, extra = {}) {
+  const env = withoutCredentials({ ...process.env, HOME: root, ...extra });
   const child = spawn(app, [`--user-data-dir=${data}`, "--remote-debugging-port=0"], { env, stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout.on("data", (chunk) => (output += chunk));
   child.stderr.on("data", (chunk) => (output += chunk));
   children.push(child);
   return { child, output: () => output };
+}
+
+// Chromium writes the port it chose to DevToolsActivePort in the profile.
+async function attach(launched, data) {
+  let page;
+  let port;
+  for (let t = 0; t < 300 && !page; t++) {
+    await sleep(100);
+    const file = join(data, "DevToolsActivePort");
+    if (!existsSync(file)) continue;
+    port = readFileSync(file, "utf8").split("\n")[0];
+    page = await fetch(`http://127.0.0.1:${port}/json`)
+      .then((r) => r.json())
+      .then((targets) => targets.find((target) => target.type === "page"))
+      .catch(() => undefined);
+  }
+  assert.ok(page, `the installed app opened no window:\n${launched.output()}`);
+  const socket = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => {
+    socket.addEventListener("open", resolve);
+    socket.addEventListener("error", reject);
+  });
+  let id = 0;
+  const pending = new Map();
+  socket.addEventListener("message", (message) => {
+    const reply = JSON.parse(message.data);
+    pending.get(reply.id)?.(reply);
+  });
+  // A script that throws rejects with what it threw, rather than reading as undefined.
+  const evaluate = (expression) =>
+    new Promise((resolve, reject) => {
+      const n = ++id;
+      pending.set(n, (reply) => {
+        const thrown = reply.result?.exceptionDetails;
+        if (thrown) reject(new Error(`${expression}\n${thrown.exception?.description ?? thrown.text}`));
+        else resolve(reply.result?.result?.value);
+      });
+      socket.send(JSON.stringify({ id: n, method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true } }));
+    });
+  // The window is another process here, reached over the DevTools protocol, so only the driving is shared.
+  const { until, send } = driver(evaluate, { timeout: 30000, poll: 100, dump: () => launched.output() });
+
+  return { evaluate, until, send, port };
 }
 
 async function run() {
@@ -108,50 +151,16 @@ async function run() {
   const data = join(root, "user-data");
   const project = join(root, "project");
   mkdirSync(data, { recursive: true });
-  // The agent's own modules are the app's: the one place outside the repository that has pi-ai.
-  writeMockAgent(project, server.address().port, { modules: join(bundle, "node_modules") });
+  // A program with a model of its own, on the modules the app holds: the one place outside the repository that has pi-ai.
+  const mockProgram = buildMockProgram(root);
+  useModules(root, join(bundle, "node_modules"));
+  const mockEnv = { KAGE_PROGRAM_DIR: mockProgram, KAGE_MOCK_MODEL_URL: `http://127.0.0.1:${server.address().port}/v1` };
+  writeInstance(project, { model: "mock/mock" });
   writeFileSync(join(data, "agents.json"), JSON.stringify([{ id: "p", name: "Installed", dir: project, colour: 2 }]));
   const binary = join(installed, "Contents", "MacOS", "kage");
-  const first = launch(binary, data);
+  const first = launch(binary, data, mockEnv);
 
-  // Chromium writes the port it chose to DevToolsActivePort in the profile.
-  let page;
-  let port;
-  for (let t = 0; t < 300 && !page; t++) {
-    await sleep(100);
-    const file = join(data, "DevToolsActivePort");
-    if (!existsSync(file)) continue;
-    port = readFileSync(file, "utf8").split("\n")[0];
-    page = await fetch(`http://127.0.0.1:${port}/json`)
-      .then((r) => r.json())
-      .then((targets) => targets.find((target) => target.type === "page"))
-      .catch(() => undefined);
-  }
-  assert.ok(page, `the installed app opened no window:\n${first.output()}`);
-  const socket = new WebSocket(page.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => {
-    socket.addEventListener("open", resolve);
-    socket.addEventListener("error", reject);
-  });
-  let id = 0;
-  const pending = new Map();
-  socket.addEventListener("message", (message) => {
-    const reply = JSON.parse(message.data);
-    pending.get(reply.id)?.(reply);
-  });
-  // A script that throws rejects with what it threw, rather than reading as undefined.
-  const evaluate = (expression) =>
-    new Promise((resolve, reject) => {
-      const n = ++id;
-      pending.set(n, (reply) => {
-        const thrown = reply.result?.exceptionDetails;
-        if (thrown) reject(new Error(`${expression}\n${thrown.exception?.description ?? thrown.text}`));
-        else resolve(reply.result?.result?.value);
-      });
-      socket.send(JSON.stringify({ id: n, method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true } }));
-    });
-  // The window is another process here, reached over the DevTools protocol, so only the driving is shared.
-  const { until, send } = driver(evaluate, { timeout: 30000, poll: 100, dump: () => first.output() });
+  const { evaluate, until, send, port } = await attach(first, data);
 
   // The page is listed as soon as the window exists, before its preload has run: wait for the app's API.
   await until("typeof window.kage?.listAgents === 'function'", "the window's preload API");
@@ -171,7 +180,7 @@ async function run() {
   for (let t = 0; t < 50 && (await pages()) > 0; t++) await sleep(100);
   assert.equal(await pages(), 0, "the first kage's window closed, the app still running");
   assert.equal(first.child.exitCode, null);
-  const second = launch(binary, data);
+  const second = launch(binary, data, mockEnv);
   const code = await Promise.race([new Promise((resolve) => second.child.on("exit", resolve)), sleep(20000).then(() => "still running")]);
   assert.equal(code, 0, `a second kage on the same profile leaves: ${second.output()}`);
   assert.match(second.output(), /already running/);
@@ -180,7 +189,22 @@ async function run() {
   first.child.kill();
   const exited = await Promise.race([new Promise((resolve) => first.child.on("exit", resolve)), sleep(10000).then(() => "still running")]);
   assert.equal(exited, 0, `the running app quits on SIGTERM: ${first.output()}`);
-  console.log(`Packaged app passed: ${checked} bundled packages complete, an agent answered with a bash call outside the repository, one kage per profile.`);
+
+  // 4. The program the app ships opens an agent kage creates, with no program of the test's.
+  assert.ok(existsSync(join(bundle, "program", "dist", "index.js")), "the app carries its program");
+  const fresh = join(root, "user-data-shipped");
+  mkdirSync(fresh, { recursive: true });
+  const shipped = launch(binary, fresh);
+  const window = await attach(shipped, fresh);
+  await window.until("typeof window.kage?.createAgent === 'function'", "the window's preload API");
+  const created = await window.evaluate("window.kage.createAgent('Shipped', [])");
+  assert.equal(created.ok, true, created.error?.message);
+  const opened = await window.evaluate(`window.kage.openAgent(${JSON.stringify(created.agent.id)})`);
+  assert.equal(opened.ok, true, opened.message);
+  assert.ok(opened.commands.some((command) => command.name === "skill:writing-great-skills"), "the shipped program's skill is offered");
+  assert.ok(existsSync(join(root, "Agents", "Shipped", ".state")), "its conversations are kept in its folder");
+  shipped.child.kill();
+  console.log(`Packaged app passed: ${checked} bundled packages complete, an agent answered with a bash call outside the repository, one kage per profile, the shipped program opens a new agent.`);
 }
 
 const timeout = setTimeout(() => {

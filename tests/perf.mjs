@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import electron from "electron";
-import { chunk, isolated, withoutCredentials, writeMockAgent } from "./harness.mjs";
+import { chunk, isolated, openInstance, withoutCredentials, writeInstance } from "./harness.mjs";
 import { open, sleep, windowDriver } from "./window.mjs";
 
 const TURNS = Number(process.env.TURNS ?? 150);
@@ -19,12 +19,12 @@ const serve = (respond) => {
   });
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
 };
-const writeAgent = (dir, port) => writeMockAgent(dir, port, { model: { reasoning: true, contextWindow: 10000000 } });
 withoutCredentials(process.env);
 
 const root = await isolated(import.meta.url, {
   name: "perf",
   timeout: 240000,
+  program: { model: { reasoning: true, contextWindow: 10000000 } },
   async prepare(root) {
     const project = join(root, "project");
     mkdirSync(project, { recursive: true });
@@ -49,10 +49,9 @@ const root = await isolated(import.meta.url, {
       }
       res.end("data: [DONE]\n\n");
     });
-    writeAgent(project, server.address().port);
-    // The conversation lives in the instance kage will open: its state directory, for the agent id below.
-    const { openAgent } = await import("@fastagent-sh/fastagent");
-    const agent = await openAgent(project, { stateDir: join(root, "user-data", "instances", "l") });
+    process.env.KAGE_MOCK_MODEL_URL = `http://127.0.0.1:${server.address().port}/v1`;
+    writeInstance(project, { model: "mock/mock" });
+    const agent = await openInstance(project);
     const { id } = await agent.sessions.create();
     for (let n = 1; n <= TURNS; n++) {
       const message = await agent.messages.send({ sessionId: id, content: `Turn ${n}: the build is failing again, find out why and fix it.` }, { wait: 120 });
@@ -78,7 +77,8 @@ if (root) {
     res.write(chunk({}, "stop"));
     res.end("data: [DONE]\n\n");
   });
-  for (const dir of [project, other]) writeAgent(dir, server.address().port);
+  process.env.KAGE_MOCK_MODEL_URL = `http://127.0.0.1:${server.address().port}/v1`;
+  for (const dir of [project, other]) writeInstance(dir, { model: "mock/mock" });
   writeFileSync(join(data, "agents.json"), JSON.stringify([{ id: "l", name: "Long", dir: project, colour: 3 }, { id: "o", name: "Other", dir: other, colour: 5 }]));
   app.setPath("userData", data);
   let win;

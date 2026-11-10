@@ -24,12 +24,27 @@ it need not proxy every conversation or own a transcript.
 
 ## The client
 
-**Main owns every `Agent`.** A local agent is opened with `openAgent(dir, { credentials, stateDir })`
-from `@fastagent-sh/fastagent` and spoken to through the Agent API v2 (`sessions`, `messages`, `info`);
-a future remote connection uses `connectAgent` from `@fastagent-sh/fastagent/client`, which is the same
-interface. kage's own instance of an agent keeps its state under `userData/instances/<agent id>`, so it
-runs beside the instance `fastagent dev` opens in the same directory and shares nothing with it but
-the definition. A message is sent with `messages.send`, which resolves once FastAgent has recorded it; a
+**Main owns every `Agent`.** Every agent is an instance of one program that ships with kage:
+`program/` holds its system prompt and skill and is built by `fastagent build` into `program/dist`,
+which `npm run build` makes and the app carries. A local agent is opened with
+`openAgent(program, { root, config, credentials, secrets, env })` from `@fastagent-sh/fastagent` and
+spoken to through the Agent API v2 (`sessions`, `messages`, `info`); a future remote connection uses
+`connectAgent` from `@fastagent-sh/fastagent/client`, which is the same interface. The instance is the
+agent's folder, `~/Agents/<slug>/`, which is also the agent's working directory:
+
+```text
+fastagent.json   name, model, the folders it works on (`content`), and the paths below
+AGENTS.md        standing instructions, read for every message
+skills/ prompts/ what the agent and the person add; read for every message, no reopen
+.state/          conversations (not exported); everything else is the person's and the agent's
+```
+
+kage writes `fastagent.json`; FastAgent has no public edit of an instance's folders (its `addContent`
+needs a source project), so kage reads and writes the `content` entries itself and the open validates
+them. Provider variables of kage's environment and the values kage holds in `userData/secrets.json`
+are the `secrets` input; only the names the program declares reach the agent's commands, and the
+program declares none yet, so the window shows no secrets section until it does. `env` is the base
+environment (`baseEnv(process.env)`) taken when the agent opens, plus the forwarder's proxy variables (below). A message is sent with `messages.send`, which resolves once FastAgent has recorded it; a
 busy conversation takes it as a steer (`whenBusy: "steer"`). Its end arrives as `done` on the conversation's
 event stream, and Stop is `sessions.cancel`. The locked FastAgent version's contract is what a remote client
 builds on; bump the version with the feature that needs a newer one.
@@ -99,17 +114,17 @@ is used, and proxy authentication is unsupported until a real user needs it: Chr
 (`PROXY h:p`) carries no credentials. A launch variable with a user name or password therefore fails
 every request with that explanation instead of the proxy's bare 407.
 
-Agent commands cannot use the dispatcher: pi's shell tool spawns with `getShellEnv()`, a copy of
-`process.env` taken at each spawn, so the only lever is main's own `process.env`, shared by every
-agent in the process (matching the one app-wide Network setting). When the route is not direct and
-no proxy variables came from the launch environment, main sets `HTTPS_PROXY`, `HTTP_PROXY` and
-`ALL_PROXY` to the proxy `resolveProxy` returns for `https://github.com`, the host agent commands
-most often need, and `NO_PROXY` to `localhost,127.0.0.1,::1`; *Manual* sets the manual URL and
-*Off* removes the variables kage set. This is re-applied before every send, so a run's commands
-see the route as it is when the run starts; a running command
-keeps its environment. `resolveProxy` answers one URL, not a bypass list, so per-host PAC rules and
-the system bypass list beyond loopback do not reach child processes: a private-range or `.local`
-host reached by a command goes through the proxy. Launch-environment variables are left untouched.
+Agent commands cannot use the dispatcher: they are child processes, whose environment FastAgent assembles
+once, when the agent opens, from the `env` kage passes, and a running process cannot be given a new one.
+So kage runs a forwarding proxy on loopback (`src/main/forward.ts`, started with the first agent) and gives
+every agent's commands one fixed route to it: `HTTPS_PROXY`, `HTTP_PROXY` and `ALL_PROXY` in both spellings,
+and `NO_PROXY` set to `localhost,127.0.0.1,::1`. For each connection the forwarder asks Chromium's
+`resolveProxy` for that URL and connects directly, through an HTTP or HTTPS proxy (`CONNECT`) or through
+SOCKS5, the way Clash or Surge serve a system proxy. A route that changes reaches the next connection of
+a command already running, and per-host PAC rules and the system bypass list apply to commands as they do
+to model requests. A route kage cannot take is a `502` with the reason, never a direct connection. The
+forwarder listens on loopback only and takes no credentials, so any local process could use it as it could
+use the system proxy itself. Proxy variables present at launch are the commands' own and are left untouched.
 
 **An agent's default model is kage's, applied by kage.** The registry's model overrides the config's
 for new conversations: a conversation is created with it, and one with no model of its own is given it
@@ -154,7 +169,7 @@ memory, which is not a real horizon for this product.
 
 A copy of an Agent carries only its reviewed harness and the contexts its owner chose to include as
 their types allow; the recipient's copy has a separate owner and separate runtime state. Do not
-package `.secrets/`, `.env`, `.state/`, `.git` internals, `node_modules` or anything outside the Agent
+package `.state/`, `.git` internals or anything outside the Agent
 and its chosen contexts. The recipient supplies their own model and service
 credentials. An online invitation instead points to the owner's existing runtime. An individual
 revocable invite may initially mean "anyone holding this link"; it must not claim to identify a
@@ -214,9 +229,9 @@ These are data-integrity constraints, not an enterprise audit UI.
 
 | State | Owner | Boundary |
 |---|---|---|
-| Agent | its own directory in `~/Agents/<name>/` / a recipient's own copy | Only the reviewed harness and chosen contexts travel; moved to the Trash when the agent is removed from kage. |
+| Agent | its own directory in `~/Agents/<name>/` / a recipient's own copy; the program it runs ships with kage | Only the folder without `.state/` and the chosen contexts travel; moved to the Trash when the agent is removed from kage. |
 | Context | its project or folder, outside every Agent directory; a host's copy or clone in that instance's state | Never moved or deleted by removing an Agent. |
-| Local conversations | kage's instance of the Agent (`userData/instances/<agent id>/agent.sqlite`) | Already implemented; not uploaded on publish; deleted when the agent is removed from kage. |
+| Local conversations | the Agent's own `.state/` (`~/Agents/<name>/.state/agent.sqlite`) | Already implemented; not uploaded on publish; go to the Trash with the agent's folder. |
 | Online and channel conversations | FastAgent on the owner-controlled host | Access-scoped per visitor or channel, no second client transcript. |
 | Invitation and endpoint access | host-side protection, with optional hosting metadata | Revocable; do not put secrets in a public URL without labeling its bearer semantics. |
 | Model and channel credentials | kage's own `userData/auth.json` for local agents; each remote runtime's credential store or host secrets | Never copy an OAuth login between stores or into a hosted instance. |

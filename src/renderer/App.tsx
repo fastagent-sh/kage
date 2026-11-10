@@ -9,7 +9,8 @@ import { BrokenAgent, CreateAgent, MissingFolder, NewConversation, NoAgents, Unr
 import { Problem } from "./problem.tsx";
 import { ArrowClockwise, SidebarSimple } from "@phosphor-icons/react";
 import { ConversationList, Sidebar } from "./rows.tsx";
-import { AgentInspector, ConversationHeader } from "./header.tsx";
+import { ConversationHeader } from "./header.tsx";
+import { AgentProfile } from "./profile.tsx";
 import { Transcript } from "./transcript-view.tsx";
 import { Composer } from "./composer.tsx";
 import { Settings } from "./settings.tsx";
@@ -32,12 +33,17 @@ export default function App() {
   // row opens, and a connection returns to the conversation. In one state so every way out drops them.
   const [settings, setSettings] = useState<false | { fromPicker?: true; reconnect?: string; network?: true }>(false);
   const [creating, setCreating] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const compact = useNarrowWindow(640);
-  const overlayDetails = useNarrowWindow(1080);
+  const closeProfile = () => {
+    setProfileOpen(false);
+    requestAnimationFrame(() => document.querySelector<HTMLElement>('main > header .drag > button')?.focus());
+  };
   const openSettings = () => {
     setSidebarOpen(false);
     setCreating(false);
+    setProfileOpen(false);
     setSettings((open) => open || {});
   };
   const nextColour = (() => {
@@ -48,7 +54,7 @@ export default function App() {
   })();
   // Mirrors the popover, which owns the fact; it arrives a task later with the `toggle` event.
   const [listOpen, setListOpen] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  useEffect(() => setProfileOpen(false), [agentId]);
   const rowsFor = (id: string) =>
     rows(
       sessions[id] ?? [],
@@ -89,6 +95,7 @@ export default function App() {
         setSidebarOpen(false);
         setSettings(false);
         setCreating(false);
+        setProfileOpen(false);
         newConversation();
       }
       // The native popover changes before React receives its toggle event.
@@ -98,11 +105,15 @@ export default function App() {
         setCreating(false);
         return;
       }
+      if (event.key === "Escape" && profileOpen) {
+        closeProfile();
+        return;
+      }
       if (event.key === "Escape" && busy) void store.abort();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [newConversation, store, agentState, busy, held, settings, creating]);
+  }, [newConversation, store, agentState, busy, held, settings, creating, profileOpen]);
 
   // The floating composer grows with the draft and messages must end above it. A stable ref, or every streamed
   // delta would rebuild the observer.
@@ -133,6 +144,8 @@ export default function App() {
   );
   const waiting = c ? queueView(c.waiting) : [];
   const { pane, alert } = view;
+  const profile = profileOpen && !!agent && (agentState === "ready" || agentState === "broken");
+  const page = Boolean(settings) || creating || profile;
   // A new conversation's composer sits where its transcript's will, so the first send does not move it.
   const reading = pane === "settling" || pane === "transcript" || pane === "start";
   // The conversation's own model's provider, which may differ from the agent default.
@@ -186,11 +199,13 @@ export default function App() {
           onSelect={(id) => {
             setSettings(false);
             setCreating(false);
+            setProfileOpen(false);
             if (id !== agentId) void store.selectAgent(id);
           }}
           onAdd={() => {
             setSidebarOpen(false);
             setSettings(false);
+            setProfileOpen(false);
             setCreating(true);
           }}
           onSettings={openSettings}
@@ -200,7 +215,7 @@ export default function App() {
         />
         <main className="relative flex-1 flex flex-col min-w-0 min-h-0">
           {/* Floating over the pane, so nothing below moves when one comes or goes (docs/ui.md §9b). */}
-          {(view.draftsError || (!settings && !creating && (view.failure || alert || c?.ended))) && (
+          {(view.draftsError || (!page && (view.failure || alert || c?.ended))) && (
             <div className="pointer-events-none absolute inset-x-0 top-20 z-[7] px-6">
               <div className="column space-y-2">
                 {view.draftsError && (
@@ -212,7 +227,7 @@ export default function App() {
                     reason={view.draftsError}
                   />
                 )}
-                {!settings && !creating && view.failure && (
+                {!page && view.failure && (
                   <Problem
                     layout="strip"
                     tone="error"
@@ -221,7 +236,7 @@ export default function App() {
                     onDismiss={store.dismissFailure}
                   />
                 )}
-                {!settings && !creating && (alert ? (
+                {!page && (alert ? (
                   <Problem
                     layout="strip"
                     tone="error"
@@ -282,6 +297,50 @@ export default function App() {
               }}
               onCancel={() => setCreating(false)}
             />
+          ) : profile && agent ? (
+            <AgentProfile
+              key={agent.id}
+              id={agent.id}
+              name={agent.name}
+              colour={agent.colour}
+              face={faceOf({
+                state: agentState,
+                doing: view.doing[agent.id],
+                outcomes: Object.values(view.unseen[agent.id] ?? {}),
+                open: false,
+              })}
+              dir={agent.dir}
+              model={view.model}
+              showModel={agentState === "ready"}
+              modelBlocked={view.modelBlocked}
+              skillBlocked={view.blocked}
+              content={view.content[agent.id]}
+              commands={view.agentCommands[agent.id]}
+              tools={view.tools[agent.id]}
+              inspection={view.inspection[agent.id]}
+              busy={busy || (view.running[agent.id]?.length ?? 0) > 0}
+              loading={view.loading}
+              onClose={closeProfile}
+              onChangeModel={() => {
+                setProfileOpen(false);
+                store.openPicker();
+              }}
+              onPickFolder={() => store.pickFolder()}
+              onAddFolder={(folder) => store.addAgentFolder(folder, agent.id)}
+              onRemoveFolder={(name) => store.removeAgentFolder(name, agent.id)}
+              onSetSecret={(name, value) => store.setAgentSecret(name, value, agent.id)}
+              onRemoveSecret={(name) => store.removeAgentSecret(name, agent.id)}
+              onReveal={() => void store.reveal()}
+              onRevealPath={(path) => void store.reveal(agent.id, path)}
+              onSelectSkill={(skillName) => {
+                const prefix = `/skill:${skillName} `;
+                const current = c?.draft ?? "";
+                store.setDraft(current.startsWith(prefix) ? current : `${prefix}${current.replace(/^\/skill:\S+\s*/, "")}`);
+                setProfileOpen(false);
+                requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('main textarea[aria-label="Message"]')?.focus());
+              }}
+              onRemove={remove}
+            />
           ) : (
             <>
               {agent && (
@@ -310,10 +369,8 @@ export default function App() {
                   }
                   plan={provider ? view.usage[provider] : undefined}
                   queued={c ? waiting.filter(({ listed }) => listed).length : undefined}
-                  details={
-                    agentState === "ready" || agentState === "broken"
-                      ? { open: detailsOpen, onToggle: () => setDetailsOpen((open) => !open) }
-                      : undefined
+                  onOpenDetails={
+                    agentState === "ready" || agentState === "broken" ? () => setProfileOpen(true) : undefined
                   }
                   list={
                     agentState === "ready"
@@ -428,46 +485,6 @@ export default function App() {
             </>
           )}
         </main>
-        {!settings && !creating && detailsOpen && agent && (agentState === "ready" || agentState === "broken") && (
-          <AgentInspector
-            key={agent.id}
-            overlay={overlayDetails}
-            id={agent.id}
-            name={agent.name}
-            colour={agent.colour}
-            face={faceOf({
-              state: agentState,
-              doing: view.doing[agent.id],
-              outcomes: Object.values(view.unseen[agent.id] ?? {}),
-              open: false,
-            })}
-            dir={agent.dir}
-            model={view.model}
-            showModel={agentState === "ready"}
-            skillBlocked={view.blocked}
-            content={view.content[agent.id]}
-            commands={view.agentCommands[agent.id]}
-            tools={view.tools[agent.id]}
-            inspection={view.inspection[agent.id]}
-            busy={busy || (view.running[agent.id]?.length ?? 0) > 0}
-            loading={view.loading}
-            onClose={() => setDetailsOpen(false)}
-            onPickFolder={() => store.pickFolder()}
-            onAddFolder={(folder) => store.addAgentFolder(folder, agent.id)}
-            onRemoveFolder={(name) => store.removeAgentFolder(name, agent.id)}
-            onSetSecret={(name, value) => store.setAgentSecret(name, value, agent.id)}
-            onRemoveSecret={(name) => store.removeAgentSecret(name, agent.id)}
-            onReveal={() => void store.reveal()}
-            onRevealPath={(path) => void store.reveal(agent.id, path)}
-            onSelectSkill={(skillName) => {
-              const prefix = `/skill:${skillName} `;
-              const current = c?.draft ?? "";
-              store.setDraft(current.startsWith(prefix) ? current : `${prefix}${current.replace(/^\/skill:\S+\s*/, "")}`);
-              document.querySelector<HTMLTextAreaElement>('main textarea[aria-label="Message"]')?.focus();
-            }}
-            onRemove={remove}
-          />
-        )}
       </div>
     </AvatarStyleContext.Provider>
   );

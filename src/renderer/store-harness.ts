@@ -74,13 +74,12 @@ export function harness() {
       ok: true,
       inspection: {
         files: [],
-        packages: [],
-        secrets: [{ name, optional: true, declaredIn: [".secrets/.env"], configured: true, fromFile: true }],
+        secrets: [{ name, optional: true, declaredIn: [], configured: true }],
       },
     }),
     removeAgentSecret: async () => ({
       ok: true,
-      inspection: { files: [], packages: [], secrets: [] },
+      inspection: { files: [], secrets: [] },
     }),
     setModel: async () => ({ ok: true }) as Result,
     setThinking: async () => ({ ok: true }) as Result,

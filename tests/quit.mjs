@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import electron from "electron";
-import { chunk, isolated, withoutCredentials, writeMockAgent } from "./harness.mjs";
+import { chunk, isolated, openInstance, withoutCredentials, writeInstance } from "./harness.mjs";
 import { open, sleep, windowDriver } from "./window.mjs";
 
 const AGENT = "q";
@@ -15,6 +15,7 @@ const TOOL = "sleep 23";
 
 const root = await isolated(import.meta.url, {
   name: "quit",
+  program: {},
   timeout: 90000,
   async after(root) {
     const result = JSON.parse(readFileSync(join(root, "quit-result.json"), "utf8"));
@@ -26,8 +27,8 @@ const root = await isolated(import.meta.url, {
     // Electron has exited: open the instance as the next launch would.
     process.env.FASTAGENT_OFFLINE = "1";
     const project = join(root, "project");
-    const { openAgent } = await import("@fastagent-sh/fastagent");
-    const agent = await openAgent(project, { stateDir: join(root, "user-data", "instances", AGENT) });
+    process.env.KAGE_MOCK_MODEL_URL = "http://127.0.0.1:9/v1";
+    const agent = await openInstance(project);
     try {
       const [session] = (await agent.sessions.list()).data;
       assert.ok(session, "the conversation was kept");
@@ -67,7 +68,8 @@ if (root) {
     });
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  writeMockAgent(project, server.address().port);
+  process.env.KAGE_MOCK_MODEL_URL = `http://127.0.0.1:${server.address().port}/v1`;
+  writeInstance(project, { model: "mock/mock" });
   writeFileSync(join(data, "agents.json"), JSON.stringify([{ id: AGENT, name: "Quit", dir: project, colour: 1 }]));
 
   const dialogs = [];

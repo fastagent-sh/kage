@@ -56,12 +56,13 @@ holds here.
 
 ## 3. Structure
 
-The sidebar lists agents beside the open agent's conversation. Agent details joins them as a column
-when it fits, otherwise as a native popover. At very narrow layout widths, including increased zoom,
-the roster opens from an **Agents** button. Changing a panel's presentation keeps its form state.
-Escape or Close returns focus to the opener; moving focus outside dismisses the overlay without
-stealing it back. Future contact surfaces are specified in [design.md](design.md#the-workbench),
-not reserved as chrome here.
+The sidebar lists agents beside the open agent's conversation. Agent details is not a column: like a
+Telegram profile it takes the conversation's place, opened from the avatar or name in the header and
+left with the round back button or Escape, which returns focus to the opener. It reads top to bottom: a
+large avatar and name, a row of actions (message, show folder, remove), an info card, then the folders,
+skills, tools and variables. At very narrow layout widths, including increased zoom, the roster opens
+from an **Agents** button. Future contact surfaces are specified in
+[design.md](design.md#the-workbench), not reserved as chrome here.
 
 **Sidebar rows are agents, and only agents.** Listing each agent's conversations under it made the
 column a tree of folders, and an agent read as a directory of chats rather than as someone you work
@@ -100,7 +101,7 @@ viewport-bounded field, rounded down to complete text lines, so the reading area
 There is no attach or voice button until either works: a control that can only say it is not there yet is furniture.
 
 Not included until a real roster stops being readable: pinning, hiding, archiving, folders, a global
-activity row, a permanent third column. Removal is offered where a problem explains it, not one slip
+activity row, a third column. Removal is offered where a problem explains it, not one slip
 away from opening an agent.
 
 ## 4. Colour
