@@ -12,14 +12,19 @@ function echoServer() {
   return createTcpServer((socket) => socket.on("data", (data) => socket.write(`echo:${data}`)));
 }
 
-function httpProxy() {
+// Plain requests all go to the one target the test names, so no request chooses where the proxy connects.
+function httpProxy(targetPort = 0) {
   let used = 0;
   const server = createServer((req, res) => {
     used++;
-    const upstream = httpRequest(req.url!, { method: req.method, headers: req.headers }, (answer) => {
-      res.writeHead(answer.statusCode!, answer.headers);
-      answer.pipe(res);
-    });
+    const { pathname, search } = new URL(req.url!);
+    const upstream = httpRequest(
+      { host: "127.0.0.1", port: targetPort, path: pathname + search, method: req.method, headers: req.headers },
+      (answer) => {
+        res.writeHead(answer.statusCode!, answer.headers);
+        answer.pipe(res);
+      },
+    );
     req.pipe(upstream);
   });
   server.on("connect", (req, socket: Socket, head) => {
@@ -123,9 +128,12 @@ test("each tunnel takes the route resolved when it opens: direct, an HTTP proxy,
 });
 
 test("a plain HTTP request is forwarded on its route, and a request that is not a proxy request is refused", async () => {
-  const target = createServer((req, res) => res.end(`hello ${req.method} ${req.url} ${req.headers["x-kept"]}`));
+  const target = createServer((req, res) => {
+    res.setHeader("content-type", "text/plain");
+    res.end(`hello ${req.method} ${req.url} ${req.headers["x-kept"]}`);
+  });
   const targetPort = await listen(target);
-  const http = httpProxy();
+  const http = httpProxy(targetPort);
   const httpPort = await listen(http.server);
   let pac = "DIRECT";
   const forwarder = await startForwarder(async () => pac);
