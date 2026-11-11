@@ -8,7 +8,7 @@
   --color-bg: oklch(0.225 0.004 285);
   --color-surface: oklch(0.27 0.005 285);
   --color-surface-2: oklch(0.315 0.006 285);
-  --color-sidebar: oklch(0.285 0.005 285);
+  --color-sidebar: var(--color-surface);
   --color-hover: oklch(1 0 0 / 6%);
   --color-stroke: oklch(0.36 0.006 285);
   --color-text: oklch(0.95 0.005 285);
@@ -29,7 +29,6 @@
   /* Concentric: a popover is 14 with 6 of padding, so what sits in it is 8. */
   --radius-card: 8px;
   --radius-float: 14px;
-  --radius-composer: 20px;
 
   /* `system-ui` first: Chromium maps it to SF. A stack leading with `-apple-system` or "SF Pro Text" falls
      through to PingFang SC for every Latin letter. */
@@ -349,7 +348,7 @@ details[open]::details-content {
 /* `pretty` keeps a paragraph from ending on a lone character such as `单。`. */
 .md,
 .bubble {
-  font-family: var(--font-prose);
+  font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.7;
   text-wrap: pretty;
@@ -388,9 +387,8 @@ summary:focus-visible,
   backdrop-filter: blur(3px);
 }
 
-/* `--tw-shadow`, not `box-shadow`: `ring-1` is a box-shadow too, and setting it would remove the hairline. */
 .conversation-header {
-  --tw-shadow: 0 12px 24px -18px oklch(0 0 0 / 70%);
+  background: color-mix(in oklch, var(--color-bg) 94%, transparent);
 }
 
 /* Starts where the text does (8 padding + 40 avatar + 10 gap); a line running into a rounded fill reads as a cut. */
@@ -405,7 +403,7 @@ summary:focus-visible,
   left: 58px;
   right: 0;
   height: 1px;
-  background: var(--color-stroke);
+  background: color-mix(in oklch, var(--color-stroke) 50%, transparent);
 }
 .roster-row:is(:hover, [data-filled]) + .roster-row::before,
 .roster-row:is(:hover, [data-filled])::before {
@@ -530,7 +528,7 @@ summary:focus-visible,
 }
 .md > div > p + p,
 .md > div > :is(ul, ol) + * {
-  margin-top: 12px;
+  margin-top: 16px;
 }
 .md > div > [data-streamdown^="heading-"]:not(:first-child) {
   margin-top: 24px;
@@ -659,16 +657,8 @@ summary:focus-visible,
   border-bottom: 1px solid var(--color-stroke);
 }
 [data-streamdown="table-header-cell"] {
-  border-bottom: 0;
-  background: var(--color-surface-2);
-  color: var(--color-muted);
+  color: var(--color-text);
   font-weight: 600;
-}
-[data-streamdown="table-header-cell"]:first-child {
-  border-radius: var(--radius-card) 0 0 var(--radius-card);
-}
-[data-streamdown="table-header-cell"]:last-child {
-  border-radius: 0 var(--radius-card) var(--radius-card) 0;
 }
 [data-streamdown="table-row"]:last-child > [data-streamdown="table-cell"] {
   border-bottom: 0;
@@ -681,44 +671,17 @@ summary:focus-visible,
 }
 
 @media (prefers-color-scheme: light) {
-  .sidebar-panel {
-    background: linear-gradient(155deg, oklch(0.982 0.007 80), var(--color-sidebar) 76%);
-    box-shadow: 0 12px 34px -28px oklch(0.3 0.03 285 / 28%);
-  }
   .sidebar-wordmark {
     font-size: 15px;
     font-weight: 600;
     letter-spacing: -0.025em;
   }
-  .sidebar-add {
-    color: var(--color-text);
-    background: oklch(1 0 0 / 75%);
-    box-shadow: 0 1px 3px oklch(0.3 0.02 285 / 10%);
-  }
-  .sidebar-add:hover {
-    /* --color-hover is a 4% tint, which would lighten the button instead of deepening it. */
-    background: var(--color-surface-2);
-  }
-  .roster-row[data-filled] > button {
-    background: linear-gradient(105deg, oklch(0.72 0.09 300 / 18%), oklch(0.9 0.06 300 / 10%));
-  }
-  .conversation-header {
-    background: oklch(0.995 0.003 80 / 94%);
-    --tw-shadow:
-      0 2px 5px -2px oklch(0.26 0.02 285 / 12%),
-      0 14px 26px -17px oklch(0.26 0.02 285 / 25%);
-  }
   .composer-card {
     background: oklch(1 0 0);
-    --tw-shadow: 0 14px 36px -24px oklch(0.3 0.02 285 / 26%);
   }
   .composer button[aria-label="Send"][aria-disabled="true"] {
     background: var(--color-surface-2);
     color: var(--color-muted);
-  }
-  .code-block,
-  .tool-card[open] {
-    background: oklch(0.966 0.007 270);
   }
   .popover {
     box-shadow:

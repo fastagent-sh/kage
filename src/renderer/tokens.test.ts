@@ -50,7 +50,7 @@ test("chrome text is set on the size scale, and the half step only on mono", () 
   assert.deepEqual(off, [], "sizes off the scale (docs/ui.md §5)");
 });
 
-test("corners come from the three radius tokens; a bubble's tail and inline code are the only 4", () => {
+test("corners come from the radius tokens; a bubble's tail and inline code are the only 4", () => {
   const off = sources.flatMap(({ name, source }) => radiiOffScale(source).map((at) => `${name} ${at}`));
   assert.deepEqual(off, [], "arbitrary radii (docs/ui.md §7)");
 });

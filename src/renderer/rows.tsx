@@ -141,7 +141,7 @@ export function Sidebar({
       open={open}
       onClose={onClose}
       aria-label="Agents"
-      className="sidebar-panel w-[clamp(13.5rem,20vw,16.5rem)] shrink-0 flex flex-col min-h-0 rounded-float bg-sidebar ring-1 ring-stroke overflow-hidden"
+      className={`sidebar-panel w-[clamp(13.5rem,20vw,16.5rem)] shrink-0 flex flex-col min-h-0 rounded-float bg-sidebar overflow-hidden ${overlay ? "ring-1 ring-stroke" : ""}`}
     >
       {/* The wordmark is centred in the column, not pushed along by the window controls overhanging it. */}
       <div className="relative h-12 shrink-0 flex items-center px-2 drag">
@@ -153,7 +153,7 @@ export function Sidebar({
           kind="ghost"
           size={28}
           onClick={onAdd}
-          className="no-drag sidebar-add"
+          className="no-drag"
           title="Create agent"
           aria-label="Create agent"
           icon={<Plus size={16} />}
@@ -263,7 +263,7 @@ export function Sidebar({
                           <span className="truncate">conversations could not be read</span>
                         </Badge>
                       ) : (
-                        <span className="min-w-0 flex-1 line-clamp-2 break-words font-prose text-muted">
+                        <span className="min-w-0 flex-1 line-clamp-2 break-words text-muted">
                           {preview?.text ?? (preview ? "New conversation" : last?.label ?? "No conversations yet")}
                         </span>
                       )}
