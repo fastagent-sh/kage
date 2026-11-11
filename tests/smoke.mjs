@@ -321,7 +321,7 @@ if (root) {
       // Chromium once skipped the Latin face when the Latin and Chinese faces declared different weights.
       await until(
         "[...document.fonts].some((f) => f.family === 'Prose' && f.unicodeRange.startsWith('U+0-FF') && f.style === 'normal' && f.status === 'loaded')",
-        "the answer's Latin face loads",
+        "the Agent name's rounded Latin face loads",
       );
       // With only a 400 italic declared, `***x***` matched it and lost its weight.
       assert.deepEqual(
@@ -347,12 +347,28 @@ if (root) {
         "visible",
         "a disclosure clips its height, not its width",
       );
-      // A drop shadow set as `box-shadow` would replace the `ring-1` hairline.
-      assert.deepEqual(
-        await evaluate(`['.composer-card', '.conversation-header'].map((selector) => /0px 0px 0px 1px/.test(getComputedStyle(document.querySelector(selector)).boxShadow))`),
-        [true, true],
-        "the composer and the header keep their hairline",
-      );
+      const initialTheme = electron.nativeTheme.themeSource;
+      for (const theme of ["light", "dark"]) {
+        electron.nativeTheme.themeSource = theme;
+        await until(`matchMedia('(prefers-color-scheme: ${theme})').matches`, `${theme} reading surface`);
+        const reading = await evaluate(`(() => {
+          const style = selector => getComputedStyle(document.querySelector(selector));
+          const sans = style('body').fontFamily;
+          return {
+            systemReading: ['.md', '.bubble', 'textarea', 'aside .roster-row[data-filled] .line-clamp-2'].map(selector => style(selector).fontFamily === sans),
+            identity: style('main > header .drag > button').fontFamily,
+            composerOutline: /0px 0px 0px 1px/.test(style('.composer-card').boxShadow),
+            headerShadow: style('.conversation-header').boxShadow,
+            sidebarShadow: style('.sidebar-panel').boxShadow,
+          };
+        })()`);
+        assert.deepEqual(reading.systemReading, [true, true, true, true], `${theme}: answers, messages, drafts and previews use the system face`);
+        assert.match(reading.identity, /Prose/, `${theme}: the Agent keeps its rounded identity`);
+        assert.equal(reading.composerOutline, true, `${theme}: the composer keeps its visible boundary`);
+        assert.equal(reading.headerShadow, "none", `${theme}: the header has no decorative frame`);
+        assert.equal(reading.sidebarShadow, "none", `${theme}: the docked roster is flat`);
+      }
+      electron.nativeTheme.themeSource = initialTheme;
       assert.equal(requests, 2, "a real read tool ran between two model requests");
       // The header floats: text scrolls beneath it and it lets the wheel through.
       assert.ok(
@@ -573,7 +589,7 @@ if (root) {
       assert.deepEqual(
         await evaluate(`(() => {
           const mark = ${unseenMark};
-          const quote = mark.parentElement.querySelector('span.font-prose');
+          const quote = mark.parentElement.querySelector('.line-clamp-2');
           const line = parseFloat(getComputedStyle(quote).lineHeight);
           return [Math.round(mark.getBoundingClientRect().top - quote.getBoundingClientRect().top) < line];
         })()`),

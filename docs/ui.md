@@ -28,8 +28,8 @@ with and what they last worked on. Several conversations per agent are real and 
 they live one level down, in the open agent's conversation list, so the roster stays a list of
 contacts.
 
-**Floating layers belong to navigation, never to the work.** The sidebar, header and composer lift off
-the page; the transcript stays opaque so long results remain readable.
+**Navigation stays quiet; work stays readable.** The sidebar is a flat surface, the header floats
+without a frame, and the composer has a clear boundary. The transcript stays opaque.
 
 **Say status only when it costs the person something.** Not every state deserves an indicator (§9).
 
@@ -51,6 +51,8 @@ holds here.
   thread per contact, ripple on press (a Material gesture no macOS app makes), and unread-first
   ordering (an agent list is ordered by what is happening now).
 - **Codex**: the model chip and its picker, with effort beside the model.
+- **[Cindy](https://github.com/makecindy/cindy)**: quiet navigation, neutral reading typography and
+  flat content surfaces. Keep kage's Agent roster rather than its mixed task/project navigation.
 - **Carbon, HPE, WCAG 1.4.1**: the status tiers in §9.
 - **macOS**: translucency stays in navigation; reading surfaces are not glass.
 
@@ -75,9 +77,8 @@ stays the runtime's.
 
 **The header names the agent and where it lives, not the conversation.** A person talking to a contact
 is not asked to think about sessions; conversation titles are in the conversation list, which hangs
-from the header's one button as a native popover. The header runs the pane's width because it is
-chrome; the composer sits in the reading column because the eye goes straight down from the last line
-to the field.
+from the header's one button as a native popover. The header and composer align with the reading column,
+so navigation, the last line and the next input share one axis.
 
 **Presence is told at two levels.** The avatar answers *is this agent busy at all*, the conversation
 list answers *which one*. Neither repeats the other, and neither is colour or motion alone (§9).
@@ -88,11 +89,11 @@ person (setup problems outrank work in progress, then unseen outcomes, then idle
 Motion is small, continuous only while an agent works, and an outcome plays once, when it lands;
 under reduced motion each face keeps its pose so the states stay apart.
 
-**Panels float on the window's canvas.** The sidebar is a card inset from the window's edges, and the
-header and composer float over the transcript, which passes beneath them. The strips past them are
-veiled, not painted over: text passing there reads as moving on rather than as cut at a line. In the
-compact layout the header and composer take their own rows instead, leaving the transcript a scrollable
-reading area rather than covering it as the window gets shorter.
+**Navigation leaves room for the work.** The sidebar is a flat, inset surface without a decorative
+border or shadow. The header has neither; the composer keeps its outline. Both float over the
+transcript, with veiled edges so scrolling text passes beneath them. In the compact layout the header
+and composer take their own rows instead, leaving the transcript a scrollable reading area. The
+roster then opens as an overlay and keeps its boundary and shadow to separate it from the content.
 
 **The composer starts as one row**: the field, with what belongs to the next message (the model chip)
 inside its right end, and one round button that is the next action. The model moves below the text
@@ -125,21 +126,19 @@ cheerful. `avatar-colours.test.ts` holds the palette to those rules.
 
 ## 5. Typography
 
-**The chrome speaks in the system face.** This is a native window, and a web font in its controls
-reads as a page rather than an app. Chinese falls back to the system's own face; it is never forced
-into the monospace family.
+**Reading and controls use the system face.** Answers, sent messages, drafts and roster previews
+share the native typeface with controls and status text. Chinese uses the system's own face; it is
+never forced into the monospace family.
 
-**Words a person wrote wear `Prose`** wherever they appear: a message, its quote on the roster, an
-agent's name, a conversation's label. `Prose` is two bundled rounded faces under one name, Nunito for
-Latin and Resource Han Rounded for Chinese, sized to match each other. Everything the app says itself
-(times, badges, errors, controls, the trace) stays in the system face. A system face for the answer
-made kage indistinguishable from every other chat app.
+**Identity keeps its rounded face.** Agent names and conversation labels retain `Prose`: Nunito for
+Latin and Resource Han Rounded for Chinese, sized to match each other. Avatars keep their existing
+lettering. Personality stays with the contacts while long answers remain visually quiet.
 
 **One monospace everywhere**, Maple Mono, so a command in an answer looks like the command that ran.
 
-**Chinese is a first-class case.** Prose takes one line height that suits Chinese and is slightly airy
-for English, since nothing marks a message's script and a detector would be a second source of truth
-about the transcript. Mixed Chinese and Latin get the browser's automatic spacing; code and paths opt
+**Chinese is a first-class case.** Reading text takes one line height that suits Chinese and is
+slightly airy for English, since nothing marks a message's script and a detector would be a second
+source of truth about the transcript. Mixed Chinese and Latin get the browser's automatic spacing; code and paths opt
 out to keep their columns.
 
 **What you write, what you sent and what the agent answered are one voice**, a reading size above the
@@ -174,11 +173,12 @@ read once at load, so a `#gallery` link in an answer cannot unmount a running ap
 ## 7. Space, radius, elevation
 
 Spacing groups rather than separates: things that belong together sit closer than things that do
-not, and one gap for every pair makes nothing belong together. Three radius tokens, concentric where
+not, and one gap for every pair makes nothing belong together. Two radius tokens, concentric where
 they nest; a bubble's trailing corner and inline code are the only 4, which is what makes a bubble
-read as speech. `tokens.test.ts` fails on any other radius. Navigation may cast a quiet shadow;
-reading content stays flat. No divider between sidebar and conversation: the change of surface is
-the separation.
+read as speech. `tokens.test.ts` rejects arbitrary radii. Only overlays cast a shadow; docked
+navigation and reading content stay flat. No divider between sidebar and conversation: the change
+of surface is the separation. Code and expanded tools use neutral surfaces; table headings use
+weight and a hairline rather than a filled band.
 
 ## 8. Message rendering
 

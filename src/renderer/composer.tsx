@@ -378,7 +378,7 @@ export function Composer({
         </p>
       )}
       <div className="flex items-end gap-2">
-        <div ref={field} className="composer-card relative flex min-w-0 flex-1 flex-wrap items-end gap-x-2 gap-y-1 rounded-composer bg-surface py-1.5 pr-1.5 pl-4 ring-1 ring-stroke focus-within:ring-accent/50">
+        <div ref={field} className="composer-card relative flex min-w-0 flex-1 flex-wrap items-end gap-x-2 gap-y-1 rounded-float bg-surface py-1.5 pr-1.5 pl-4 ring-1 ring-stroke focus-within:ring-accent/50">
           {suggestions.length > 0 && (
             <div ref={list} className="popover absolute bottom-full left-0 z-20 mb-2 max-h-72 w-[420px] max-w-full overflow-y-auto">
               {suggestions.map((command, index) => (
@@ -444,7 +444,7 @@ export function Composer({
               onClick={picking ? store.closePicker : store.openPicker}
               disabled={modelBlocked && model ? `${modelBlocked} (${model})` : (modelBlocked ?? false)}
               title={model ? `Model for this agent: ${model}` : "Model for this agent"}
-              className={`max-w-full bg-hover ${(!model && needsModel) || stuck ? "text-warning" : ""}`}
+              className={`max-w-full ${(!model && needsModel) || stuck ? "text-warning" : ""}`}
             >
               {model ? (
                 // `openai/` and `azure-openai-responses/` offer the same ids and are paid for differently.

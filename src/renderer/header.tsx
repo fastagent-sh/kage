@@ -45,7 +45,7 @@ export function ConversationHeader({
   return (
     <header className="conversation-topbar pointer-events-none absolute inset-x-0 top-2 z-10 px-6">
       <div className="column">
-        <div className="conversation-header flex min-w-0 items-center gap-2.5 rounded-composer bg-surface/85 py-1.5 pr-1.5 pl-2 ring-1 ring-stroke backdrop-blur-xl">
+        <div className="conversation-header flex min-w-0 items-center gap-2.5 rounded-float py-1.5 pr-1.5 pl-2 backdrop-blur-xl">
           <button
             type="button"
             onClick={onOpenDetails}
