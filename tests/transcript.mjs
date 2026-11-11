@@ -98,7 +98,8 @@ if (root) {
   }
 
   async function run() {
-    win = await open();
+    // The scroll sampler needs frames even when the test window is hidden or occluded.
+    win = await open({ attach: window => window.webContents.setBackgroundThrottling(false) });
     ({ until, type, send, evaluate, transcript } = windowDriver(win, { timeout: 20000, poll: 50 }));
 
     // Two calls running: their block is the live line, and the composer stops or steers.
