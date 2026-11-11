@@ -14,7 +14,6 @@ export interface AgentRow {
   id: string;
   name: string;
   dir: string;
-  model?: string;
   // Lowest number free at assignment, kept for the agent's life; the renderer maps it onto its palette.
   colour: number;
 }
@@ -35,7 +34,6 @@ function registryRows(rows: unknown): AgentRow[] {
         typeof row.id !== "string" ||
         typeof row.name !== "string" ||
         typeof row.dir !== "string" ||
-        (row.model !== undefined && typeof row.model !== "string") ||
         !(Number.isInteger(row.colour) && row.colour >= 0),
     ) ||
     new Set(rows.map((row) => row.id)).size !== rows.length
@@ -95,14 +93,6 @@ export class AgentRegistry {
       const row = rows.find((row) => row.id === id);
       if (!row) throw new Error(`unknown agent ${id}`);
       row.name = name;
-    });
-  }
-
-  setModel(id: string, model: string): Promise<void> {
-    return this.change((rows) => {
-      const row = rows.find((row) => row.id === id);
-      if (!row) throw new Error(`unknown agent ${id}`);
-      row.model = model;
     });
   }
 }
@@ -263,12 +253,37 @@ export async function createNewAgent({
   }
 }
 
+// Folder and model edits both rewrite the whole file, so one must not read between the other's read and write.
+const configEdits = serially();
+
 async function editFolders(agentDir: string, edit: (entries: FolderEntries) => FolderEntries): Promise<AgentFolder[]> {
-  const config = await readInstanceConfig(agentDir);
-  const content = edit(folderEntries(agentDir, config));
-  const { content: _replaced, ...rest } = config;
-  await writeJsonAtomic(instanceConfigPath(agentDir), { ...rest, ...(Object.keys(content).length > 0 && { content }) });
+  await configEdits.run(async () => {
+    const config = await readInstanceConfig(agentDir);
+    const content = edit(folderEntries(agentDir, config));
+    const { content: _replaced, ...rest } = config;
+    await writeJsonAtomic(instanceConfigPath(agentDir), { ...rest, ...(Object.keys(content).length > 0 && { content }) });
+  });
   return listFolders(agentDir);
+}
+
+/** The agent's default model: the instance configuration's `model`, which a copy of the agent carries. */
+export async function agentModel(agentDir: string): Promise<string | undefined> {
+  const { model } = await readInstanceConfig(agentDir);
+  if (model !== undefined && typeof model !== "string") throw new Error(`${instanceConfigPath(agentDir)}: "model" must be a string`);
+  return model;
+}
+
+export function clearAgentModelInConfig(agentDir: string): Promise<void> {
+  return configEdits.run(async () => {
+    const { model: _forgotten, ...rest } = await readInstanceConfig(agentDir);
+    await writeJsonAtomic(instanceConfigPath(agentDir), rest);
+  });
+}
+
+export function setAgentModelInConfig(agentDir: string, model: string): Promise<void> {
+  return configEdits.run(async () => {
+    await writeJsonAtomic(instanceConfigPath(agentDir), { ...(await readInstanceConfig(agentDir)), model });
+  });
 }
 
 export async function addFolderToAgent(agentDir: string, folder: string): Promise<AgentFolder[]> {

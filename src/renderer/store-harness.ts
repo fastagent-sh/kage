@@ -86,6 +86,7 @@ export function harness() {
     readState: async (_id, session) => sessionOf(session),
     removeAgent: async () => ({ ok: true }) as Result,
     resetAgentConfig: async () => ({ ok: true }),
+    forgetAgentModel: async () => ({ ok: true }),
     listCommands: async () => [],
     revealAgent: async () => {},
     revealRegistry: async () => {},

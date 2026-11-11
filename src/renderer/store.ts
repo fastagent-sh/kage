@@ -107,6 +107,7 @@ export interface View extends SettingsView, AgentResourcesView {
   changingModel?: string;
   error?: string;
   errorInConfig?: true;
+  errorModel?: string;
   failure?: { title: string; reason: string };
   registryError?: string;
   draftsError?: string;
@@ -516,6 +517,7 @@ export function createStore(api: KageApi) {
       model: undefined,
       error: undefined,
       errorInConfig: undefined,
+      errorModel: undefined,
       loading: true,
     });
     try {
@@ -532,6 +534,7 @@ export function createStore(api: KageApi) {
           states: { ...view.states, [id]: result.code },
           error: result.message,
           errorInConfig: result.inConfig,
+          errorModel: result.unknownModel,
           ...(result.content && { content: { ...view.content, [id]: result.content } }),
           ...(result.inspection && { inspection: { ...view.inspection, [id]: result.inspection } }),
         });
@@ -632,6 +635,7 @@ export function createStore(api: KageApi) {
           states: { ...view.states, [id]: result.code },
           error: result.message,
           errorInConfig: result.inConfig,
+          errorModel: result.unknownModel,
           ...(nextContent && { content: { ...view.content, [id]: nextContent } }),
           ...(nextInspection && { inspection: { ...view.inspection, [id]: nextInspection } }),
         });
@@ -646,6 +650,7 @@ export function createStore(api: KageApi) {
         loading: false,
         error: undefined,
         errorInConfig: undefined,
+        errorModel: undefined,
         model: result.model,
         contextWindows: result.windows,
         ...(result.tools && { tools: { ...view.tools, [id]: result.tools } }),
@@ -952,6 +957,20 @@ export function createStore(api: KageApi) {
         await selectAgent(id);
       } catch (error) {
         fail("The config was not replaced", error);
+      } finally {
+        resetting = false;
+      }
+    },
+    async forgetModel() {
+      const id = view.agentId;
+      if (!id || resetting) return;
+      resetting = true;
+      try {
+        const result = await api.forgetAgentModel(id);
+        if (!result.ok) return fail("The model was not forgotten", result.error.message);
+        await selectAgent(id);
+      } catch (error) {
+        fail("The model was not forgotten", error);
       } finally {
         resetting = false;
       }

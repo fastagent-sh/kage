@@ -13,8 +13,10 @@ import { refuse } from "./send.ts";
 import { summaries, type SessionSummary } from "./session-list.ts";
 import {
   addFolderToAgent,
+  agentModel,
   AgentRegistry,
   checkSecret,
+  clearAgentModelInConfig,
   createNewAgent,
   failingConfig,
   freshConfig,
@@ -26,6 +28,7 @@ import {
   removeFolderFromAgent,
   requireFolder,
   resolveAgentPath,
+  setAgentModelInConfig,
   type AgentFolder,
   type AgentInspection,
   type AgentRow,
@@ -38,6 +41,7 @@ const registry = new AgentRegistry(registryFile);
 const secrets = new SecretStore(join(app.getPath("userData"), "secrets.json"));
 export const listAgents = () => registry.list();
 export const renameAgent = (id: string, name: string) => registry.rename(id, name);
+export const defaultModelOf = (row: AgentRow) => agentModel(row.dir);
 
 export async function createAgentWithFolders(name: string, folders: string[]): Promise<Result<{ agent: AgentRow }>> {
   try {
@@ -76,6 +80,7 @@ export type OpenResult =
       code: AgentSetup;
       message: string;
       inConfig?: true;
+      unknownModel?: string;
       content?: AgentContent[];
       inspection?: AgentInspection;
     };
@@ -182,9 +187,10 @@ export async function openAgentResult(agentId: string): Promise<OpenResult> {
     const [info, sessions] = await Promise.all([agent.info(), summaries(agent)]);
     const inspection = await inspect(found, info.description);
     const models = choicesOf(info);
-    // kage's own default for the agent, over the config's; one this computer's providers no longer offer cannot start anything.
-    const staleDefault = found.model && !models.some(({ spec }) => spec === found.model) ? found.model : undefined;
-    const model = found.model ?? (info.defaultModel && specOf(info.defaultModel));
+    // One this computer's providers do not offer cannot start anything.
+    const defaultModel = await defaultModelOf(found);
+    const staleDefault = defaultModel && !models.some(({ spec }) => spec === defaultModel) ? defaultModel : undefined;
+    const model = defaultModel ?? (info.defaultModel && specOf(info.defaultModel));
     return {
       ok: true,
       sessions,
@@ -200,11 +206,13 @@ export async function openAgentResult(agentId: string): Promise<OpenResult> {
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof MissingDirError) return { ok: false, code: "missing_dir", message };
     const inspection = row ? await inspect(row).catch(() => undefined) : undefined;
+    const unknownModel = row && (await unknownDefault(row, message));
     return {
       ok: false,
       code: "broken",
       message,
       ...(configFailed(agentId) && { inConfig: true }),
+      ...(unknownModel && { unknownModel }),
       ...(content && { content }),
       ...(inspection && { inspection }),
     };
@@ -219,7 +227,8 @@ async function inspect(row: AgentRow, description?: string): Promise<AgentInspec
 /** A conversation to start in: on the agent's default for new ones when this computer can still run it. */
 export async function createSession(row: AgentRow): Promise<string> {
   const agent = await openAgent(row);
-  const model = row.model && (await offered(agent, row.model)) ? { model: refOf(row.model) } : {};
+  const defaultModel = await defaultModelOf(row);
+  const model = defaultModel && (await offered(agent, defaultModel)) ? { model: refOf(defaultModel) } : {};
   return (await agent.sessions.create(model)).id;
 }
 
@@ -352,11 +361,24 @@ export function removeAgentSecret(
 export async function setAgentModel(row: AgentRow, model: string, session?: string): Promise<Result> {
   const agent = await openAgent(row);
   if (session) await agent.sessions.update(session, await changesForModel(agent, session, model));
-  await registry.setModel(row.id, model);
+  await setAgentModelInConfig(row.dir, model);
   return { ok: true };
 }
 
 const configFailed = (id: string) => failedConfigs.has(id);
+
+/** The default model FastAgent refused to open on, when the agent's own config names it: the one thing to forget to open. */
+async function unknownDefault(row: AgentRow, message: string): Promise<string | undefined> {
+  const spec = /^unknown model "([^"]+)"/.exec(message)?.[1];
+  return spec !== undefined && spec === (await defaultModelOf(row).catch(() => undefined)) ? spec : undefined;
+}
+
+export function forgetAgentModel(row: AgentRow): Promise<Result> {
+  return change(row.id, async () => {
+    await clearAgentModelInConfig(row.dir);
+    return { ok: true };
+  });
+}
 
 export function resetAgentConfig(row: AgentRow): Promise<Result> {
   return change(row.id, async () => {

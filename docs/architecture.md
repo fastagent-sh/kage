@@ -126,16 +126,19 @@ to model requests. A route kage cannot take is a `502` with the reason, never a 
 forwarder listens on loopback only and takes no credentials, so any local process could use it as it could
 use the system proxy itself. Proxy variables present at launch are the commands' own and are left untouched.
 
-**An agent's default model is kage's, applied by kage.** The registry's model overrides the config's
-for new conversations: a conversation is created with it, and one with no model of its own is given it
-when its first message is sent, so what the chip showed, what runs and what the history records agree.
-Changing it updates the open conversation (when there is one) and then the registry; nothing is rebuilt
-and no subscription moves. A default the agent's providers no longer offer opens the agent all the same,
-with the picker saying so, and a send on it is refused as `model_unavailable` before anything is recorded.
-Removing or moving an agent, or replacing its config, closes its instance, so it waits for no running
-conversation and refuses while one is at work, and ends its subscriptions saying why. Updating the
-conversation and the registry is not a cross-file transaction; a registry write failure after a session
-update leaves the conversation's model changed without changing the default.
+**An agent's default model is the `model` of its `fastagent.json`, so a copy of the agent carries it.**
+It applies to new conversations: a conversation is created with it, and one with no model of its own is
+given it when its first message is sent, so what the chip showed, what runs and what the history records
+agree. Changing it updates the open conversation (when there is one) and then rewrites the file; the open
+instance keeps the default it opened with, which kage never reads back from it, and no subscription moves.
+A default the agent's providers have no credential for opens the agent all the same, with the picker saying
+so, and a send on it is refused as `model_unavailable` before anything is recorded. A default the model
+catalog no longer has does not open: FastAgent refuses it (`unknown model "<spec>"`), and the agent's page
+offers to forget that model, which removes only `model` from the file. Folder and model edits are
+serialized, since each rewrites the whole file. Removing or moving an agent, or replacing its config,
+closes its instance, so it waits for no running conversation and refuses while one is at work, and ends
+its subscriptions saying why. Updating the conversation and the file is not a transaction; a write
+failure after a session update leaves the conversation's model changed without changing the default.
 
 **Renderer state is a plain TS store read through `useSyncExternalStore`.** No state library: the
 authoritative state lives in FastAgent and is re-read (`sessions.get`, `sessions.entries`) rather than
@@ -148,7 +151,7 @@ slice rejects reads from a superseded opening or an earlier network choice. Thes
 need a component to decide whether they still belong on screen.
 
 **The client persists almost nothing** — `userData/agents.json`: currently each agent's id, name,
-directory, avatar colour and optional model override. Reads validate the file; only a missing file means an empty
+directory and avatar colour. Reads validate the file; only a missing file means an empty
 registry. Writes serialize read/modify/rename, so concurrent changes do not lose rows and a failed
 write never publishes an in-memory success. Conversations remain the runtime's files. The renderer
 persists drafts and selection in localStorage. The draft storage boundary preserves an invalid value in

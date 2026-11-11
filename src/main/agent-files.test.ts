@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { baseEnv, openAgent, type AgentDefinition } from "@fastagent-sh/fastagent";
 import {
   addFolderToAgent,
+  agentModel,
   AgentRegistry,
   checkSecret,
   createNewAgent,
@@ -20,6 +21,7 @@ import {
   removeFolderFromAgent,
   requireFolder,
   resolveAgentPath,
+  setAgentModelInConfig,
 } from "./agent-files.ts";
 
 const repository = join(import.meta.dirname, "..", "..");
@@ -49,13 +51,12 @@ test("registry serializes writes in one process, survives restart and deduplicat
     const [first, second] = await Promise.all([registry.add(a), registry.add(b)]);
     assert.equal((await registry.add(alias)).id, first.id);
     await Promise.all([
-      registry.setModel(first.id, "provider/model"),
       registry.rename(first.id, "Reviewer"),
       registry.remove(second.id),
     ]);
     await assert.rejects(registry.rename(second.id, "gone"), /unknown agent/);
     const restarted = new AgentRegistry(file);
-    assert.deepEqual(await restarted.list(), [{ ...first, name: "Reviewer", model: "provider/model" }]);
+    assert.deepEqual(await restarted.list(), [{ ...first, name: "Reviewer" }]);
     assert.deepEqual(await readdir(join(root, "data")), ["agents.json"]);
     await restarted.remove(first.id);
     assert.deepEqual(await restarted.list(), []);
@@ -189,6 +190,32 @@ test("creating an agent places it in ~/Agents/<slug>, binds its folders, numbers
       /contains the agent directory/,
     );
     assert.deepEqual((await readdir(agentsDir)).sort(), ["Reviewer", "Reviewer-2", "outside"].sort());
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an agent's default model is the instance config's, kept beside the folders it edits and read by FastAgent as its default", async () => {
+  const root = await mkdtemp(join(tmpdir(), "kage-model-"));
+  try {
+    const registry = new AgentRegistry(join(root, "agents.json"));
+    const project = join(root, "project");
+    await mkdir(project);
+    const agent = await createNewAgent({ name: "Modeled", folders: [], root: join(root, "Agents"), registry });
+    assert.equal(await agentModel(agent.dir), undefined);
+    await Promise.all([setAgentModelInConfig(agent.dir, "openai/gpt-4o-mini"), addFolderToAgent(agent.dir, project)]);
+    assert.equal(await agentModel(agent.dir), "openai/gpt-4o-mini");
+    assert.equal((await listFolders(agent.dir)).length, 1, "a model edit does not lose a folder edit made at once");
+    await setAgentModelInConfig(agent.dir, "openai/gpt-4o");
+    assert.equal((await listFolders(agent.dir)).length, 1, "nor the other way round");
+    const opened = await openInstance(agent.dir);
+    try {
+      assert.deepEqual((await opened.info()).defaultModel, { provider: "openai", modelId: "gpt-4o" });
+    } finally {
+      await opened.close();
+    }
+    await writeFile(instanceConfigPath(agent.dir), JSON.stringify({ name: "x", model: 3 }));
+    await assert.rejects(agentModel(agent.dir), /"model" must be a string/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

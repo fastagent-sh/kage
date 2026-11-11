@@ -48,14 +48,18 @@ export function UnreadableRegistry({ reason, onReveal, onRetry }: { reason?: str
 export function BrokenAgent({
   message,
   inConfig,
+  unknownModel,
   onFreshConfig,
+  onForgetModel,
   onRemove,
   onReveal,
   onRetry,
 }: {
   message: string;
   inConfig?: boolean;
+  unknownModel?: string;
   onFreshConfig: () => void;
+  onForgetModel: () => void;
   onRemove: () => void;
   onReveal: () => void;
   onRetry: () => void;
@@ -66,19 +70,26 @@ export function BrokenAgent({
       tone="error"
       title="This agent could not be loaded"
       advice={
-        inConfig
+        unknownModel
+          ? `Its default model, ${unknownModel}, is no longer offered. Forget it to open the agent, then choose another model; its folders and conversations are untouched.`
+          : inConfig
           ? "Its fastagent.config.ts, or a file it imports, does not load. Fix it and retry, or start a fresh config and choose a model again: kage keeps a copy of the old one beside it, as fastagent.config.ts.broken-<time>."
           : "Something in its definition stops it from starting. Fix it in the agent's folder, then retry; kage has changed nothing."
       }
       reason={message}
       actions={
         <>
-          {inConfig && (
+          {unknownModel && (
+            <Button kind="primary" size={32} icon={<ArrowCounterClockwise size={14} />} onClick={onForgetModel}>
+              Forget {unknownModel}
+            </Button>
+          )}
+          {inConfig && !unknownModel && (
             <Button kind="primary" size={32} icon={<ArrowCounterClockwise size={14} />} onClick={onFreshConfig}>
               Start a fresh config
             </Button>
           )}
-          <Button kind={inConfig ? "secondary" : "primary"} size={32} icon={<ArrowClockwise size={14} />} onClick={onRetry}>
+          <Button kind={inConfig || unknownModel ? "secondary" : "primary"} size={32} icon={<ArrowClockwise size={14} />} onClick={onRetry}>
             Retry
           </Button>
           <Button size={32} icon={<FolderOpen size={14} />} onClick={onReveal}>
