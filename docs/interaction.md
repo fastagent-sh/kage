@@ -26,9 +26,12 @@ display is gone comes back on an attached one.
 
 Clicking an agent row restores its last open conversation if still available, otherwise an active
 run, then the most recent conversation (or a new one). The open agent's conversations are in a list
-the header's list button, a round disc beside its info pill, shows and hides; it floats under the button, closes on a click outside or
+the header's icon-only list button shows and hides; it floats under the button, closes on a click outside or
 Escape (without stopping a run), and closes when a conversation is chosen or started. Running and
 drafted work stays attached to its originating agent and conversation when navigating.
+The header shows the current conversation's `working` independently of `N other working` for other
+running conversations of the same Agent. The latter opens that conversation directly when there is one,
+or opens the existing conversation list when there are several. It disappears when none remain.
 
 Creating an agent asks for its name and any folders on this computer it should work on, and creates the agent in `~/Agents/<slug>/` (`fastagent.json`, `AGENTS.md`, empty `skills/` and `prompts/`, and a git repository). A refused declaration (duplicate folder name, nesting) is said in words and creates nothing. An agent whose
 directory is no longer there (moved, deleted, a drive not mounted) says so, with Retry and Remove from kage:

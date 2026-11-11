@@ -115,23 +115,22 @@ export function ConversationHeader({
             )}
           </div>
           <div className="conversation-meta flex shrink-0 items-center gap-2.5">
-            {working ? (
+            {working && (
               <Badge tone="accent" pulse>
                 working
               </Badge>
-            ) : (
-              others && (
-                <button
-                  onClick={others.open}
-                  popoverTarget={others.open ? undefined : "conversations"}
-                  title={others.open ? "Open the conversation that is working" : "Show the conversations that are working"}
-                  className="pointer-events-auto shrink-0 rounded-full px-1.5 py-0.5 hover:bg-hover"
-                >
-                  <Badge tone="accent" pulse>
-                    {others.count} other working
-                  </Badge>
-                </button>
-              )
+            )}
+            {others && (
+              <button
+                onClick={others.open}
+                popoverTarget={others.open ? undefined : "conversations"}
+                title={others.open ? "Open the conversation that is working" : "Show the conversations that are working"}
+                className="pointer-events-auto shrink-0 rounded-full px-1.5 py-0.5 hover:bg-hover"
+              >
+                <Badge tone="accent" pulse>
+                  {others.count} other working
+                </Badge>
+              </button>
             )}
             <UsageMeter plan={plan} context={context} onPage={onUsagePage} />
             {!!queued && <span className="shrink-0 text-[11px] text-muted">{queued} queued</span>}
