@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { Entry } from "@fastagent-sh/fastagent";
 import type { KageApi, OpenResult } from "../preload/index.ts";
 import { STOPPED_CODE } from "../shared/refusals.ts";
 import { queueView } from "./transcript.ts";
@@ -286,6 +287,163 @@ test("a new conversation is the agent's blank one when it has one, and a new one
   store.dispose();
 });
 
+
+test("new conversation ignores a stale blank listing while a send is being admitted", async () => {
+  const { api, store } = harness();
+  api.openAgent = async () => ({ ...ready, sessions: [{ session: "blank" }] });
+  api.createSession = async () => "next";
+  const admission = deferred<Sent>();
+  api.send = () => admission.promise;
+  await store.load();
+  const original = store.getSnapshot().conversation!;
+  store.setDraft("Check the login flow");
+  const sending = store.send();
+  try {
+    await store.newConversation();
+    assert.equal(store.getSnapshot().conversation?.session, "next");
+    assert.equal(store.getSnapshot().conversation?.draft, "");
+    assert.equal(original.sends, 1, "the original admission is still in flight");
+  } finally {
+    admission.resolve({ ok: true, messageId: "m1" });
+    await sending;
+    store.dispose();
+  }
+});
+
+for (const state of ["running", "history"]) {
+  test(`${state} overrides a stale blank listing when starting another conversation`, async () => {
+    const { api, store, emit } = harness();
+    api.openAgent = async () => ({ ...ready, sessions: [{ session: "blank" }] });
+    api.createSession = async () => "next";
+    await store.load();
+    const original = store.getSnapshot().conversation!;
+    if (state === "running") emit(original, events.state(runningSession("blank")));
+    else {
+      emit(original, events.entry(userEntry("u1", "Check the login flow")));
+      emit(original, events.state(sessionOf("blank")));
+      assert.equal(store.getSnapshot().busy, false);
+    }
+    try {
+      await store.newConversation();
+      assert.equal(store.getSnapshot().conversation?.session, "next", state);
+      if (state === "running") assert.deepEqual(store.getSnapshot().running.a, ["blank"]);
+    } finally {
+      store.dispose();
+    }
+  });
+}
+
+test("a released nonempty conversation cannot be reused before its list refresh returns", async () => {
+  const { api, store, emit, closed } = harness();
+  api.openAgent = async () => ({ ...ready, sessions: [{ session: "used" }] });
+  let created = 0;
+  api.createSession = async () => `fresh-${++created}`;
+  await store.load();
+  const original = store.getSnapshot().conversation!;
+  const entries = [userEntry("u1", "Existing task", "m1"), assistantEntry("a1", { text: "Done" })];
+  api.readSession = async (_id, session) => session === "used" ? entries : [];
+  api.openSession = async (_id, session) => opened(session === "used" ? entries : [], sessionOf(session));
+  const refresh = deferred<OpenResult>();
+  api.openAgent = () => refresh.promise;
+  emit(original, events.entry(entries[0]!));
+  emit(original, events.entry(entries[1]!));
+  emit(original, events.done(messageOf("m1", "completed")));
+  try {
+    await store.newConversation();
+    assert.equal(store.getSnapshot().conversation?.session, "fresh-1");
+    assert.ok(closed.includes(original.subscription), "the completed conversation has been released");
+    await store.newConversation();
+    assert.notEqual(store.getSnapshot().conversation?.session, "used");
+    assert.equal(store.getSnapshot().pane, "start");
+  } finally {
+    store.dispose();
+    refresh.resolve(ready);
+  }
+});
+
+for (const status of ["idle", "running"] as const) {
+  test(`an unloaded blank candidate is verified against its ${status} runtime`, async () => {
+    const { api, store } = harness();
+    api.openAgent = async () => ({ ...ready, sessions: [{ session: "current", updatedAt: 5 }, { session: "candidate" }] });
+    api.readState = async (_id, session) => sessionOf(session, { status });
+    api.createSession = async () => "fresh";
+    await store.load();
+    try {
+      await store.newConversation();
+      assert.equal(store.getSnapshot().conversation?.session, status === "idle" ? "candidate" : "fresh");
+    } finally {
+      store.dispose();
+    }
+  });
+}
+
+for (const read of ["readSession", "readState"] as const) {
+  test(`a failed ${read} while checking a blank candidate is not treated as empty`, async () => {
+    const { api, store } = harness();
+    api.openAgent = async () => ({ ...ready, sessions: [{ session: "current", updatedAt: 5 }, { session: "candidate" }] });
+    await store.load();
+    const current = store.getSnapshot().conversation!;
+    store.setDraft("Keep this draft");
+    let creates = 0;
+    api.createSession = async () => { creates++; return "fresh"; };
+    api[read] = async () => { throw new Error("EACCES: candidate cannot be read"); };
+    try {
+      assert.equal(await store.newConversation(), undefined);
+      assert.equal(store.getSnapshot().conversation, current);
+      assert.equal(current.draft, "Keep this draft");
+      assert.equal(creates, 0);
+      assert.deepEqual(store.getSnapshot().failure, { title: "A new conversation could not be started", reason: "EACCES: candidate cannot be read" });
+    } finally {
+      store.dispose();
+    }
+  });
+}
+
+test("a blank verification cannot reuse a candidate that started sending while it waited", async () => {
+  const { api, store } = harness();
+  api.openAgent = async () => ({ ...ready, sessions: [{ session: "current", updatedAt: 5 }, { session: "candidate" }] });
+  api.createSession = async () => "fresh";
+  await store.load();
+  const history = deferred<Entry[]>();
+  api.readSession = () => history.promise;
+  const admission = deferred<Sent>();
+  api.send = () => admission.promise;
+  const starting = store.newConversation();
+  await store.open("candidate");
+  store.setDraft("Work started during verification");
+  const sending = store.send();
+  history.resolve([]);
+  try {
+    await starting;
+    assert.equal(store.getSnapshot().conversation?.session, "fresh");
+  } finally {
+    admission.resolve({ ok: true, messageId: "m1" });
+    await sending;
+    store.dispose();
+  }
+});
+
+test("a blank verification cannot reuse a candidate whose history is still loading", async () => {
+  const { api, store } = harness();
+  api.openAgent = async () => ({ ...ready, sessions: [{ session: "current", updatedAt: 5 }, { session: "candidate" }] });
+  api.createSession = async () => "fresh";
+  await store.load();
+  const checking = deferred<Entry[]>();
+  api.readSession = () => checking.promise;
+  const history = deferred<ReturnType<typeof opened>>();
+  api.openSession = async (_id, session) => session === "candidate" ? history.promise : opened([], sessionOf(session));
+  const starting = store.newConversation();
+  const loading = store.open("candidate");
+  checking.resolve([]);
+  try {
+    await starting;
+    assert.equal(store.getSnapshot().conversation?.session, "fresh");
+  } finally {
+    history.resolve(opened([userEntry("u1", "Existing task")], sessionOf("candidate")));
+    await loading;
+    store.dispose();
+  }
+});
 
 test("background turns retain their stream and transcript, then release it after settlement", async () => {
   const { api, store, emit, closed, opens } = harness();

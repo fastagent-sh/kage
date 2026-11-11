@@ -500,9 +500,22 @@ export function createStore(api: KageApi) {
     }
   }
 
-  // A conversation to start in: a blank one the agent already has, else a new one.
   async function begin(id: string, known: SessionSummary[]): Promise<string> {
-    return known.find((s) => s.updatedAt === undefined)?.session ?? api.createSession(id);
+    for (const candidate of known) {
+      if (candidate.updatedAt !== undefined) continue;
+      const idKey = key(id, candidate.session);
+      if (!conversations.has(idKey)) {
+        // Released state cannot vouch for a cached blank row.
+        const [entries, state] = await Promise.all([
+          api.readSession(id, candidate.session),
+          api.readState(id, candidate.session),
+        ]);
+        if (entries.length > 0 || stateOf(state).status !== "idle") continue;
+      }
+      const held = conversations.get(idKey);
+      if (!held || (!held.loading && !busy(held) && held.items.length === 0)) return candidate.session;
+    }
+    return api.createSession(id);
   }
 
   async function selectAgent(id: string, session?: string) {

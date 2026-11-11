@@ -128,7 +128,10 @@ reset details wrap within it rather than extending beyond the window. The contex
 it reports it ([fastagent#608](https://github.com/fastagent-sh/fastagent/issues/608)).
 
 A new conversation is made in FastAgent when it is started (the agent's blank one is reused when it has one), so
-it is selectable at once and listed as *New conversation* until something is said in it. Selection reads FastAgent
+it is selectable at once and listed as *New conversation* until something is said in it. A stale list cannot
+make a loaded conversation blank again: an in-flight send, running state or displayed content rules out reuse.
+A released candidate is reused only after its runtime history is read as empty and its state as idle; a failed
+read reports the original error and leaves the current conversation and draft untouched. Selection reads FastAgent
 history; the client does not save a second transcript. A conversation's row is quoted from the newest message the person sent in
 it, read when the list is, so it follows the conversation as it goes; one with nothing the person said in view is `Conversation`. FastAgent cannot rename or delete a session,
 and kage does not offer either. The current local view keeps unsent text with its conversation
