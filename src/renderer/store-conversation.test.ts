@@ -287,6 +287,47 @@ test("a new conversation is the agent's blank one when it has one, and a new one
 });
 
 
+test("new conversation ignores a stale blank listing while a send is being admitted", async () => {
+  const { api, store } = harness();
+  api.openAgent = async () => ({ ...ready, sessions: [{ session: "blank" }] });
+  api.createSession = async () => "next";
+  const admission = deferred<Sent>();
+  api.send = () => admission.promise;
+  await store.load();
+  const original = store.getSnapshot().conversation!;
+  store.setDraft("Check the login flow");
+  const sending = store.send();
+  try {
+    await store.newConversation();
+    assert.equal(store.getSnapshot().conversation?.session, "next");
+    assert.equal(store.getSnapshot().conversation?.draft, "");
+    assert.equal(original.sends, 1, "the original admission is still in flight");
+  } finally {
+    admission.resolve({ ok: true, messageId: "m1" });
+    await sending;
+    store.dispose();
+  }
+});
+
+for (const state of ["running", "history"]) {
+  test(`${state} overrides a stale blank listing when starting another conversation`, async () => {
+    const { api, store, emit } = harness();
+    api.openAgent = async () => ({ ...ready, sessions: [{ session: "blank" }] });
+    api.createSession = async () => "next";
+    await store.load();
+    const original = store.getSnapshot().conversation!;
+    if (state === "running") emit(original, events.state(runningSession("blank")));
+    else emit(original, events.entry(userEntry("u1", "Check the login flow")));
+    try {
+      await store.newConversation();
+      assert.equal(store.getSnapshot().conversation?.session, "next", state);
+      if (state === "running") assert.deepEqual(store.getSnapshot().running.a, ["blank"]);
+    } finally {
+      store.dispose();
+    }
+  });
+}
+
 test("background turns retain their stream and transcript, then release it after settlement", async () => {
   const { api, store, emit, closed, opens } = harness();
   await store.load();

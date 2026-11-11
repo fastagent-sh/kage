@@ -218,6 +218,7 @@ if (root) {
         await until(shown("Answered after a retry."), "away on Live");
       }
       await openLong();
+      await until("window.__early !== undefined", "the scroll sample was recorded");
       const early = await evaluate("window.__early");
       assert.equal(early.drawnAll, false, "acted while the older lines were still to be drawn");
       return { early, now: await offsetOf(early.text) };

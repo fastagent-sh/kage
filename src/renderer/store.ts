@@ -500,9 +500,13 @@ export function createStore(api: KageApi) {
     }
   }
 
-  // A conversation to start in: a blank one the agent already has, else a new one.
   async function begin(id: string, known: SessionSummary[]): Promise<string> {
-    return known.find((s) => s.updatedAt === undefined)?.session ?? api.createSession(id);
+    const blank = known.find((s) => {
+      const held = conversations.get(key(id, s.session));
+      // A list read before the first send can still call a live conversation blank.
+      return s.updatedAt === undefined && (!held || (!busy(held) && held.items.length === 0));
+    });
+    return blank?.session ?? api.createSession(id);
   }
 
   async function selectAgent(id: string, session?: string) {
