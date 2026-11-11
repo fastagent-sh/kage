@@ -283,6 +283,53 @@ export async function checkCompactSettings(win, { evaluate, until }) {
   }
 }
 
+export async function checkConcurrentHeaderLayout(win, { evaluate, until }) {
+  const initialSize = win.getSize();
+  const initialZoom = win.webContents.getZoomFactor();
+  const initialTheme = electron.nativeTheme.themeSource;
+  const folder = fileURLToPath(new URL("../out/layout-shots/", import.meta.url));
+  try {
+    for (const theme of ["light", "dark"]) {
+      electron.nativeTheme.themeSource = theme;
+      for (const [width, height] of [[1180, 860], [800, 540]]) {
+        for (const zoom of [1, 1.5, 2]) {
+          win.setSize(width, height);
+          win.webContents.setZoomFactor(zoom);
+          await until(`document.querySelector('.workbench').hasAttribute('data-compact') === (innerWidth <= 640)`, "concurrent header reflows");
+          await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+          const layout = await evaluate(`(() => {
+            const header = document.querySelector('.conversation-header');
+            const fits = element => { const r = element.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; };
+            const reachable = selector => {
+              const element = document.querySelector(selector), r = element.getBoundingClientRect();
+              return fits(element) && element.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+            };
+            return {
+              fits: document.documentElement.scrollWidth <= innerWidth && header.scrollWidth <= header.clientWidth + 1 && [...header.children].every(fits),
+              other: reachable('button[title="Show the conversations that are working"]'),
+              stop: reachable('button[aria-label="Stop the run"]'),
+              identity: document.querySelector('header .drag > button').getBoundingClientRect().width,
+            };
+          })()`);
+          const name = `concurrent-${width}-${zoom * 100}-${theme}`;
+          assert.ok(layout.fits && layout.other && layout.stop, `${name}: header, other runs and Stop fit and remain reachable: ${JSON.stringify(layout)}`);
+          assert.ok(layout.identity >= 40, `${name}: the Agent name retains visible space`);
+          if (process.env.KAGE_LAYOUT_SHOTS === "1") {
+            await mkdir(folder, { recursive: true });
+            await evaluate("document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).forEach(animation => animation.finish())");
+            await evaluate("new Promise(resolve => requestAnimationFrame(resolve))");
+            await writeFile(`${folder}${name}.png`, (await win.webContents.capturePage()).toPNG());
+          }
+        }
+      }
+    }
+  } finally {
+    win.setSize(...initialSize);
+    win.webContents.setZoomFactor(initialZoom);
+    electron.nativeTheme.themeSource = initialTheme;
+  }
+}
+
 export async function checkPanelEscapeDuringRun(win, { evaluate, until }) {
   await evaluate(`(() => { const button = document.querySelector('main > header .drag > button'); button.focus(); button.click(); })()`);
   await until("!!document.querySelector('#agent-info')", "details opens over a running conversation");
