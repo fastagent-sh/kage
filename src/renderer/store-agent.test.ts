@@ -230,6 +230,26 @@ test("a config that failed to load is offered afresh once, however often the but
 });
 
 
+test("a default model that is gone is named by the failure and forgotten once, then the agent reopens", async () => {
+  const { api, store } = harness();
+  const open = api.openAgent;
+  let forgotten = false;
+  api.openAgent = async (id) =>
+    forgotten ? open(id) : { ok: false, code: "broken", message: 'unknown model "p/gone": no provider "p" offers "gone"', unknownModel: "p/gone" };
+  await store.load();
+  assert.equal(store.getSnapshot().errorModel, "p/gone");
+  const forget = deferred<Result>();
+  let calls = 0;
+  api.forgetAgentModel = () => (calls++, forgotten = true, forget.promise);
+  const first = store.forgetModel();
+  const second = store.forgetModel();
+  forget.resolve({ ok: true });
+  await Promise.all([first, second]);
+  assert.equal(calls, 1, "a double click is one forget");
+  assert.equal(store.getSnapshot().errorModel, undefined, "the agent opened without it");
+  store.dispose();
+});
+
 test("the roster is first drawn in the avatar style already chosen, not the default and then that", async () => {
   const { api, store } = harness();
   const style = deferred<"moods">();

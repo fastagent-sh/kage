@@ -46,6 +46,7 @@ const api = {
   renameAgent: (agentId: string, name: string): Promise<void> => ipcRenderer.invoke("agent:rename", agentId, name),
   removeAgent: (agentId: string): Promise<Result> => ipcRenderer.invoke("agent:remove", agentId),
   resetAgentConfig: (agentId: string): Promise<Result> => ipcRenderer.invoke("agent:resetConfig", agentId),
+  forgetAgentModel: (agentId: string): Promise<Result> => ipcRenderer.invoke("agent:forgetModel", agentId),
   listCommands: (agentId: string): Promise<AgentCommand[]> => ipcRenderer.invoke("agent:commands", agentId),
   revealAgent: (agentId: string, path?: string): Promise<void> => ipcRenderer.invoke("agent:reveal", agentId, path),
   revealRegistry: (): Promise<void> => ipcRenderer.invoke("registry:reveal"),

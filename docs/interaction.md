@@ -43,11 +43,14 @@ not name the file. A program that declares a variable it requires (`needs()`, or
 broken agent shows its original failure with a way to retry, reveal or remove it; any agent's row menu
 has Reveal in Finder, and the header shows the folders the agent works on (`works on app · handbook`, or its own folder with `Add folder…` when none are attached), a click on which reveals that folder. Clicking the avatar or name in the header opens Agent details in place of the conversation, with a back button and Escape to return. It shows the agent's own folder in `~/Agents/`, its default model (Change returns to the conversation with the model picker open, so the choice follows the picker's rules), the folders it works on (with Add folder and per-folder Remove, which edits `content` in the agent's `fastagent.json` and reopens the instance while no conversation is running), the skills and tools the runtime loaded, and, when the program declares variables, whether each is set. Removal moves the agent's directory in `~/Agents/`, its conversations included, to the Trash, after asking, and leaves the folders it works on untouched. Removing an agent, changing its folders, or replacing its config
 is refused while one of its conversations is at work, including a send still being recorded; changing its model is not, since nothing is rebuilt.
-A default model kage keeps for an agent that this computer's providers no longer offer (its provider was
-disconnected, or its config no longer declares the model) does not stop the agent opening: the chip names it, the picker
+The default model is the `model` of the agent's `fastagent.json`. One this computer has no credential for (its provider
+was disconnected) does not stop the agent opening: the chip names it, the picker
 opens with `<model> is no longer available` at its top, and a send on it is refused before anything is recorded; the model chosen there becomes
 the default and, as any choice in the picker does, the open conversation's model, which the notice says. Other conversations keep the
 models they recorded. Closed without a choice, it opens again the next time the agent is opened.
+One the model catalog has dropped does stop it: the agent shows as broken with FastAgent's `unknown model` reason, and
+`Forget <model>` removes only that setting and opens the agent, which then asks for a model
+([fastagent#1010](https://github.com/fastagent-sh/fastagent/issues/1010) asks for it to open on its own).
 An agent with no default model opens like any other, on the conversation it was left on or its latest: a
 conversation runs on the model it records. Only a conversation that records none (a new one, or one whose
 model is no longer in the catalog) with no default to fall back on asks for one: the picker opens on it and

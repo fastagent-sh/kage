@@ -2,7 +2,7 @@
 // owns that table and the in-flight sends, because quitting and a window's release need them too.
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from "electron";
 import type { Entry, LocalAgent, Message } from "@fastagent-sh/fastagent";
-import { agentRow, createSession, openAgent, withAgentRun } from "../agents.ts";
+import { agentRow, createSession, defaultModelOf, openAgent, withAgentRun } from "../agents.ts";
 import { subscriptions, type Frame, type Listener } from "../follow.ts";
 import { effortOf, offered } from "../models.ts";
 import { refusal, refuse, send, sends } from "../send.ts";
@@ -56,7 +56,7 @@ export function registerSessions(): void {
     if (typeof level !== "string") throw new Error("Thinking level must be a string");
     return refusal(async () => {
       const agent = await agentOf(id);
-      const model = await effortOf(agent, session, (await agentRow(id)).model);
+      const model = await effortOf(agent, session, await defaultModelOf(await agentRow(id)));
       const supported = model?.thinkingLevels.find((candidate) => candidate === level);
       if (!supported) return refuse("unsupported_level", `${model?.spec ?? "This conversation's model"} does not support the ${level} effort.`, false);
       await agent.sessions.update(session, { thinkingLevel: supported });
@@ -88,7 +88,9 @@ export function registerSessions(): void {
     // Held before the first await: a Stop sent right after this message must find it.
     return inFlight.hold(id, session, async (stopped) => {
       const row = await agentRow(id);
-      return withAgentRun(row, (agent) => send(agent, session, text, stopped, (model) => offered(agent, model), row.model));
+      return withAgentRun(row, async (agent) =>
+        send(agent, session, text, stopped, (model) => offered(agent, model), await defaultModelOf(row)),
+      );
     });
   });
   ipcMain.handle("session:abort", async (_e, id: string, session: string) => {

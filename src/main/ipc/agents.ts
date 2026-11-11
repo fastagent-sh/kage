@@ -5,6 +5,7 @@ import {
   addAgentFolder,
   agentRow,
   createAgentWithFolders,
+  forgetAgentModel,
   listAgents,
   openAgent,
   openAgentResult,
@@ -62,6 +63,9 @@ export function registerAgents(): void {
   });
   ipcMain.handle("agent:resetConfig", async (_e, id: string) =>
     ended(id, "The agent's config was replaced", await resetAgentConfig(await agentRow(id))),
+  );
+  ipcMain.handle("agent:forgetModel", async (_e, id: string) =>
+    ended(id, "The agent's default model was forgotten", await forgetAgentModel(await agentRow(id))),
   );
   ipcMain.handle("agent:setModel", async (_e, id: string, model: string, session?: string) => {
     if (typeof model !== "string") throw new Error("Model must be a string");

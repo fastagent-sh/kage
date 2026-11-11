@@ -1432,18 +1432,21 @@ if (root) {
       await click("Retry");
       await until("document.querySelector('main').innerText.includes('Smoke answer')", "Retry recovers the registry");
       assert.equal(await readFile(registry, "utf8"), savedRegistry, "a failed read never rewrites the registry");
-      // A default on the retired ChatGPT route opens; a send on it is refused with the code that opens the picker.
+      // A default the catalog no longer has stops the open, says which model it is, and can be forgotten to open.
       const legacyDir = join(root, "Agents", "legacy");
-      writeInstance(legacyDir);
+      writeInstance(legacyDir, { model: "openai-codex/gpt-5.5" });
       await writeFile(
         registry,
-        JSON.stringify([...JSON.parse(savedRegistry), { id: "legacy", name: "Legacy", dir: legacyDir, model: "openai-codex/gpt-5.5", colour: 4 }]),
+        JSON.stringify([...JSON.parse(savedRegistry), { id: "legacy", name: "Legacy", dir: legacyDir, colour: 4 }]),
       );
       const legacy = await evaluate("window.kage.openAgent('legacy')");
-      assert.equal(legacy.ok, true, legacy.message);
-      assert.equal(legacy.model, "openai-codex/gpt-5.5", "the default is the one the registry names");
-      const legacySend = await evaluate("window.kage.createSession('legacy').then((session) => window.kage.send('legacy', session, 'hello'))");
-      assert.equal(legacySend.ok === false && legacySend.error.code, "model_unavailable", "a send on it asks for another model");
+      assert.equal(legacy.ok, false);
+      assert.equal(legacy.unknownModel, "openai-codex/gpt-5.5", "the failure names the model it is about");
+      assert.deepEqual(await evaluate("window.kage.forgetAgentModel('legacy')"), { ok: true });
+      assert.equal(JSON.parse(await readFile(join(legacyDir, "fastagent.json"), "utf8")).model, undefined, "forgetting removes only the model");
+      const forgotten = await evaluate("window.kage.openAgent('legacy')");
+      assert.equal(forgotten.ok, true, forgotten.message);
+      await evaluate("window.kage.createSession('legacy')");
       // Removing an agent trashes its folder, conversations included, while leaving bound folders untouched.
       const hasState = (dir) => stat(join(dir, ".state")).then(() => true, () => false);
       assert.equal(await hasState(legacyDir), true, "the opened agent keeps its conversations in its own folder");
@@ -1461,30 +1464,35 @@ if (root) {
       assert.equal(await hasState(legacyDir), false, "removing it takes its conversations with the folder");
       assert.deepEqual(trashed, [legacyDir], "by trashing the agent directory");
       assert.equal(await hasState(smokeDir), true, "and no other agent's");
-      // A default pi does not know: the agent opens on its own model and the picker says the default is gone.
+      // The same in the window: the page offers to forget the model, and the picker then chooses another.
       const staleDir = join(root, "Agents", "stale");
-      writeInstance(staleDir);
+      writeInstance(staleDir, { model: "local/gone" });
       await writeFile(
         registry,
-        JSON.stringify([...JSON.parse(savedRegistry), { id: "stale", name: "Stale", dir: staleDir, model: "local/gone", colour: 5 }]),
+        JSON.stringify([...JSON.parse(savedRegistry), { id: "stale", name: "Stale", dir: staleDir, colour: 5 }]),
       );
       win.webContents.reload();
       await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
       await until(`!!document.querySelector('button[aria-label="Stale"]')`, "the agent with a gone default is listed");
       await evaluate(`document.querySelector('button[aria-label="Stale"]').click()`);
       await until(
-        "document.querySelector('dialog[open]')?.innerText.includes('local/gone is no longer available')",
-        "the agent opens with the picker saying its default is gone",
+        "[...document.querySelectorAll('main button')].some((b) => b.textContent.includes('Forget local/gone'))",
+        "the page offers to forget the gone default",
       );
-      assert.ok(!(await evaluate("document.body.innerText.includes('could not be loaded')")), "the agent is not broken");
+      assert.ok(await evaluate("document.body.innerText.includes('is no longer offered')"), "and says why");
+      await evaluate(`[...document.querySelectorAll('main button')].find((b) => b.textContent.includes('Forget local/gone')).click()`);
+      await until("!!document.querySelector('dialog[open]')", "forgetting opens the agent, which asks for a model");
       await chooseModel("local/m1");
       await until("!document.querySelector('dialog')", "choosing a model closes the picker");
       await until(`!!document.querySelector('main button[title="Model for this agent: local/m1"]')`, "the conversation runs on it");
       assert.equal(
-        JSON.parse(await readFile(registry, "utf8")).find((row) => row.id === "stale").model,
+        JSON.parse(await readFile(join(staleDir, "fastagent.json"), "utf8")).model,
         "local/m1",
         "the model chosen is the agent's default now",
       );
+      const refused = await evaluate("window.kage.forgetAgentModel('stale')");
+      assert.equal(refused.ok === false && refused.error.code, "model_known", "an agent that opened has nothing to forget");
+      assert.equal(JSON.parse(await readFile(join(staleDir, "fastagent.json"), "utf8")).model, "local/m1", "and keeps its model");
       await writeFile(registry, savedRegistry);
       win.webContents.reload();
       await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
