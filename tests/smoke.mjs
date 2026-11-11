@@ -1490,6 +1490,9 @@ if (root) {
         "local/m1",
         "the model chosen is the agent's default now",
       );
+      const refused = await evaluate("window.kage.forgetAgentModel('stale')");
+      assert.equal(refused.ok === false && refused.error.code, "model_known", "an agent that opened has nothing to forget");
+      assert.equal(JSON.parse(await readFile(join(staleDir, "fastagent.json"), "utf8")).model, "local/m1", "and keeps its model");
       await writeFile(registry, savedRegistry);
       win.webContents.reload();
       await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));

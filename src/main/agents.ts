@@ -93,6 +93,8 @@ const changing = new Map<string, Promise<void>>();
 
 // Main keeps the failing path rather than taking one from the window.
 const failedConfigs = new Map<string, string>();
+// The default model an agent's last open was refused on, so forgetting it needs no word from the window.
+const unknownDefaults = new Map<string, string>();
 
 async function evictAgent(id: string): Promise<void> {
   while (changing.has(id)) await changing.get(id);
@@ -117,6 +119,7 @@ function noteConfigFailure(row: AgentRow, error: unknown): void {
 async function build(row: AgentRow): Promise<LocalAgent> {
   // Before anything can fail: a failure that is not the config's must not offer to replace it.
   failedConfigs.delete(row.id);
+  unknownDefaults.delete(row.id);
   await requireFolder(row.dir);
   try {
     return await openFastAgent(await loadProgram(), {
@@ -207,6 +210,7 @@ export async function openAgentResult(agentId: string): Promise<OpenResult> {
     if (error instanceof MissingDirError) return { ok: false, code: "missing_dir", message };
     const inspection = row ? await inspect(row).catch(() => undefined) : undefined;
     const unknownModel = row && (await unknownDefault(row, message));
+    if (row && unknownModel) unknownDefaults.set(row.id, unknownModel);
     return {
       ok: false,
       code: "broken",
@@ -375,7 +379,11 @@ async function unknownDefault(row: AgentRow, message: string): Promise<string | 
 
 export function forgetAgentModel(row: AgentRow): Promise<Result> {
   return change(row.id, async () => {
+    const unknown = unknownDefaults.get(row.id);
+    if (!unknown || unknown !== (await defaultModelOf(row)))
+      return refuse("model_known", "This agent's default model is not what failed to load. Retry to see what did.");
     await clearAgentModelInConfig(row.dir);
+    unknownDefaults.delete(row.id);
     return { ok: true };
   });
 }
