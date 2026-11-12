@@ -55,7 +55,9 @@ if (root) {
   async function run() {
     const win = await open();
     const { evaluate, until, type, send } = windowDriver(win, { timeout: 30000, poll: 50 });
-    await until("document.body.innerText.includes('missing required secrets')", "an agent missing a required value does not open");
+    await until("!!document.querySelector('.problem-page [aria-expanded=false]')", "a broken agent offers its original diagnostic");
+    await evaluate("document.querySelector('.problem-page [aria-expanded=false]').click()");
+    await until("document.querySelector('.problem-page pre')?.textContent.includes('missing required secrets')", "an agent missing a required value does not open");
     await evaluate(`document.querySelector('main > header .drag > button').click()`);
     await until(`document.querySelector('#agent-info')?.innerText.includes('${NAME}') && document.querySelector('#agent-info')?.innerText.includes('missing')`, "the inspector names the value that is missing");
     await evaluate(`[...document.querySelectorAll('#agent-info button')].find((b) => b.textContent.includes('${NAME}')).click()`);
@@ -63,7 +65,7 @@ if (root) {
     await evaluate(`document.querySelector('button[aria-label="Save variable"]').click()`);
     await until(`!document.querySelector('#agent-info')?.innerText.includes('missing')`, "the inspector no longer says missing");
     await evaluate(`document.querySelector('#agent-info button[aria-label="Close agent details"]').click()`);
-    await until("!document.body.innerText.includes('missing required secrets')", "the agent opens once the value is set");
+    await until("!document.querySelector('.problem-page') && !!document.querySelector('textarea:not(:disabled)')", "the agent opens once the value is set");
 
     const stored = JSON.parse(readFileSync(join(data, "secrets.json"), "utf8"));
     assert.equal(stored.k[NAME], VALUE, "kage holds the value");

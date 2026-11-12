@@ -260,7 +260,10 @@ went wrong (only the latest carries buttons; earlier ones are history); a **stri
 header for this view or an action outside any conversation, so nothing below moves; a **page** when there
 is nothing else to show; and a **notice** at the top of the model picker (`composer.tsx`), which stacks its
 title over its advice because the picker is 300 px wide. The first three are `problem.tsx`; setup pages
-share the page's shape, so a first step and a problem look like the same app.
+share the page's components. First-use prompts stay centered; error pages align the title, advice
+and recovery actions to one left edge. Page diagnostics fold under **Technical details** after the
+actions, retaining the original text and copy control. A config reset's consequences sit beside its
+secondary action, separate from ordinary repair and retry.
 
 ## 10. Motion
 

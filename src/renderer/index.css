@@ -446,6 +446,20 @@ summary:focus-visible,
 .workbench[data-compact] {
   padding-top: 32px;
 }
+.workbench[data-compact] .conversation-start {
+  padding-top: 0;
+}
+.workbench[data-compact] .conversation-start > div {
+  padding-block: 0;
+  gap: 8px;
+}
+.workbench[data-compact] .conversation-start h1 {
+  font-size: 18px;
+  line-height: 1.4;
+}
+.workbench[data-compact] .problem-page {
+  padding-top: 8px;
+}
 .workbench[data-compact] .conversation-topbar {
   position: static;
   z-index: 11;

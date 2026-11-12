@@ -33,17 +33,30 @@ The header shows the current conversation's `working` independently of `N other 
 running conversations of the same Agent. The latter opens that conversation directly when there is one,
 or opens the existing conversation list when there are several. It disappears when none remain.
 
+A blank conversation asks **Choose a model to start** only when that conversation needs a model;
+its button reopens the existing picker, and choosing the first model focuses the message field.
+With a model selected, **What should we work on?** stays quiet. If the loaded Agent has no attached
+folders, a short note says a project folder is optional; **Agent details** opens the existing detail
+view without changing the conversation or its draft. Unknown folder information is not an empty list.
+There is no additional onboarding state, task template or inferred capability list.
+
 Creating an agent asks for its name and any folders on this computer it should work on, and creates the agent in `~/Agents/<slug>/` (`fastagent.json`, `AGENTS.md`, empty `skills/` and `prompts/`, and a git repository). A refused declaration (duplicate folder name, nesting) is said in words and creates nothing. An agent whose
 directory is no longer there (moved, deleted, a drive not mounted) says so, with Retry and Remove from kage:
-its row says `folder not found`. A folder that cannot be looked at (no
+its row says `folder not found`. The page suggests reconnecting the drive or restoring the folder
+to the shown location before retrying; removal is optional, not the presumed repair. A folder that cannot be looked at (no
 permission, macOS privacy controls) is not missing: it is a broken agent, in the system's own words.
 An agent whose `fastagent.json` does not load (FastAgent names the
-file for a mistake in it) offers **Start a fresh config**: a
+file for a mistake in it) first offers Reveal in Finder and Retry. **Start a fresh config** is a
+secondary path, with its backup and the need to choose a model and add folders again explained beside it: a
 copy of the old file is kept beside it (`fastagent.json.broken-20261003-144000`, which nothing loads, and
 never written over an earlier copy), a new one with the agent's name and its instruction, skill and prompt paths takes its place (the folders it worked on are in the copy), and the agent opens asking
 for a model. Main replaces only the config FastAgent said failed, inside the agent's folder; the window does
-not name the file. A program that declares a variable it requires (`needs()`, or `environment.variables` in its `context.json`) does not open without a value: FastAgent says `missing required secrets` (its "set them in the environment" does not apply here), and the agent's details, open on a broken agent too, list the variable as `missing` to be set there. kage keeps the value in `userData/secrets.json`, never in the agent's folder. Any other failure offers Retry and Reveal in Finder. A
-broken agent shows its original failure with a way to retry, reveal or remove it; any agent's row menu
+not choose the replacement path. A program that declares a variable it requires (`needs()`, or `environment.variables` in its `context.json`) does not open without a value: FastAgent says `missing required secrets` (its "set them in the environment" does not apply here), and the agent's details, open on a broken agent too, list the variable as `missing` to be set there. kage keeps the value in `userData/secrets.json`, never in the agent's folder. Any other failure offers Retry and Reveal in Finder. A
+broken agent keeps its original failure under **Technical details**, with copying available, after its
+recovery actions. Error pages are left-aligned; config reset and its consequences form a separate group.
+An unreadable `agents.json` asks for a valid copy, if available, or repair before retrying, never moving
+it aside as an ordinary repair. The file, Agent folders and conversations are left unchanged.
+Any agent's row menu
 has Reveal in Finder, and the header shows the folders the agent works on (`works on app · handbook`, or its own folder with `Add folder…` when none are attached), a click on which reveals that folder. Clicking the avatar or name in the header opens Agent details in place of the conversation, with a back button and Escape to return. It shows the agent's own folder in `~/Agents/`, its default model (Change returns to the conversation with the model picker open, so the choice follows the picker's rules), the folders it works on (with Add folder and per-folder Remove, which edits `content` in the agent's `fastagent.json` and reopens the instance while no conversation is running), the skills and tools the runtime loaded, and, when the program declares variables, whether each is set. Removal moves the agent's directory in `~/Agents/`, its conversations included, to the Trash, after asking, and leaves the folders it works on untouched. Removing an agent, changing its folders, or replacing its config
 is refused while one of its conversations is at work, including a send still being recorded; changing its model is not, since nothing is rebuilt.
 The default model is the `model` of the agent's `fastagent.json`. One this computer has no credential for (its provider

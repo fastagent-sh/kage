@@ -330,6 +330,57 @@ export async function checkConcurrentHeaderLayout(win, { evaluate, until }) {
   }
 }
 
+export async function checkGuidanceLayout(win, { evaluate, until }, state) {
+  const initialSize = win.getSize();
+  const initialZoom = win.webContents.getZoomFactor();
+  const initialTheme = electron.nativeTheme.themeSource;
+  const folder = fileURLToPath(new URL("../out/layout-shots/", import.meta.url));
+  try {
+    for (const theme of ["light", "dark"]) {
+      electron.nativeTheme.themeSource = theme;
+      for (const [width, height] of [[1180, 860], [800, 540]]) {
+        for (const zoom of [1, 1.5, 2]) {
+          win.setSize(width, height);
+          win.webContents.setZoomFactor(zoom);
+          await until("document.querySelector('.workbench').hasAttribute('data-compact') === (innerWidth <= 640)", "guidance reflows");
+          await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+          const result = await evaluate(`(() => {
+            const page = document.querySelector('.conversation-start, .problem-page');
+            const scroll = page.matches('.conversation-start') ? page.parentElement : page;
+            const visible = button => {
+              const r = button.getBoundingClientRect();
+              return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && button.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+            };
+            const firstActionVisible = visible(page.querySelector('button'));
+            const reachable = [...page.querySelectorAll('button')].map(button => {
+              button.blur();
+              button.focus();
+              return { label: button.textContent.trim(), fits: visible(button) };
+            });
+            scroll.scrollTop = 0;
+            return { fits: document.documentElement.scrollWidth <= innerWidth && scroll.scrollWidth <= scroll.clientWidth + 1, firstActionVisible, reachable };
+          })()`);
+          const name = `${state}-${width}-${zoom * 100}-${theme}`;
+          assert.ok(result.fits && result.reachable.every(button => button.fits), `${name}: guidance fits and its actions are reachable: ${JSON.stringify(result)}`);
+          if (state === "needs-model") assert.ok(result.firstActionVisible, `${name}: the next step is visible without scrolling`);
+          if (process.env.KAGE_LAYOUT_SHOTS === "1") {
+            await mkdir(folder, { recursive: true });
+            await evaluate("document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).forEach(animation => animation.finish())");
+            await evaluate("new Promise(resolve => requestAnimationFrame(resolve))");
+            await writeFile(`${folder}${name}.png`, (await win.webContents.capturePage()).toPNG());
+          }
+        }
+      }
+    }
+  } finally {
+    win.setSize(...initialSize);
+    win.webContents.setZoomFactor(initialZoom);
+    electron.nativeTheme.themeSource = initialTheme;
+    await until("document.querySelector('.workbench').hasAttribute('data-compact') === (innerWidth <= 640)", "guidance restores the window layout");
+    await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+  }
+}
+
 export async function checkPanelEscapeDuringRun(win, { evaluate, until }) {
   await evaluate(`(() => { const button = document.querySelector('main > header .drag > button'); button.focus(); button.click(); })()`);
   await until("!!document.querySelector('#agent-info')", "details opens over a running conversation");
