@@ -15,21 +15,19 @@ const COLOUR = { error: "text-danger", warning: "text-warning", info: "text-mute
 
 const SHORT = 140;
 
-function Reason({ text, as }: { text: string; as: "folded" | "well" }) {
-  const [open, setOpen] = useState(as === "well");
+function Reason({ text, as }: { text: string; as: "folded" | "page" }) {
+  const [open, setOpen] = useState(false);
   const { copied, failed, copy } = useCopy(text, 2000);
   return (
     <>
-      {as === "folded" && (
-        <button
-          onClick={() => setOpen(!open)}
-          aria-expanded={open}
-          className="flex min-w-0 flex-1 basis-40 items-center gap-1 text-left text-[12px] text-muted hover:text-text"
-        >
-          <CaretRight size={11} className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
-          <span className="min-w-0 truncate">{open ? "Details" : text.split("\n")[0]}</span>
-        </button>
-      )}
+      <button
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="flex min-w-0 flex-1 basis-40 items-center gap-1 text-left text-[12px] text-muted hover:text-text"
+      >
+        <CaretRight size={11} className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
+        <span className="min-w-0 truncate">{as === "page" ? "Technical details" : open ? "Details" : text.split("\n")[0]}</span>
+      </button>
       {open && (
         <div className="relative basis-full rounded-card bg-surface-2">
           <pre className="max-h-48 select-text overflow-auto whitespace-pre-wrap break-words p-3 pr-10 text-left font-mono text-[12.5px] text-muted">
@@ -66,18 +64,17 @@ export function Page({
   children?: ReactNode;
 }) {
   return (
-    // Clear of the floating header, so the composer never moves.
-    <div className="flex-1 min-h-0 overflow-y-auto px-6 pt-16 pb-5">
-      <div role={tone === "error" || tone === "warning" ? "alert" : undefined} className="mx-auto mt-10 max-w-md space-y-3 text-center">
-        <span className={`mx-auto grid size-8 place-items-center rounded-card bg-surface-2 ${tone === "accent" ? "text-accent" : COLOUR[tone]}`}>
+    <div className="problem-page flex-1 min-h-0 overflow-y-auto px-6 pt-24 pb-5">
+      <div role={tone === "error" || tone === "warning" ? "alert" : undefined} className={`mx-auto max-w-md space-y-3 ${tone === "accent" ? "text-center" : "text-left"}`}>
+        <span className={`grid size-8 place-items-center rounded-card bg-surface-2 ${tone === "accent" ? "mx-auto text-accent" : COLOUR[tone]}`}>
           {icon}
         </span>
         <div className="space-y-1">
           <h2 className="text-[15px] font-semibold">{title}</h2>
           {advice && <p className="text-[13px] leading-relaxed text-muted">{advice}</p>}
         </div>
+        {actions && <div className={`flex flex-wrap gap-2 ${tone === "accent" ? "justify-center" : "justify-start"}`}>{actions}</div>}
         {children}
-        {actions && <div className="flex flex-wrap justify-center gap-2">{actions}</div>}
       </div>
     </div>
   );
@@ -103,7 +100,7 @@ export function Problem({
   if (layout === "page")
     return (
       <Page tone={tone} icon={ICON[tone]} title={title} advice={advice} actions={actions}>
-        {reason && <Reason text={reason} as="well" />}
+        {reason && <Reason text={reason} as="page" />}
       </Page>
     );
   // Short words nothing else explains are said beside the title; anything else folds.

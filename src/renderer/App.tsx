@@ -418,7 +418,12 @@ export default function App() {
               ) : pane === "settling" ? (
                 <div className="flex-1 min-h-0" aria-busy="true" />
               ) : pane === "start" || !c /* never both "transcript" and no conversation */ ? (
-                <NewConversation />
+                <NewConversation
+                  key={c?.subscription}
+                  needsModel={view.needsModel}
+                  bottomGap={compact ? 0 : composerHeight + 8}
+                  onChooseModel={store.openPicker}
+                />
               ) : (
                 // The transcript is pinned to its bottom while streaming, so this gap is where the newest line lands.
                 <Boundary

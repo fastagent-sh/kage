@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import electron from "electron";
 import { isolated, withoutCredentials, writeInstance } from "./harness.mjs";
 import { open, windowDriver } from "./window.mjs";
-import { checkCompactSettings, checkConcurrentHeaderLayout, checkPanelEscapeDuringRun, checkPanelLayout, checkUsagePopoverLayout } from "./layout.mjs";
+import { checkCompactSettings, checkConcurrentHeaderLayout, checkGuidanceLayout, checkPanelEscapeDuringRun, checkPanelLayout, checkUsagePopoverLayout } from "./layout.mjs";
 
 const root = await isolated(import.meta.url, { name: "smoke", timeout: 150000, program: { provider: "local", modelId: "m1", extraModels: 40, needsCredential: true } });
 if (root) {
@@ -250,6 +250,16 @@ if (root) {
       } finally {
         electron.dialog.showOpenDialog = showOpenDialog;
       }
+      win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+      win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+      await until("!document.querySelector('dialog') && document.querySelector('h1')?.textContent === 'Choose a model to start.'", "closing the first picker leaves a clear next step");
+      assert.ok(!await evaluate("document.body.innerText.includes('What should we work on?')"), "the page does not invite work before choosing a model");
+      await checkGuidanceLayout(win, { evaluate, until }, "needs-model");
+      await evaluate("document.querySelector('.conversation-start button').focus()");
+      win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Enter" });
+      win.webContents.sendInputEvent({ type: "char", keyCode: "\r" });
+      win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Enter" });
+      await until("!!document.querySelector('dialog[open]')", "the empty page reopens the existing picker from the keyboard");
       const smokeDir = join(root, "Agents", "Smoke");
       for (const file of ["AGENTS.md", "fastagent.json", ".gitignore", "skills/.gitkeep", "prompts/.gitkeep"]) await stat(join(smokeDir, file));
       await stat(join(smokeDir, ".git"));
@@ -281,6 +291,8 @@ if (root) {
       );
       await chooseModel("openai/gpt-4o-mini");
       await until("document.querySelector('dialog') === null", "first model picker closes");
+      await until("document.activeElement?.matches('textarea[aria-label=Message]')", "choosing the first model focuses the message field");
+      assert.equal(await evaluate("document.querySelector('.conversation-start').textContent.trim()"), "What should we work on?", "a ready conversation only invites work");
       await evaluate(`document.querySelector('main > header .drag > button').click()`);
       await until("document.querySelector('#agent-info') !== null", "agent details pane opens");
       const infoText = await evaluate("document.querySelector('#agent-info').innerText");
@@ -292,6 +304,19 @@ if (root) {
       try {
         await evaluate(`document.querySelector('#agent-info button[aria-label="Remove project"]').click()`);
         await until("document.querySelectorAll('#agent-info button[aria-label=\"Remove project\"]').length === 0", "removing the folder updates the details pane");
+        await evaluate(`document.querySelector('#agent-info button[aria-label="Close agent details"]').click()`);
+        await until("!!document.querySelector('.conversation-start') && !document.querySelector('textarea').disabled", "the conversation is ready without folders");
+        assert.equal(await evaluate("document.querySelector('.conversation-start').textContent.trim()"), "What should we work on?", "no folders does not introduce a concept or a setup action");
+        assert.equal(await evaluate("document.querySelectorAll('.conversation-start button').length"), 0, "the ready page has no competing setup button");
+        await checkGuidanceLayout(win, { evaluate, until }, "ready-conversation");
+        await type("Keep this unsent thought while I check the agent.");
+        await evaluate(`document.querySelector('main > header .drag > button').click()`);
+        await until("!!document.querySelector('#agent-info')", "Agent details remains available from the header");
+        await evaluate(`document.querySelector('#agent-info button[aria-label="Close agent details"]').click()`);
+        await until("!document.querySelector('#agent-info')", "details returns to the blank conversation");
+        assert.equal(await evaluate("document.querySelector('textarea').value"), "Keep this unsent thought while I check the agent.", "details preserves the conversation draft");
+        await type("");
+        await evaluate(`document.querySelector('main > header .drag > button').click()`);
         await until("[...document.querySelectorAll('#agent-info button')].some((button) => button.textContent.includes('Add folder…') && !button.disabled)", "folder refresh enables Add folder");
         await evaluate(`[...document.querySelectorAll('#agent-info button')].find((b) => b.textContent.includes('Add folder…')).click()`);
         await until("document.querySelector('#agent-info')?.innerText.includes('project')", "adding the folder back updates the details");
@@ -939,6 +964,8 @@ if (root) {
         await evaluate("document.querySelector('main').innerText.includes(\"This agent's folder is not there\") && [...document.querySelectorAll('main [role=\"alert\"] button')].map((b) => b.textContent.trim()).join(',') === 'Retry,Remove from kage'"),
         "a folder that is not there offers Retry and Remove from kage",
       );
+      assert.ok(await evaluate("document.querySelector('.problem-page').textContent.includes('restore the folder to this location')"), "a moved folder can be restored before considering removal");
+      await checkGuidanceLayout(win, { evaluate, until }, "missing-folder");
       // An agent's name is kage's label, so even a broken agent can be renamed; the directory is not.
       await evaluate(`document.querySelector('button[aria-label="Gone"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
       await until("document.querySelector('aside input[aria-label=\"Agent name\"]') !== null", "agent rename opens");
@@ -1479,7 +1506,11 @@ if (root) {
       await writeFile(registry, "[{\"id\"");
       win.webContents.reload();
       await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
-      await until("document.body.innerText.includes('agents.json')", "registry failure is reported");
+      await until("document.body.innerText.includes('Reveal agents.json')", "registry failure is reported");
+      assert.ok(!await evaluate("document.querySelector('.problem-page pre')"), "technical details do not lead the recovery page");
+      await checkGuidanceLayout(win, { evaluate, until }, "registry-error");
+      await click("Technical details");
+      await until("document.querySelector('.problem-page pre')?.textContent.includes('agents.json')", "the original registry diagnostic is still available");
       const registryFailure = await evaluate("document.body.innerText");
       assert.ok(!registryFailure.includes("Create your first agent"), "a corrupt registry is not an empty one");
       assert.ok(registryFailure.includes("Reveal agents.json"), "the person is shown where to fix it");
@@ -1487,7 +1518,42 @@ if (root) {
       await click("Retry");
       await until("document.querySelector('main').innerText.includes('Smoke answer')", "Retry recovers the registry");
       assert.equal(await readFile(registry, "utf8"), savedRegistry, "a failed read never rewrites the registry");
-      // A default the catalog no longer has stops the open, says which model it is, and can be forgotten to open.
+      const brokenDir = join(root, "Agents", "broken-config");
+      writeInstance(brokenDir);
+      const brokenConfig = '{"name":"broken-config","content":';
+      await writeFile(join(brokenDir, "fastagent.json"), brokenConfig);
+      await writeFile(registry, JSON.stringify([...JSON.parse(savedRegistry), { id: "broken-config", name: "Broken config", dir: brokenDir, colour: 3 }]));
+      win.webContents.reload();
+      await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
+      await until("!!document.querySelector('button[aria-label=\"Broken config\"]')", "the broken config is listed");
+      await evaluate("document.querySelector('button[aria-label=\"Broken config\"]').click()");
+      await until("document.querySelector('.problem-page')?.textContent.includes('Fix fastagent.json, then retry.')", "config recovery names the current format");
+      assert.ok(!await evaluate("document.querySelector('.problem-page').textContent.includes('fastagent.config.ts')"), "recovery does not refer to the old format");
+      assert.ok(await evaluate("document.getElementById('fresh-config-consequences').textContent.includes('add the folders again')"), "reset explains the folder associations it removes");
+      await checkGuidanceLayout(win, { evaluate, until }, "config-error");
+      await click("Technical details");
+      await until("document.querySelector('.problem-page pre')?.textContent.includes('fastagent.json')", "config details keep the original diagnostic");
+      await checkGuidanceLayout(win, { evaluate, until }, "config-details");
+      await evaluate("Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.__copiedDiagnostic = text; } } })");
+      try {
+        await evaluate("document.querySelector('.problem-page button[aria-label=\"Copy the details\"]').click()");
+        await until("window.__copiedDiagnostic === document.querySelector('.problem-page pre').textContent", "copy retains the full original diagnostic");
+      } finally {
+        await evaluate("delete navigator.clipboard; delete window.__copiedDiagnostic");
+      }
+      await click("Start a fresh config");
+      await until("!!document.querySelector('dialog[open]')", "a fresh config asks for a model");
+      const backup = (await readdir(brokenDir)).find(file => file.startsWith('fastagent.json.broken-'));
+      assert.ok(backup, "reset keeps the backup described beside the action");
+      assert.equal(await readFile(join(brokenDir, backup), "utf8"), brokenConfig);
+      assert.equal(await readFile(join(brokenDir, "AGENTS.md"), "utf8"), "# Agent\n", "reset preserves other files");
+      await chooseModel("local/m1");
+      await until("!!document.querySelector('.conversation-start') && !document.querySelector('textarea').disabled", "reset is ready after choosing a model");
+      assert.equal(await evaluate("document.querySelector('.conversation-start').textContent.trim()"), "What should we work on?", "reset does not add another setup step");
+      await writeFile(registry, savedRegistry);
+      win.webContents.reload();
+      await new Promise((resolve) => win.webContents.once("did-finish-load", resolve));
+      await until("document.querySelector('main').innerText.includes('Smoke answer')", "return from config recovery");
       const legacyDir = join(root, "Agents", "legacy");
       writeInstance(legacyDir, { model: "openai-codex/gpt-5.5" });
       await writeFile(

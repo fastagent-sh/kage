@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowClockwise, FolderOpen, ArrowCounterClockwise, Plus, X } from "@phosphor-icons/react";
 import { Avatar } from "./avatar.tsx";
 import { Button } from "./ui.tsx";
@@ -12,7 +12,7 @@ export function NoAgents({ onCreate }: { onCreate: () => void }) {
       tone="accent"
       icon={<Plus size={18} />}
       title="Create your first agent"
-      advice="Give it a name and the folders on this Mac you want it to work on."
+      advice="Give it a name. Add project folders if needed."
       actions={
         <Button kind="primary" size={32} onClick={onCreate}>
           Create agent
@@ -22,14 +22,13 @@ export function NoAgents({ onCreate }: { onCreate: () => void }) {
   );
 }
 
-// Never repair the file: the broken one may be the only record of which directories are agents.
 export function UnreadableRegistry({ reason, onReveal, onRetry }: { reason?: string; onReveal: () => void; onRetry: () => void }) {
   return (
     <Problem
       layout="page"
       tone="error"
       title="kage cannot read its list of agents"
-      advice="Your agents and their conversations are untouched, and the file is left exactly as it is. Fix or move it, then retry."
+      advice="kage has left the file unchanged. Restore a valid copy if you have one, or repair the file, then retry. Your Agent folders and conversations have not been changed."
       reason={reason}
       actions={
         <>
@@ -68,12 +67,12 @@ export function BrokenAgent({
     <Problem
       layout="page"
       tone="error"
-      title="This agent could not be loaded"
+      title={inConfig && !unknownModel ? "This agent’s config could not be loaded" : "This agent could not be loaded"}
       advice={
         unknownModel
           ? `Its default model, ${unknownModel}, is no longer offered. Forget it to open the agent, then choose another model; its folders and conversations are untouched.`
           : inConfig
-          ? "Its fastagent.config.ts, or a file it imports, does not load. Fix it and retry, or start a fresh config and choose a model again: kage keeps a copy of the old one beside it, as fastagent.config.ts.broken-<time>."
+          ? "Fix fastagent.json, then retry."
           : "Something in its definition stops it from starting. Fix it in the agent's folder, then retry; kage has changed nothing."
       }
       reason={message}
@@ -84,27 +83,33 @@ export function BrokenAgent({
               Forget {unknownModel}
             </Button>
           )}
-          {inConfig && !unknownModel && (
-            <Button kind="primary" size={32} icon={<ArrowCounterClockwise size={14} />} onClick={onFreshConfig}>
-              Start a fresh config
-            </Button>
-          )}
-          <Button kind={inConfig || unknownModel ? "secondary" : "primary"} size={32} icon={<ArrowClockwise size={14} />} onClick={onRetry}>
-            Retry
-          </Button>
-          <Button size={32} icon={<FolderOpen size={14} />} onClick={onReveal}>
+          <Button kind={inConfig && !unknownModel ? "primary" : "secondary"} size={32} icon={<FolderOpen size={14} />} onClick={onReveal}>
             Reveal in Finder
           </Button>
-          <Button kind="danger" size={32} icon={<X size={14} />} onClick={onRemove}>
-            Remove from kage
+          <Button kind={!inConfig && !unknownModel ? "primary" : "secondary"} size={32} icon={<ArrowClockwise size={14} />} onClick={onRetry}>
+            Retry
           </Button>
+          {inConfig && !unknownModel && (
+            <div className="w-full space-y-2 pt-4">
+              <Button size={32} icon={<ArrowCounterClockwise size={14} />} onClick={onFreshConfig} aria-describedby="fresh-config-consequences">
+                Start a fresh config
+              </Button>
+              <p id="fresh-config-consequences" className="text-[13px] leading-relaxed text-muted">
+                Keeps the original as <span className="break-all">fastagent.json.broken-&lt;time&gt;</span>. You’ll need to choose a model and add the folders again. Existing files and conversations are kept.
+              </p>
+            </div>
+          )}
+          <div className="w-full pt-2">
+            <Button kind="danger" size={32} icon={<X size={14} />} onClick={onRemove}>
+              Remove from kage
+            </Button>
+          </div>
         </>
       }
     />
   );
 }
 
-// Retry covers a drive coming back.
 export function MissingFolder({
   dir,
   onRemove,
@@ -121,8 +126,8 @@ export function MissingFolder({
       title="This agent's folder is not there"
       advice={
         <>
-          kage last found it at <span className="font-mono text-[12.5px]">{home(dir)}</span>. If it was on an external
-          drive, connect the drive and retry; otherwise remove the agent from kage.
+          kage last found this agent at <span className="break-all font-mono text-[12.5px]">{home(dir)}</span>. Reconnect its drive,
+          or restore the folder to this location, then retry. Remove it from kage only if you no longer need it.
         </>
       }
       actions={
@@ -307,10 +312,35 @@ export function CreateAgent({
   );
 }
 
-export function NewConversation() {
+export function NewConversation({
+  needsModel,
+  bottomGap,
+  onChooseModel,
+}: {
+  needsModel: boolean;
+  bottomGap: number;
+  onChooseModel: () => void;
+}) {
+  const neededModel = useRef(needsModel);
+  useEffect(() => {
+    const chosen = neededModel.current && !needsModel;
+    neededModel.current = needsModel;
+    if (!chosen) return;
+    const frame = requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('main textarea[aria-label="Message"]')?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [needsModel]);
   return (
-    <div className="flex-1 min-h-0 grid place-items-center px-6">
-      <h1 className="column text-center text-[22px] font-medium">What should we work on?</h1>
+    <div className="flex-1 min-h-0 overflow-y-auto px-6">
+      <div className="conversation-start grid min-h-full place-items-center pt-24" style={{ paddingBottom: bottomGap + 24 }}>
+        <div className="column flex flex-col items-center gap-3 py-4 text-center">
+          <h1 className="text-[22px] font-medium">{needsModel ? "Choose a model to start." : "What should we work on?"}</h1>
+          {needsModel && (
+            <Button kind="primary" onClick={onChooseModel}>
+              Choose model
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
