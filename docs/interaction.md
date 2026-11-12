@@ -35,10 +35,11 @@ or opens the existing conversation list when there are several. It disappears wh
 
 A blank conversation asks **Choose a model to start** only when that conversation needs a model;
 its button reopens the existing picker, and choosing the first model focuses the message field.
-With a model selected, **What should we work on?** stays quiet. If the loaded Agent has no attached
-folders, a short note says a project folder is optional; **Agent details** opens the existing detail
-view without changing the conversation or its draft. Unknown folder information is not an empty list.
-There is no additional onboarding state, task template or inferred capability list.
+With a model selected, **What should we work on?** is the only empty-state text, regardless of attached
+folders. There is no setup explanation or details button competing with the message field. Agent details
+remains available from the header without changing the conversation or its draft. Guidance addresses a
+blocked action, not concepts the person does not need to learn before starting. There is no additional
+onboarding state, task template or inferred capability list.
 
 Creating an agent asks for its name and any folders on this computer it should work on, and creates the agent in `~/Agents/<slug>/` (`fastagent.json`, `AGENTS.md`, empty `skills/` and `prompts/`, and a git repository). A refused declaration (duplicate folder name, nesting) is said in words and creates nothing. An agent whose
 directory is no longer there (moved, deleted, a drive not mounted) says so, with Retry and Remove from kage:

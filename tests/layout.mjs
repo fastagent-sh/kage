@@ -351,7 +351,8 @@ export async function checkGuidanceLayout(win, { evaluate, until }, state) {
               const r = button.getBoundingClientRect();
               return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && button.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
             };
-            const firstActionVisible = visible(page.querySelector('button'));
+            const firstAction = page.querySelector('button');
+            const firstActionVisible = firstAction !== null && visible(firstAction);
             const reachable = [...page.querySelectorAll('button')].map(button => {
               button.blur();
               button.focus();

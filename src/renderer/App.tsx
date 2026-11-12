@@ -421,10 +421,8 @@ export default function App() {
                 <NewConversation
                   key={c?.subscription}
                   needsModel={view.needsModel}
-                  noFolders={!!agent && view.content[agent.id]?.length === 0}
                   bottomGap={compact ? 0 : composerHeight + 8}
                   onChooseModel={store.openPicker}
-                  onOpenDetails={() => setProfileOpen(true)}
                 />
               ) : (
                 // The transcript is pinned to its bottom while streaming, so this gap is where the newest line lands.

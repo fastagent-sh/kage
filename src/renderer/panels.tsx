@@ -314,16 +314,12 @@ export function CreateAgent({
 
 export function NewConversation({
   needsModel,
-  noFolders,
   bottomGap,
   onChooseModel,
-  onOpenDetails,
 }: {
   needsModel: boolean;
-  noFolders: boolean;
   bottomGap: number;
   onChooseModel: () => void;
-  onOpenDetails: () => void;
 }) {
   const neededModel = useRef(needsModel);
   useEffect(() => {
@@ -338,18 +334,11 @@ export function NewConversation({
       <div className="conversation-start grid min-h-full place-items-center pt-24" style={{ paddingBottom: bottomGap + 24 }}>
         <div className="column flex flex-col items-center gap-3 py-4 text-center">
           <h1 className="text-[22px] font-medium">{needsModel ? "Choose a model to start." : "What should we work on?"}</h1>
-          {needsModel ? (
+          {needsModel && (
             <Button kind="primary" onClick={onChooseModel}>
               Choose model
             </Button>
-          ) : noFolders ? (
-            <div className="space-y-1">
-              <p className="text-[13px] leading-relaxed text-muted">You can start without a project folder.</p>
-              <Button kind="ghost" onClick={onOpenDetails}>
-                Agent details
-              </Button>
-            </div>
-          ) : null}
+          )}
         </div>
       </div>
     </div>
